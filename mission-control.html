@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mission Control - OpenClaw Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f1419;
+            color: #e6edf3;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+            padding: 24px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            border: 1px solid #374151;
+        }
+
+        h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            color: #9ca3af;
+            font-size: 14px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+            border-bottom: 2px solid #374151;
+            padding-bottom: 0;
+        }
+
+        .tab {
+            padding: 12px 24px;
+            background: transparent;
+            border: none;
+            color: #9ca3af;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            color: #e6edf3;
+            background: #1f2937;
+        }
+
+        .tab.active {
+            color: #60a5fa;
+            border-bottom-color: #60a5fa;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .board {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .column {
+            background: #1f2937;
+            border-radius: 12px;
+            padding: 16px;
+            border: 1px solid #374151;
+        }
+
+        .column-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #374151;
+        }
+
+        .column-title {
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .column-count {
+            background: #374151;
+            color: #9ca3af;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .task-card {
+            background: #111827;
+            border: 1px solid #374151;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
+            cursor: grab;
+            transition: all 0.2s;
+        }
+
+        .task-card:hover {
+            border-color: #60a5fa;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(96, 165, 250, 0.2);
+        }
+
+        .task-card.dragging {
+            opacity: 0.5;
+            cursor: grabbing;
+        }
+
+        .task-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #e6edf3;
+        }
+
+        .task-meta {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+
+        .task-assignee {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        .assignee-me {
+            background: #065f46;
+            color: #6ee7b7;
+        }
+
+        .assignee-agent {
+            background: #1e3a8a;
+            color: #93c5fd;
+        }
+
+        .task-date {
+            color: #9ca3af;
+            font-size: 11px;
+        }
+
+        .btn {
+            background: #374151;
+            color: #e6edf3;
+            border: 1px solid #4b5563;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background: #4b5563;
+            border-color: #60a5fa;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            border: none;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+        }
+
+        .add-task-form {
+            background: #1f2937;
+            border: 1px solid #374151;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+            display: none;
+        }
+
+        .add-task-form.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 12px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 12px;
+            color: #9ca3af;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            background: #111827;
+            border: 1px solid #374151;
+            color: #e6edf3;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .form-group textarea {
+            min-height: 60px;
+            resize: vertical;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .calendar-grid {
+            background: #1f2937;
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid #374151;
+        }
+
+        .calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .calendar-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .calendar-days {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .calendar-day-header {
+            text-align: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: #9ca3af;
+            padding: 8px;
+        }
+
+        .calendar-cell {
+            aspect-ratio: 1;
+            background: #111827;
+            border: 1px solid #374151;
+            border-radius: 8px;
+            padding: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        .calendar-cell:hover {
+            border-color: #60a5fa;
+            background: #1f2937;
+        }
+
+        .calendar-cell.today {
+            border-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .calendar-cell-date {
+            font-size: 12px;
+            font-weight: 600;
+            color: #9ca3af;
+        }
+
+        .calendar-events {
+            margin-top: 4px;
+        }
+
+        .calendar-event-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #3b82f6;
+            display: inline-block;
+            margin-right: 2px;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: #1f2937;
+            border: 1px solid #374151;
+            border-radius: 12px;
+            padding: 16px;
+        }
+
+        .stat-label {
+            color: #9ca3af;
+            font-size: 12px;
+            margin-bottom: 4px;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #e6edf3;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #9ca3af;
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+            opacity: 0.5;
+        }
+
+        /* Team Structure */
+        .team-card {
+            background: #1f2937;
+            border: 1px solid #374151;
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.2s;
+        }
+
+        .team-card:hover {
+            border-color: #60a5fa;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(96, 165, 250, 0.2);
+        }
+
+        .team-avatar {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            margin-bottom: 12px;
+            font-size: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+        }
+
+        .team-name {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .team-role {
+            color: #60a5fa;
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .team-description {
+            color: #9ca3af;
+            font-size: 13px;
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
+
+        .team-skills {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+
+        .skill-tag {
+            background: #374151;
+            color: #e6edf3;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        .team-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #111827;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .status-active {
+            background: #10b981;
+            box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+        }
+
+        .status-idle {
+            background: #6b7280;
+        }
+
+        .status-busy {
+            background: #f59e0b;
+            box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+        }
+
+        /* Office View */
+        .office-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .workspace {
+            background: #1f2937;
+            border: 1px solid #374151;
+            border-radius: 12px;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .workspace::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%);
+        }
+
+        .workspace-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .workspace-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+        }
+
+        .workspace-info {
+            flex: 1;
+        }
+
+        .workspace-name {
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .workspace-role {
+            color: #9ca3af;
+            font-size: 12px;
+        }
+
+        .workspace-desk {
+            background: #111827;
+            border: 1px solid #374151;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+            min-height: 120px;
+        }
+
+        .desk-screen {
+            background: #0f1419;
+            border: 2px solid #374151;
+            border-radius: 4px;
+            padding: 12px;
+            margin-bottom: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            color: #10b981;
+            min-height: 80px;
+        }
+
+        .desk-screen.idle {
+            color: #6b7280;
+        }
+
+        .typing-indicator {
+            display: inline-block;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+        }
+
+        .workspace-activity {
+            font-size: 12px;
+            color: #9ca3af;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .activity-time {
+            margin-left: auto;
+            color: #6b7280;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎛️ Mission Control</h1>
+            <p class="subtitle">OpenClaw Dashboard - Track tasks, schedules, and memory</p>
+        </header>
+
+        <div class="tabs">
+            <button class="tab active" data-tab="tasks">📋 Tasks</button>
+            <button class="tab" data-tab="calendar">📅 Calendar</button>
+            <button class="tab" data-tab="team">👥 Team</button>
+            <button class="tab" data-tab="office">🏢 Office</button>
+            <button class="tab" data-tab="memory">🧠 Memory</button>
+        </div>
+
+        <!-- Tasks Tab -->
+        <div class="tab-content active" id="tasks-tab">
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-label">Total Tasks</div>
+                    <div class="stat-value" id="total-tasks">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">In Progress</div>
+                    <div class="stat-value" id="in-progress-tasks">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Completed</div>
+                    <div class="stat-value" id="completed-tasks">0</div>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" id="add-task-btn">+ Add Task</button>
+
+            <div class="add-task-form" id="add-task-form">
+                <div class="form-group">
+                    <label>Task Title *</label>
+                    <input type="text" id="task-title" placeholder="What needs to be done?" required>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="task-description" placeholder="Additional details..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Assigned To</label>
+                    <select id="task-assignee">
+                        <option value="me">Me</option>
+                        <option value="gilbert">Gilbert (Agent)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="task-status">
+                        <option value="todo">To Do</option>
+                        <option value="in-progress">In Progress</option>
+                        <option value="done">Done</option>
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button class="btn" id="cancel-task-btn">Cancel</button>
+                    <button class="btn btn-primary" id="save-task-btn">Save Task</button>
+                </div>
+            </div>
+
+            <div class="board" id="task-board">
+                <div class="column">
+                    <div class="column-header">
+                        <div class="column-title">
+                            📝 To Do
+                            <span class="column-count" id="todo-count">0</span>
+                        </div>
+                    </div>
+                    <div class="tasks" id="todo-tasks"></div>
+                </div>
+
+                <div class="column">
+                    <div class="column-header">
+                        <div class="column-title">
+                            🔄 In Progress
+                            <span class="column-count" id="in-progress-count">0</span>
+                        </div>
+                    </div>
+                    <div class="tasks" id="in-progress-tasks"></div>
+                </div>
+
+                <div class="column">
+                    <div class="column-header">
+                        <div class="column-title">
+                            ✅ Done
+                            <span class="column-count" id="done-count">0</span>
+                        </div>
+                    </div>
+                    <div class="tasks" id="done-tasks"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Calendar Tab -->
+        <div class="tab-content" id="calendar-tab">
+            <div class="calendar-grid">
+                <div class="calendar-header">
+                    <button class="btn" id="prev-month">←</button>
+                    <div class="calendar-title" id="calendar-month">February 2026</div>
+                    <button class="btn" id="next-month">→</button>
+                </div>
+                <div class="calendar-days">
+                    <div class="calendar-day-header">Sun</div>
+                    <div class="calendar-day-header">Mon</div>
+                    <div class="calendar-day-header">Tue</div>
+                    <div class="calendar-day-header">Wed</div>
+                    <div class="calendar-day-header">Thu</div>
+                    <div class="calendar-day-header">Fri</div>
+                    <div class="calendar-day-header">Sat</div>
+                </div>
+                <div id="calendar-cells"></div>
+            </div>
+
+            <div style="margin-top: 24px;">
+                <h3 style="margin-bottom: 12px;">Scheduled Cron Jobs</h3>
+                <div id="cron-jobs-list"></div>
+            </div>
+        </div>
+
+        <!-- Team Tab -->
+        <div class="tab-content" id="team-tab">
+            <div style="margin-bottom: 24px;">
+                <h2 style="margin-bottom: 8px;">Team Structure</h2>
+                <p style="color: #9ca3af; font-size: 14px;">Your AI team organized by roles and responsibilities</p>
+            </div>
+
+            <div id="team-grid" class="board"></div>
+        </div>
+
+        <!-- Office Tab -->
+        <div class="tab-content" id="office-tab">
+            <div style="margin-bottom: 24px;">
+                <h2 style="margin-bottom: 8px;">Digital Office</h2>
+                <p style="color: #9ca3af; font-size: 14px;">Real-time status and activity of each team member</p>
+            </div>
+
+            <div id="office-floor"></div>
+        </div>
+
+        <!-- Memory Tab -->
+        <div class="tab-content" id="memory-tab">
+            <div class="empty-state">
+                <div class="empty-state-icon">🧠</div>
+                <h3>Memory Search Disabled</h3>
+                <p>Memory search is temporarily disabled. Re-enable it in OpenClaw config to see memory here.</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="mission-control.js"></script>
+</body>
+</html>

@@ -1,0 +1,1311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Packaging Materials - Co-Manufacturing Calculator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f6f8;
+            color: #1a1a1a;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        /* Fixed Professional Navigation */
+        .app-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 64px;
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        }
+
+        .app-branding {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-right: 32px;
+            width: 280px;
+            flex-shrink: 0;
+        }
+
+        .app-logo {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .app-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #111827;
+            line-height: 1.2;
+        }
+
+        .app-subtitle {
+            font-size: 12px;
+            color: #6b7280;
+            line-height: 1;
+            margin-top: 2px;
+        }
+
+        .app-nav {
+            display: flex;
+            gap: 2px;
+            padding: 4px;
+            background: #f9fafb;
+            border-radius: 8px;
+            margin-right: auto;
+        }
+
+        .app-nav a {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 32px;
+            padding: 0 20px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #6b7280;
+            text-decoration: none;
+            border-radius: 6px;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+        }
+
+        .app-nav a:hover {
+            color: #111827;
+            background: rgba(0, 0, 0, 0.04);
+        }
+
+        .app-nav a.active {
+            color: #2563eb;
+            background: white;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        }
+
+        .app-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-left: 24px;
+        }
+
+        .app-content {
+            padding-top: 64px;
+        }
+
+        .header {
+            background: white;
+            border-bottom: 1px solid #e1e4e8;
+            padding: 16px 24px;
+            position: sticky;
+            top: 64px;
+            z-index: 90;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .header-subtitle {
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .main-container {
+            display: grid;
+            grid-template-columns: 400px 1fr;
+            height: calc(100vh - 64px);
+            overflow: hidden;
+        }
+
+        /* Left Panel - Item List */
+        .items-panel {
+            background: white;
+            border-right: 1px solid #e1e4e8;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .items-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #e1e4e8;
+            background: #fafbfc;
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            margin-bottom: 12px;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .items-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .item-card {
+            padding: 16px 20px;
+            border-bottom: 1px solid #f3f4f6;
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+
+        .item-card:hover {
+            background: #f9fafb;
+        }
+
+        .item-card.active {
+            background: #eff6ff;
+            border-left: 3px solid #2563eb;
+            padding-left: 17px;
+        }
+
+        .item-name {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .item-meta {
+            font-size: 12px;
+            color: #6b7280;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+
+        .item-stock {
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .stock-badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .stock-badge.in-stock {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .stock-badge.low-stock {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        /* Right Panel - Detail View */
+        .detail-panel {
+            background: white;
+            overflow-y: auto;
+            padding: 32px;
+        }
+
+        .detail-panel-empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #9ca3af;
+        }
+
+        .detail-panel-empty-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+
+        .detail-header {
+            margin-bottom: 32px;
+        }
+
+        .detail-title {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .detail-subtitle {
+            font-size: 14px;
+            color: #6b7280;
+        }
+
+        .detail-section {
+            margin-bottom: 28px;
+        }
+
+        .detail-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .detail-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+
+        .detail-value.large {
+            font-size: 32px;
+        }
+
+        .detail-value input,
+        .detail-value select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .detail-value input:focus,
+        .detail-value select:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .input-group {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 8px;
+        }
+
+        .input-group select {
+            width: 100px;
+        }
+
+        .price-tiers {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .price-tier {
+            padding: 12px 16px;
+            border-bottom: 1px solid #e5e7eb;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr 40px;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .price-tier:last-child {
+            border-bottom: none;
+        }
+
+        .price-tier-header {
+            background: #fafbfc;
+            font-weight: 600;
+            font-size: 11px;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .tier-input {
+            padding: 6px 8px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 13px;
+            width: 100%;
+        }
+
+        .tier-input:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+        }
+
+        .btn {
+            padding: 8px 14px;
+            border: 1px solid #d1d5db;
+            background: white;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: #374151;
+            font-weight: 500;
+            text-decoration: none;
+        }
+
+        .btn:hover {
+            background: #f9fafb;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+            border-color: #2563eb;
+        }
+
+        .btn-primary:hover {
+            background: #1d4ed8;
+        }
+
+        .btn-small {
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+
+        .btn-danger {
+            background: white;
+            color: #dc2626;
+            border-color: #fca5a5;
+        }
+
+        .btn-danger:hover {
+            background: #fef2f2;
+        }
+
+        .btn-icon {
+            padding: 6px;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .divider {
+            height: 1px;
+            background: #e5e7eb;
+            margin: 32px 0;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: #fafbfc;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 16px;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: #6b7280;
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1a1a1a;
+        }
+
+        .erp-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            background: #f0f9ff;
+            border: 1px solid #bae6fd;
+            border-radius: 6px;
+            font-size: 13px;
+            margin-bottom: 24px;
+        }
+
+        .erp-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #3b82f6;
+        }
+
+        .erp-status-dot.disconnected {
+            background: #9ca3af;
+        }
+
+        input[type="number"] {
+            appearance: textfield;
+            -moz-appearance: textfield;
+        }
+
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+    </style>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+</head>
+<body>
+    <!-- Fixed Professional Navigation -->
+    <header class="app-header">
+        <div class="app-branding">
+            <div class="app-logo">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M4 10L8 6L12 10L16 6" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M4 14L8 10L12 14L16 10" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+            <div>
+                <div class="app-title">Co-Manufacturing Suite</div>
+                <div class="app-subtitle">Batch & Packaging Calculator</div>
+            </div>
+        </div>
+        
+        <nav class="app-nav">
+            <a href="batch-calculator-v4.html">Batch Calculator</a>
+            <a href="copacking-calculator.html">Co-Packing</a>
+            <a href="inventory.html">Inventory</a>
+            <a href="services.html">Services</a>
+            <a href="packaging.html" class="active">Packaging</a>
+        </nav>
+        
+        <div class="app-actions">
+            <button class="btn" onclick="exportPackaging()" title="Cmd/Ctrl + E">📊 Export</button>
+        </div>
+    </header>
+    
+    <!-- Batch Info Banner -->
+    <div id="batchInfoBanner" style="display: none; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; padding: 12px 24px; border-bottom: 1px solid #1d4ed8; position: sticky; top: 64px; z-index: 999;">
+        <div style="max-width: 1600px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 20px; font-size: 13px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="opacity: 0.9;">📦 Current Batch:</span>
+                    <strong id="batchInfoName">—</strong>
+                </div>
+                <div style="opacity: 0.8;">|</div>
+                <div id="batchInfoSize">—</div>
+                <div style="opacity: 0.8;">|</div>
+                <div id="batchInfoYield">—</div>
+                <div style="opacity: 0.8;">|</div>
+                <div style="font-size: 11px; opacity: 0.7;" id="batchInfoTime">—</div>
+            </div>
+            <button onclick="CoManufacturing.clearBatch(); updateBatchInfoBanner();" style="padding: 4px 12px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.15); border-radius: 4px; color: white; font-size: 12px; cursor: pointer; font-weight: 500;">
+                ✕ Clear Batch
+            </button>
+        </div>
+    </div>
+    
+    <!-- QR Scanner Modal -->
+    <div id="qrScannerModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.8); z-index: 2000; align-items: center; justify-content: center;">
+        <div style="background: white; border-radius: 12px; padding: 24px; max-width: 600px; width: 90%; max-height: 90vh; overflow: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="font-size: 20px; font-weight: 600;">Scan QR Code</h2>
+                <button class="btn" onclick="closeQRScanner()" style="font-size: 20px; padding: 4px 12px;">×</button>
+            </div>
+            
+            <div id="qrReader" style="width: 100%; border-radius: 8px; overflow: hidden; background: #000; margin-bottom: 16px;"></div>
+            
+            <div style="background: #f9fafb; border-radius: 6px; padding: 12px; font-size: 13px; color: #6b7280;">
+                <strong>Supported formats:</strong>
+                <ul style="margin: 8px 0 0 20px;">
+                    <li>JSON: {"name": "...", "price": ..., "vendor": "...", "sku": "..."}</li>
+                    <li>Product URLs (auto-extract name/price)</li>
+                    <li>Barcodes/SKUs (creates packaging item with SKU)</li>
+                </ul>
+            </div>
+            
+            <div id="qrScanResult" style="margin-top: 16px; display: none;">
+                <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; padding: 12px; color: #166534;">
+                    <strong>✓ Scanned:</strong> <span id="qrScanResultText"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="app-content">
+    <div class="main-container">
+        <!-- Left Panel: Items List -->
+        <div class="items-panel">
+            <div class="items-header">
+                <input type="text" class="search-box" id="searchBox" placeholder="Search packaging..." onkeyup="filterItems()">
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">Total Items</div>
+                        <div class="stat-value" id="totalItems">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Vendors</div>
+                        <div class="stat-value" id="vendorCount">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Avg Lead Time</div>
+                        <div class="stat-value" id="avgLeadTime" style="font-size: 18px;">0d</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="items-list" id="itemsList">
+                <!-- Populated by JS -->
+            </div>
+            
+            <div style="padding: 16px; border-top: 1px solid #e5e7eb; flex-shrink: 0;">
+                <button class="btn btn-primary" onclick="addNewItem()" title="Cmd/Ctrl + I" style="width: 100%; justify-content: center;">
+                    + New Packaging Item
+                </button>
+            </div>
+        </div>
+
+        <!-- Right Panel: Detail View -->
+        <div class="detail-panel" id="detailPanel">
+            <div class="detail-panel-empty">
+                <div class="detail-panel-empty-icon">📦</div>
+                <div>Select an item to view details</div>
+                <div style="color: #6b7280; font-size: 13px; margin-top: 12px;">
+                    Use ↑↓ arrow keys to navigate • Press Enter to edit • Delete to remove
+                </div>
+                <div style="color: #6b7280; font-size: 13px; margin-top: 8px;">
+                    <kbd style="padding: 2px 6px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 4px; font-size: 11px;">Cmd+I</kbd> New item • 
+                    <kbd style="padding: 2px 6px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 4px; font-size: 11px;">Cmd+F</kbd> Search • 
+                    <kbd style="padding: 2px 6px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 4px; font-size: 11px;">Cmd+K</kbd> Commands
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="shared-data.js"></script>
+    <script src="autocomplete-component.js"></script>
+    <script src="command-palette.js"></script>
+    <script>
+        let packaging = CoManufacturing.getPackaging();
+        const vendors = CoManufacturing.getVendors();
+        let selectedItemId = null;
+
+        // Listen for data changes
+        window.addEventListener('comanufacturing:datachange', (e) => {
+            if (e.detail.dataType === 'packaging') {
+                packaging = CoManufacturing.getPackaging();
+                renderItemsList();
+                if (selectedItemId) {
+                    renderDetailPanel(selectedItemId);
+                }
+            }
+        });
+
+        // Check URL for item parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const itemIdFromUrl = urlParams.get('item');
+
+        function renderItemsList() {
+            const listDiv = document.getElementById('itemsList');
+            const searchQuery = document.getElementById('searchBox').value.toLowerCase();
+            
+            const filteredPackaging = searchQuery ? 
+                packaging.filter(item => 
+                    item.name.toLowerCase().includes(searchQuery) ||
+                    (item.sku && item.sku.toLowerCase().includes(searchQuery)) ||
+                    (item.vendor && item.vendor.toLowerCase().includes(searchQuery))
+                ) : packaging;
+
+            listDiv.innerHTML = filteredPackaging.map(item => {
+                const isActive = item.id === selectedItemId;
+                const category = item.category || 'other';
+                const leadTime = item.leadTimeDays || 0;
+                
+                return `
+                    <div class="item-card ${isActive ? 'active' : ''}" onclick="selectItem('${item.id}')">
+                        <div class="item-name">${item.name}</div>
+                        <div class="item-meta">
+                            <span>${item.sku || 'No SKU'}</span>
+                            <span>${item.vendor || 'No vendor'}</span>
+                        </div>
+                        <div class="item-stock">
+                            <span class="stock-badge in-stock">${category}</span>
+                            ${leadTime > 0 ? `<span>${leadTime}d lead</span>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            updateStats();
+        }
+
+        function updateStats() {
+            document.getElementById("totalItems").textContent = packaging.length;
+            
+            const uniqueVendors = new Set(packaging.map(p => p.vendor).filter(Boolean));
+            document.getElementById("vendorCount").textContent = uniqueVendors.size;
+            
+            const avgLead = packaging.length > 0 ? 
+                Math.round(packaging.reduce((sum, p) => sum + (p.leadTimeDays || 0), 0) / packaging.length) : 0;
+            document.getElementById("avgLeadTime").textContent = avgLead + "d";
+        }
+
+
+        function selectItem(itemId) {
+            selectedItemId = itemId;
+            renderItemsList();
+            renderDetailPanel(itemId);
+            
+            // Update URL without reload
+            const newUrl = new URL(window.location);
+            newUrl.searchParams.set('item', itemId);
+            window.history.pushState({}, '', newUrl);
+        }
+
+        function renderDetailPanel(itemId) {
+            const item = packaging.find(i => i.id === itemId);
+            if (!item) return;
+
+            const detailPanel = document.getElementById('detailPanel');
+            detailPanel.innerHTML = `
+                <!-- Header -->
+                <div class="detail-header">
+                    <div class="detail-title">${item.name}</div>
+                    <div class="detail-subtitle">Last updated: ${item.lastUpdated || 'Never'}</div>
+                </div>
+
+                <!-- Basic Info -->
+                <div class="detail-section">
+                    <div class="detail-label">SKU / Item Code</div>
+                    <div class="detail-value">
+                        <input type="text" value="${item.sku || ''}" onchange="updateField('${item.id}', 'sku', this.value)">
+                    </div>
+                </div>
+
+                <div class="detail-section">
+                    <div class="detail-label">Item Name</div>
+                    <div class="detail-value">
+                        <input type="text" value="${item.name}" onchange="updateField('${item.id}', 'name', this.value)">
+                    </div>
+                </div>
+
+                <div class="detail-section">
+                    <div class="detail-label">Primary Vendor</div>
+                    <div class="detail-value">
+                        <input type="text" value="${item.vendor || ''}" onchange="updateField('${item.id}', 'vendor', this.value)" class="vendor-autocomplete" data-item-id="${item.id}">
+                    </div>
+                </div>
+
+                <div class="detail-section">
+                    <div class="detail-label">Category</div>
+                    <div class="detail-value">
+                        <select onchange="updateField('${item.id}', 'category', this.value)">
+                            <option value="cans" ${item.category === 'cans' ? 'selected' : ''}>Cans</option>
+                            <option value="bottles" ${item.category === 'bottles' ? 'selected' : ''}>Bottles</option>
+                            <option value="labels" ${item.category === 'labels' ? 'selected' : ''}>Labels</option>
+                            <option value="caps" ${item.category === 'caps' ? 'selected' : ''}>Caps / Lids</option>
+                            <option value="cases" ${item.category === 'cases' ? 'selected' : ''}>Cases / Boxes</option>
+                            <option value="carriers" ${item.category === 'carriers' ? 'selected' : ''}>Carriers</option>
+                            <option value="pallets" ${item.category === 'pallets' ? 'selected' : ''}>Pallets</option>
+                            <option value="other" ${item.category === 'other' ? 'selected' : ''}>Other</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="detail-section">
+                    <div class="detail-label">Lead Time (Days)</div>
+                    <div class="detail-value">
+                        <input type="number" value="${item.leadTimeDays || 0}" step="1" min="0" onchange="updateField('${item.id}', 'leadTimeDays', parseInt(this.value))">
+                    </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <!-- Price Tiers -->
+                <div class="detail-section">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <div class="detail-label" style="margin-bottom: 0;">Price Tiers</div>
+                        <button class="btn btn-small" onclick="addPriceTier('${item.id}')">+ Add Tier</button>
+                    </div>
+                    
+                    <div class="price-tiers">
+                        <div class="price-tier price-tier-header">
+                            <div>Quantity Range</div>
+                            <div>Price</div>
+                            <div>MOQ</div>
+                            <div></div>
+                        </div>
+                        ${renderPriceTiers(item)}
+                    </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <!-- Notes -->
+                <div class="detail-section">
+                    <div class="detail-label">Notes</div>
+                    <div class="detail-value">
+                        <textarea onchange="updateField('${item.id}', 'notes', this.value)" placeholder="Additional notes about this packaging item..." style="min-height: 80px; resize: vertical; width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; font-weight: 500; font-family: inherit;">${item.notes || ''}</textarea>
+                    </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <!-- Actions -->
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-danger" onclick="deleteItem('${item.id}')" style="flex: 1;">
+                        Delete Packaging Item
+                    </button>
+                </div>
+            `;
+
+            // Attach vendor autocomplete
+            attachVendorAutocomplete();
+        }
+        }
+
+        function renderPriceTiers(item) {
+            if (!item.priceTiers || item.priceTiers.length === 0) {
+                return '<div style="padding: 20px; text-align: center; color: #9ca3af; font-size: 13px;">No price tiers defined</div>';
+            }
+
+            return item.priceTiers.map((tier, index) => `
+                <div class="price-tier">
+                    <div style="font-size: 13px;">
+                        <input type="number" class="tier-input" value="${tier.minQty}" placeholder="Min" onchange="updatePriceTier('${item.id}', ${index}, 'minQty', parseInt(this.value))" style="width: 60px; display: inline-block; margin-right: 4px;">
+                        -
+                        <input type="number" class="tier-input" value="${tier.maxQty || ''}" placeholder="∞" onchange="updatePriceTier('${item.id}', ${index}, 'maxQty', this.value ? parseInt(this.value) : null)" style="width: 60px; display: inline-block; margin-left: 4px;">
+                    </div>
+                    <div>
+                        <input type="number" class="tier-input" value="${tier.price}" step="0.0001" placeholder="0.00" onchange="updatePriceTier('${item.id}', ${index}, 'price', parseFloat(this.value))">
+                    </div>
+                    <div>
+                        <input type="number" class="tier-input" value="${tier.moq || tier.minQty}" step="1" placeholder="1" onchange="updatePriceTier('${item.id}', ${index}, 'moq', parseInt(this.value))">
+                    </div>
+                    <div>
+                        <button class="btn btn-icon btn-small" onclick="removePriceTier('${item.id}', ${index})" style="color: #dc2626;">×</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateField(itemId, field, value) {
+            const index = packaging.findIndex(i => i.id === itemId);
+            if (index === -1) return;
+
+            packaging[index][field] = value;
+            packaging[index].lastUpdated = new Date().toLocaleString();
+            
+            CoManufacturing.savePackaging(inventory);
+            renderItemsList();
+            renderDetailPanel(itemId);
+        }
+
+        function updatePriceTier(itemId, tierIndex, field, value) {
+            const index = packaging.findIndex(i => i.id === itemId);
+            if (index === -1) return;
+
+            if (!packaging[index].priceTiers) {
+                packaging[index].priceTiers = [];
+            }
+
+            packaging[index].priceTiers[tierIndex][field] = value;
+            packaging[index].lastUpdated = new Date().toLocaleString();
+            
+            CoManufacturing.savePackaging(inventory);
+            renderDetailPanel(itemId);
+        }
+
+        function addPriceTier(itemId) {
+            const index = packaging.findIndex(i => i.id === itemId);
+            if (index === -1) return;
+
+            if (!packaging[index].priceTiers) {
+                packaging[index].priceTiers = [];
+            }
+
+            const lastTier = packaging[index].priceTiers[packaging[index].priceTiers.length - 1];
+            const newMinQty = lastTier ? (lastTier.maxQty ? lastTier.maxQty + 1 : lastTier.minQty + 100) : 1;
+
+            packaging[index].priceTiers.push({
+                minQty: newMinQty,
+                maxQty: null,
+                price: 0,
+                buyUnit: packaging[index].unit,
+                moq: newMinQty,
+                setupFee: 0
+            });
+
+            CoManufacturing.savePackaging(inventory);
+            renderDetailPanel(itemId);
+        }
+
+        function removePriceTier(itemId, tierIndex) {
+            const index = packaging.findIndex(i => i.id === itemId);
+            if (index === -1) return;
+
+            if (confirm('Remove this price tier?')) {
+                packaging[index].priceTiers.splice(tierIndex, 1);
+                CoManufacturing.savePackaging(inventory);
+                renderDetailPanel(itemId);
+            }
+        }
+
+        function deleteItem(itemId) {
+            if (!confirm('Delete this packaging item? This cannot be undone.')) return;
+
+            CoManufacturing.deletePackagingItem(itemId);
+            packaging = CoManufacturing.getPackaging();
+            
+            selectedItemId = null;
+            renderItemsList();
+            
+            document.getElementById('detailPanel').innerHTML = `
+                <div class="detail-panel-empty">
+                    <div class="detail-panel-empty-icon">📦</div>
+                    <div>Select an item to view details</div>
+                </div>
+            `;
+        }
+
+        function addNewItem() {
+            const newItem = {
+                sku: '',
+                name: 'New Packaging Item',
+                vendor: '',
+                category: 'other',
+                leadTimeDays: 0,
+                priceTiers: [
+                    { minQty: 1, maxQty: null, price: 0, moq: 1, setupFee: 0 }
+                ],
+                notes: '',
+                lastUpdated: new Date().toLocaleString()
+            };
+            
+            const newId = CoManufacturing.addPackagingItem(newItem);
+            packaging = CoManufacturing.getPackaging();
+            
+            renderItemsList();
+            selectItem(newId);
+        }
+
+        function filterItems() {
+            renderItemsList();
+        }
+
+        function exportPackaging() {
+            const csv = [
+                ['SKU', 'Name', 'Vendor', 'Category', 'Lead Time (Days)', 'Price Tiers', 'Unit', 'Notes', 'Last Updated'].join(','),
+                ...packaging.map(item => [
+                    item.sku || '',
+                    `"${item.name}"`,
+                    item.vendor || '',
+                    item.category || 'other',
+                    item.leadTimeDays || 0,
+                    `"${item.priceTiers?.map(t => `${t.minQty}-${t.maxQty || '∞'}: $${t.price}`).join('; ') || ''}"`,
+                    item.unit || 'ea',
+                    `"${item.notes || ''}"`,
+                    item.lastUpdated || ''
+                ].join(','))
+            ].join('\n');
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `packaging_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+        }
+
+        // Attach vendor autocomplete
+        function attachVendorAutocomplete() {
+            const vendorInputs = document.querySelectorAll('.vendor-autocomplete');
+            vendorInputs.forEach(input => {
+                if (input.dataset.autocompleteAttached) return;
+                input.dataset.autocompleteAttached = 'true';
+                
+                new AutocompleteField({
+                    input: input,
+                    items: vendors,
+                    searchFields: ['name', 'contact', 'id'],
+                    displayField: 'name',
+                    placeholder: 'Search vendors...',
+                    getSecondaryText: (item) => item.id,
+                    minChars: 0,
+                    onSelect: (vendor) => {
+                        const itemId = input.dataset.itemId;
+                        updateField(itemId, 'vendor', vendor.name);
+                    }
+                });
+            });
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Don't intercept if user is typing in an input
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
+                return;
+            }
+            
+            const isMod = e.metaKey || e.ctrlKey;
+            
+            // Arrow key navigation
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                const currentIndex = packaging.findIndex(i => i.id === selectedItemId);
+                
+                if (e.key === 'ArrowDown' && currentIndex < packaging.length - 1) {
+                    selectItem(packaging[currentIndex + 1].id);
+                } else if (e.key === 'ArrowUp' && currentIndex > 0) {
+                    selectItem(packaging[currentIndex - 1].id);
+                } else if (e.key === 'ArrowDown' && currentIndex === -1 && packaging.length > 0) {
+                    // No selection, select first item
+                    selectItem(packaging[0].id);
+                }
+                return;
+            }
+            
+            // Delete key - remove selected item
+            if ((e.key === 'Delete' || e.key === 'Backspace') && selectedItemId) {
+                e.preventDefault();
+                deleteItem(selectedItemId);
+                return;
+            }
+            
+            // Enter - open/focus first field in detail panel
+            if (e.key === 'Enter' && selectedItemId) {
+                e.preventDefault();
+                const firstInput = document.querySelector('#detailPanel input');
+                if (firstInput) firstInput.focus();
+                return;
+            }
+            
+            // Escape - deselect
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                selectedItemId = null;
+                renderItemsList();
+                document.getElementById('detailPanel').innerHTML = `
+                    <div class="detail-panel-empty">
+                        <div class="detail-panel-empty-icon">📦</div>
+                        <div>Select an item to view details</div>
+                        <div style="color: #6b7280; font-size: 13px; margin-top: 12px;">Use ↑↓ arrow keys to navigate</div>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Command palette shortcuts
+            if (isMod && (e.key === 'e' || e.key === 'E')) {
+                e.preventDefault();
+                exportPackaging();
+            }
+            
+            if (isMod && (e.key === 'i' || e.key === 'I')) {
+                e.preventDefault();
+                addNewItem();
+            }
+            
+            if (isMod && (e.key === 'f' || e.key === 'F')) {
+                e.preventDefault();
+                document.getElementById('searchBox').focus();
+            }
+        });
+
+        // QR Code Scanner
+        let html5QrcodeScanner = null;
+
+        function openQRScanner() {
+            const modal = document.getElementById('qrScannerModal');
+            modal.style.display = 'flex';
+            
+            // Initialize scanner
+            html5QrcodeScanner = new Html5Qrcode("qrReader");
+            
+            html5QrcodeScanner.start(
+                { facingMode: "environment" }, // Use back camera
+                {
+                    fps: 10,
+                    qrbox: { width: 250, height: 250 }
+                },
+                onScanSuccess,
+                onScanFailure
+            ).catch(err => {
+                console.error("QR Scanner error:", err);
+                alert("Unable to start camera. Please check permissions.");
+            });
+        }
+
+        function closeQRScanner() {
+            if (html5QrcodeScanner) {
+                html5QrcodeScanner.stop().then(() => {
+                    html5QrcodeScanner = null;
+                }).catch(err => console.error("Error stopping scanner:", err));
+            }
+            
+            const modal = document.getElementById('qrScannerModal');
+            modal.style.display = 'none';
+            
+            // Clear result
+            document.getElementById('qrScanResult').style.display = 'none';
+        }
+
+        function onScanSuccess(decodedText, decodedResult) {
+            console.log("QR Code scanned:", decodedText);
+            
+            // Show result
+            document.getElementById('qrScanResultText').textContent = decodedText;
+            document.getElementById('qrScanResult').style.display = 'block';
+            
+            // Parse and create inventory item
+            parseQRCodeAndCreateItem(decodedText);
+            
+            // Close scanner after 1.5s
+            setTimeout(() => {
+                closeQRScanner();
+            }, 1500);
+        }
+
+        function onScanFailure(error) {
+            // Ignore scan failures (happens continuously while scanning)
+        }
+
+        function parseQRCodeAndCreateItem(qrData) {
+            let itemData = {
+                name: '',
+                sku: '',
+                vendor: '',
+                category: 'ingredients',
+                buyUnit: 'gal',
+                priceTiers: [{ minQty: 1, maxQty: null, price: 0, moq: 1, setupFee: 0 }],
+                leadTimeDays: 0,
+                notes: 'Added via QR scan'
+            };
+
+            try {
+                // Try parsing as JSON
+                const parsed = JSON.parse(qrData);
+                
+                itemData.name = parsed.name || parsed.product || parsed.item || 'Unknown Item';
+                itemData.sku = parsed.sku || parsed.barcode || parsed.id || '';
+                itemData.vendor = parsed.vendor || parsed.manufacturer || '';
+                
+                if (parsed.price) {
+                    itemData.priceTiers[0].price = parseFloat(parsed.price);
+                }
+                if (parsed.moq) {
+                    itemData.priceTiers[0].moq = parseInt(parsed.moq);
+                }
+                if (parsed.unit) {
+                    itemData.buyUnit = parsed.unit;
+                }
+                if (parsed.category) {
+                    itemData.category = parsed.category;
+                }
+            } catch (e) {
+                // Not JSON, check if it's a URL
+                if (qrData.startsWith('http://') || qrData.startsWith('https://')) {
+                    itemData.name = 'Product from ' + new URL(qrData).hostname;
+                    itemData.notes = 'URL: ' + qrData;
+                } else {
+                    // Treat as SKU/barcode
+                    itemData.name = 'Product ' + qrData;
+                    itemData.sku = qrData;
+                }
+            }
+
+            // Add to inventory
+            const newId = CoManufacturing.addPackagingItem(itemData);
+            
+            // Refresh and select new item
+            packaging = CoManufacturing.getPackaging();
+            renderItemsList();
+            selectItem(newId);
+            
+            // Show success notification
+            alert(`✓ Added "${itemData.name}" to inventory from QR code!`);
+        }
+
+        // Katana Sync via Make.com
+        async function syncFromKatana() {
+            const btn = document.getElementById('katanaSyncBtn');
+            const originalText = btn.textContent;
+            btn.textContent = '⏳ Syncing...';
+            btn.disabled = true;
+
+            try {
+                // Fetch katana-inventory.json written by webhook server
+                const response = await fetch('/katana-inventory.json');
+                
+                if (!response.ok) {
+                    throw new Error('No Katana sync data available. Run Make scenario first.');
+                }
+
+                const data = await response.json();
+                
+                if (!Array.isArray(data) || data.length === 0) {
+                    alert('No inventory data from Katana. Make sure Make scenario has run at least once.');
+                    return;
+                }
+
+                // Merge with existing inventory
+                const currentInventory = CoManufacturing.getPackaging();
+                const katanaIds = new Set(data.map(item => item.id));
+                
+                // Keep non-Katana items, replace/add Katana items
+                const mergedInventory = [
+                    ...currentInventory.filter(item => !item.id.startsWith('KAT-') && !katanaIds.has(item.id)),
+                    ...data
+                ];
+
+                // Save merged inventory
+                CoManufacturing.savePackaging(mergedInventory);
+                
+                // Refresh UI
+                packaging = CoManufacturing.getPackaging();
+                renderItemsList();
+                
+                // Update stats
+                document.getElementById('totalItems').textContent = packaging.length;
+                
+                btn.textContent = '✓ Synced!';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                }, 2000);
+
+                alert(`✓ Synced ${data.length} items from Katana!\n\nTotal inventory: ${packaging.length} items`);
+                
+            } catch (error) {
+                console.error('Katana sync error:', error);
+                btn.textContent = '✗ Sync Failed';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                }, 2000);
+                
+                alert(`Sync failed: ${error.message}\n\nMake sure:\n1. Webhook server is running (port 9003)\n2. Make scenario has run at least once\n3. katana-inventory.json exists`);
+            }
+        }
+
+        // Auto-check for Katana sync on page load
+        window.addEventListener('load', async () => {
+            try {
+                const response = await fetch('/katana-inventory.json');
+                if (response.ok) {
+                    const data = await response.json();
+                    if (Array.isArray(data) && data.length > 0) {
+                        // Check if we have newer data than localStorage
+                        const lastSync = localStorage.getItem('katana_last_sync');
+                        const fileModified = response.headers.get('last-modified');
+                        
+                        if (!lastSync || new Date(fileModified) > new Date(lastSync)) {
+                            console.log('New Katana data available - syncing automatically');
+                            // Auto-sync silently
+                            const currentInventory = CoManufacturing.getPackaging();
+                            const katanaIds = new Set(data.map(item => item.id));
+                            const mergedInventory = [
+                                ...currentInventory.filter(item => !item.id.startsWith('KAT-') && !katanaIds.has(item.id)),
+                                ...data
+                            ];
+                            CoManufacturing.savePackaging(mergedInventory);
+                            localStorage.setItem('katana_last_sync', new Date().toISOString());
+                            packaging = CoManufacturing.getPackaging();
+                            renderItemsList();
+                            
+                            // Show subtle notification
+                            const btn = document.getElementById('katanaSyncBtn');
+                            const originalText = btn.textContent;
+                            btn.textContent = '✓ Auto-synced';
+                            setTimeout(() => {
+                                btn.textContent = originalText;
+                            }, 3000);
+                        }
+                    }
+                }
+            } catch (error) {
+                // Silent fail - no Katana data yet
+                console.log('No Katana sync data available yet');
+            }
+        });
+
+        // Initialize command palette
+        CommandPalette.init([
+            { name: 'New Packaging Item', description: 'Add a new packaging item', action: addNewItem, shortcut: 'Cmd+I' },
+            { name: 'Export Packaging', description: 'Download as CSV', action: exportInventory, shortcut: 'Cmd+E' },
+            { name: 'Search', description: 'Focus search box', action: () => document.getElementById('searchBox').focus(), shortcut: 'Cmd+F' },
+            { name: 'Delete Current Item', description: 'Remove selected packaging item', action: () => selectedItemId && deleteItem(selectedItemId), shortcut: 'Delete' },
+            { name: 'Go to Batch Calculator', description: 'Open batch calculator page', action: () => window.location.href = 'batch-calculator-v4.html' },
+            { name: 'Go to Co-Packing', description: 'Open co-packing calculator', action: () => window.location.href = 'copacking-calculator.html' },
+            { name: 'Go to Services', description: 'Manage services', action: () => window.location.href = 'services.html' }
+        ]);
+
+        // Batch info banner update
+        function updateBatchInfoBanner() {
+            const batch = CoManufacturing.getCurrentBatch();
+            const banner = document.getElementById('batchInfoBanner');
+            
+            if (!batch) {
+                banner.style.display = 'none';
+                return;
+            }
+            
+            banner.style.display = 'block';
+            document.getElementById('batchInfoName').textContent = batch.formulaName || 'Unnamed Formula';
+            document.getElementById('batchInfoSize').textContent = `${batch.batchSize} ${batch.batchSizeUnit}`;
+            document.getElementById('batchInfoYield').textContent = batch.baseYield ? `${batch.baseYield} gal yield` : '—';
+            
+            const time = new Date(batch.timestamp);
+            const timeStr = time.toLocaleString();
+            document.getElementById('batchInfoTime').textContent = `Saved ${timeStr}`;
+        }
+
+        // Initialize
+        renderItemsList();
+        if (itemIdFromUrl) {
+            selectItem(itemIdFromUrl);
+        }
+        updateBatchInfoBanner();
+    </script>
+    </div>
+</body>
+</html>

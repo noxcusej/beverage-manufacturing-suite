@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Services - Co-Manufacturing Calculator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f6f8;
+            color: #1a1a1a;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        /* Fixed Professional Navigation */
+        .app-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 64px;
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        }
+
+        .app-branding {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-right: 32px;
+            width: 280px;
+            flex-shrink: 0;
+        }
+
+        .app-logo {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .app-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #111827;
+            line-height: 1.2;
+        }
+
+        .app-subtitle {
+            font-size: 12px;
+            color: #6b7280;
+            line-height: 1;
+            margin-top: 2px;
+        }
+
+        .app-nav {
+            display: flex;
+            gap: 2px;
+            padding: 4px;
+            background: #f9fafb;
+            border-radius: 8px;
+            margin-right: auto;
+        }
+
+        .app-nav a {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 32px;
+            padding: 0 20px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #6b7280;
+            text-decoration: none;
+            border-radius: 6px;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+        }
+
+        .app-nav a:hover {
+            color: #111827;
+            background: rgba(0, 0, 0, 0.04);
+        }
+
+        .app-nav a.active {
+            color: #2563eb;
+            background: white;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        }
+
+        .app-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-left: 24px;
+        }
+
+        .app-content {
+            padding-top: 64px;
+        }
+
+        .header {
+            background: white;
+            border-bottom: 1px solid #e1e4e8;
+            padding: 16px 24px;
+            position: sticky;
+            top: 64px;
+            z-index: 90;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .header-subtitle {
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .main-container {
+            display: grid;
+            grid-template-columns: 400px 1fr;
+            height: calc(100vh - 64px);
+            overflow: hidden;
+        }
+
+        /* Left Panel - Service List */
+        .items-panel {
+            background: white;
+            border-right: 1px solid #e1e4e8;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .items-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #e1e4e8;
+            background: #fafbfc;
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            margin-bottom: 12px;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .items-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .item-card {
+            padding: 16px 20px;
+            border-bottom: 1px solid #f3f4f6;
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+
+        .item-card:hover {
+            background: #f9fafb;
+        }
+
+        .item-card.active {
+            background: #eff6ff;
+            border-left: 3px solid #2563eb;
+            padding-left: 17px;
+        }
+
+        .item-name {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .item-meta {
+            font-size: 12px;
+            color: #6b7280;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+
+        .item-stock {
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .fee-badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            background: #e0e7ff;
+            color: #4338ca;
+        }
+
+        .fee-badge.fixed {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .fee-badge.per-unit {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .fee-badge.hourly {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        /* Right Panel - Detail View */
+        .detail-panel {
+            background: white;
+            overflow-y: auto;
+            padding: 32px;
+        }
+
+        .detail-panel-empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #9ca3af;
+        }
+
+        .detail-panel-empty-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+
+        .detail-header {
+            margin-bottom: 32px;
+        }
+
+        .detail-title {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .detail-subtitle {
+            font-size: 14px;
+            color: #6b7280;
+        }
+
+        .detail-section {
+            margin-bottom: 28px;
+        }
+
+        .detail-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .detail-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+
+        .detail-value.large {
+            font-size: 32px;
+        }
+
+        .detail-value input,
+        .detail-value select,
+        .detail-value textarea {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            font-family: inherit;
+        }
+
+        .detail-value textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+
+        .detail-value input:focus,
+        .detail-value select:focus,
+        .detail-value textarea:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .input-group {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 8px;
+        }
+
+        .input-group select {
+            width: 100px;
+        }
+
+        .price-tiers {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .price-tier {
+            padding: 12px 16px;
+            border-bottom: 1px solid #e5e7eb;
+            display: grid;
+            grid-template-columns: 1.5fr 1fr 1fr 40px;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .price-tier:last-child {
+            border-bottom: none;
+        }
+
+        .price-tier-header {
+            background: #fafbfc;
+            font-weight: 600;
+            font-size: 11px;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .tier-input {
+            padding: 6px 8px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 13px;
+            width: 100%;
+        }
+
+        .tier-input:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+        }
+
+        .btn {
+            padding: 8px 14px;
+            border: 1px solid #d1d5db;
+            background: white;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: #374151;
+            font-weight: 500;
+            text-decoration: none;
+        }
+
+        .btn:hover {
+            background: #f9fafb;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+            border-color: #2563eb;
+        }
+
+        .btn-primary:hover {
+            background: #1d4ed8;
+        }
+
+        .btn-small {
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+
+        .btn-danger {
+            background: white;
+            color: #dc2626;
+            border-color: #fca5a5;
+        }
+
+        .btn-danger:hover {
+            background: #fef2f2;
+        }
+
+        .btn-icon {
+            padding: 6px;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .divider {
+            height: 1px;
+            background: #e5e7eb;
+            margin: 32px 0;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: #fafbfc;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 16px;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: #6b7280;
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1a1a1a;
+        }
+
+        input[type="number"] {
+            appearance: textfield;
+            -moz-appearance: textfield;
+        }
+
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <!-- Fixed Professional Navigation -->
+    <header class="app-header">
+        <div class="app-branding">
+            <div class="app-logo">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M4 10L8 6L12 10L16 6" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M4 14L8 10L12 14L16 10" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+            <div>
+                <div class="app-title">Co-Manufacturing Suite</div>
+                <div class="app-subtitle">Batch & Packaging Calculator</div>
+            </div>
+        </div>
+        
+        <nav class="app-nav">
+            <a href="batch-calculator-v4.html">Batch Calculator</a>
+            <a href="copacking-calculator.html">Co-Packing</a>
+            <a href="inventory.html">Inventory</a>
+            <a href="services.html" class="active">Services</a>
+            <a href="packaging.html">Packaging</a>
+            <a href="mission-control.html" style="margin-left: auto; background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); color: white; border-radius: 6px; padding: 6px 12px;">🎛️ Mission Control</a>
+        </nav>
+        
+        <div class="app-actions">
+            <button class="btn" onclick="exportServices()" title="Cmd/Ctrl + E">📊 Export</button>
+        </div>
+    </header>
+
+    <!-- Batch Info Banner -->
+    <div id="batchInfoBanner" style="display: none; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; padding: 12px 24px; border-bottom: 1px solid #1d4ed8; position: sticky; top: 64px; z-index: 999;">
+        <div style="max-width: 1600px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 20px; font-size: 13px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="opacity: 0.9;">📦 Current Batch:</span>
+                    <strong id="batchInfoName">—</strong>
+                </div>
+                <div style="opacity: 0.8;">|</div>
+                <div id="batchInfoSize">—</div>
+                <div style="opacity: 0.8;">|</div>
+                <div id="batchInfoYield">—</div>
+                <div style="opacity: 0.8;">|</div>
+                <div style="font-size: 11px; opacity: 0.7;" id="batchInfoTime">—</div>
+            </div>
+            <button onclick="CoManufacturing.clearBatch(); updateBatchInfoBanner();" style="padding: 4px 12px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.15); border-radius: 4px; color: white; font-size: 12px; cursor: pointer; font-weight: 500;">
+                ✕ Clear Batch
+            </button>
+        </div>
+    </div>
+
+    <div class="app-content">
+    <div class="main-container">
+        <!-- Left Panel: Services List -->
+        <div class="items-panel">
+            <div class="items-header">
+                <input type="text" class="search-box" id="searchBox" placeholder="Search services..." onkeyup="filterServices()">
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">Total Services</div>
+                        <div class="stat-value" id="totalServices">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Providers</div>
+                        <div class="stat-value" id="providerCount">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Avg Lead Time</div>
+                        <div class="stat-value" id="avgLeadTime" style="font-size: 18px;">0d</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="items-list" id="servicesList">
+                <!-- Populated by JS -->
+            </div>
+            
+            <div style="padding: 16px; border-top: 1px solid #e5e7eb; flex-shrink: 0;">
+                <button class="btn btn-primary" onclick="addNewService()" title="Cmd/Ctrl + I" style="width: 100%; justify-content: center;">
+                    + New Service
+                </button>
+            </div>
+        </div>
+
+        <!-- Right Panel: Detail View -->
+        <div class="detail-panel" id="detailPanel">
+            <div class="detail-panel-empty">
+                <div class="detail-panel-empty-icon">💼</div>
+                <div>Select a service to view details</div>
+                <div style="color: #6b7280; font-size: 13px; margin-top: 12px;">
+                    Use ↑↓ arrow keys to navigate • Press Enter to edit • Delete to remove
+                </div>
+                <div style="color: #6b7280; font-size: 13px; margin-top: 8px;">
+                    <kbd style="padding: 2px 6px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 4px; font-size: 11px;">Cmd+I</kbd> New service • 
+                    <kbd style="padding: 2px 6px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 4px; font-size: 11px;">Cmd+F</kbd> Search • 
+                    <kbd style="padding: 2px 6px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 4px; font-size: 11px;">Cmd+K</kbd> Commands
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="shared-data.js"></script>
+    <script src="autocomplete-component.js"></script>
+    <script src="command-palette.js"></script>
+    <script>
+        let services = CoManufacturing.getServices();
+        const vendors = CoManufacturing.getVendors();
+        let selectedServiceId = null;
+
+        // Listen for data changes
+        window.addEventListener('comanufacturing:datachange', (e) => {
+            if (e.detail.dataType === 'services') {
+                services = CoManufacturing.getServices();
+                renderServicesList();
+                if (selectedServiceId) {
+                    renderDetailPanel(selectedServiceId);
+                }
+            }
+        });
+
+        // Check URL for service parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const serviceIdFromUrl = urlParams.get('service');
+
+        function renderServicesList() {
+            const listDiv = document.getElementById('servicesList');
+            const searchQuery = document.getElementById('searchBox').value.toLowerCase();
+            
+            const filteredServices = searchQuery ? 
+                services.filter(service => 
+                    service.name.toLowerCase().includes(searchQuery) ||
+                    (service.sku && service.sku.toLowerCase().includes(searchQuery)) ||
+                    (service.provider && service.provider.toLowerCase().includes(searchQuery))
+                ) : services;
+
+            listDiv.innerHTML = filteredServices.map(service => {
+                const isActive = service.id === selectedServiceId;
+                const feeTypeClass = service.feeType?.toLowerCase() || 'fixed';
+                const feeTypeDisplay = service.feeType || 'Fixed';
+                
+                return `
+                    <div class="item-card ${isActive ? 'active' : ''}" onclick="selectService('${service.id}')">
+                        <div class="item-name">${service.name}</div>
+                        <div class="item-meta">
+                            <span>${service.sku || 'No SKU'}</span>
+                            <span>${service.provider || 'No provider'}</span>
+                        </div>
+                        <div class="item-stock">
+                            <span class="fee-badge ${feeTypeClass}">${feeTypeDisplay}</span>
+                            ${service.leadTimeDays ? `<span>${service.leadTimeDays}d lead</span>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            updateStats();
+        }
+
+        function updateStats() {
+            document.getElementById('totalServices').textContent = services.length;
+            
+            const uniqueProviders = new Set(services.map(s => s.provider).filter(Boolean));
+            document.getElementById('providerCount').textContent = uniqueProviders.size;
+            
+            const avgLead = services.length > 0 ? 
+                Math.round(services.reduce((sum, s) => sum + (s.leadTimeDays || 0), 0) / services.length) : 0;
+            document.getElementById('avgLeadTime').textContent = avgLead + 'd';
+        }
+
+        function selectService(serviceId) {
+            selectedServiceId = serviceId;
+            renderServicesList();
+            renderDetailPanel(serviceId);
+            
+            // Update URL without reload
+            const newUrl = new URL(window.location);
+            newUrl.searchParams.set('service', serviceId);
+            window.history.pushState({}, '', newUrl);
+        }
+
+        function renderDetailPanel(serviceId) {
+            const service = services.find(s => s.id === serviceId);
+            if (!service) return;
+
+            const detailPanel = document.getElementById('detailPanel');
+            detailPanel.innerHTML = `
+                <!-- Header -->
+                <div class="detail-header">
+                    <div class="detail-title">${service.name}</div>
+                    <div class="detail-subtitle">Last updated: ${service.lastUpdated || 'Never'}</div>
+                </div>
+
+                <!-- Basic Info -->
+                <div class="detail-section">
+                    <div class="detail-label">SKU / Service Code</div>
+                    <div class="detail-value">
+                        <input type="text" value="${service.sku || ''}" onchange="updateField('${service.id}', 'sku', this.value)">
+                    </div>
+                </div>
+
+                <div class="detail-section">
+                    <div class="detail-label">Service Name</div>
+                    <div class="detail-value">
+                        <input type="text" value="${service.name}" onchange="updateField('${service.id}', 'name', this.value)">
+                    </div>
+                </div>
+
+                <div class="detail-section">
+                    <div class="detail-label">Provider / Vendor</div>
+                    <div class="detail-value">
+                        <input type="text" value="${service.provider || ''}" onchange="updateField('${service.id}', 'provider', this.value)" class="provider-autocomplete" data-service-id="${service.id}">
+                    </div>
+                </div>
+
+                <div class="detail-section">
+                    <div class="detail-label">Fee Type</div>
+                    <div class="detail-value">
+                        <select onchange="updateField('${service.id}', 'feeType', this.value)">
+                            <option value="fixed" ${service.feeType === 'fixed' ? 'selected' : ''}>Fixed</option>
+                            <option value="per-unit" ${service.feeType === 'per-unit' ? 'selected' : ''}>Per Unit</option>
+                            <option value="hourly" ${service.feeType === 'hourly' ? 'selected' : ''}>Hourly</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="detail-section">
+                    <div class="detail-label">Lead Time (Days)</div>
+                    <div class="detail-value">
+                        <input type="number" value="${service.leadTimeDays || 0}" step="1" min="0" onchange="updateField('${service.id}', 'leadTimeDays', parseInt(this.value))">
+                    </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <!-- Price Tiers -->
+                <div class="detail-section">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <div class="detail-label" style="margin-bottom: 0;">Price Tiers</div>
+                        <button class="btn btn-small" onclick="addPriceTier('${service.id}')">+ Add Tier</button>
+                    </div>
+                    
+                    <div class="price-tiers">
+                        <div class="price-tier price-tier-header">
+                            <div>QUANTITY RANGE</div>
+                            <div>PRICE</div>
+                            <div>MOQ</div>
+                            <div></div>
+                        </div>
+                        ${renderPriceTiers(service)}
+                    </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <!-- Notes -->
+                <div class="detail-section">
+                    <div class="detail-label">Notes</div>
+                    <div class="detail-value">
+                        <textarea onchange="updateField('${service.id}', 'notes', this.value)" placeholder="Additional notes about this service...">${service.notes || ''}</textarea>
+                    </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <!-- Actions -->
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-danger" onclick="deleteService('${service.id}')" style="flex: 1;">
+                        Delete Service
+                    </button>
+                </div>
+            `;
+
+            // Attach provider autocomplete
+            attachProviderAutocomplete();
+        }
+
+        function renderPriceTiers(service) {
+            if (!service.priceTiers || service.priceTiers.length === 0) {
+                return '<div style="padding: 20px; text-align: center; color: #9ca3af; font-size: 13px;">No price tiers defined</div>';
+            }
+
+            return service.priceTiers.map((tier, index) => `
+                <div class="price-tier">
+                    <div style="font-size: 13px;">
+                        <input type="number" class="tier-input" value="${tier.minQty}" placeholder="Min" onchange="updatePriceTier('${service.id}', ${index}, 'minQty', parseInt(this.value))" style="width: 60px; display: inline-block; margin-right: 4px;">
+                        -
+                        <input type="number" class="tier-input" value="${tier.maxQty || ''}" placeholder="∞" onchange="updatePriceTier('${service.id}', ${index}, 'maxQty', this.value ? parseInt(this.value) : null)" style="width: 60px; display: inline-block; margin-left: 4px;">
+                    </div>
+                    <div>
+                        <input type="number" class="tier-input" value="${tier.price}" step="0.0001" placeholder="0.00" onchange="updatePriceTier('${service.id}', ${index}, 'price', parseFloat(this.value))">
+                    </div>
+                    <div>
+                        <input type="number" class="tier-input" value="${tier.moq || tier.minQty}" step="1" placeholder="1" onchange="updatePriceTier('${service.id}', ${index}, 'moq', parseInt(this.value))">
+                    </div>
+                    <div>
+                        <button class="btn btn-icon btn-small" onclick="removePriceTier('${service.id}', ${index})" style="color: #dc2626;">×</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateField(serviceId, field, value) {
+            const index = services.findIndex(s => s.id === serviceId);
+            if (index === -1) return;
+
+            services[index][field] = value;
+            services[index].lastUpdated = new Date().toLocaleString();
+            
+            CoManufacturing.saveServices(services);
+            renderServicesList();
+            renderDetailPanel(serviceId);
+        }
+
+        function updatePriceTier(serviceId, tierIndex, field, value) {
+            const index = services.findIndex(s => s.id === serviceId);
+            if (index === -1) return;
+
+            if (!services[index].priceTiers) {
+                services[index].priceTiers = [];
+            }
+
+            services[index].priceTiers[tierIndex][field] = value;
+            services[index].lastUpdated = new Date().toLocaleString();
+            
+            CoManufacturing.saveServices(services);
+            renderDetailPanel(serviceId);
+        }
+
+        function addPriceTier(serviceId) {
+            const index = services.findIndex(s => s.id === serviceId);
+            if (index === -1) return;
+
+            if (!services[index].priceTiers) {
+                services[index].priceTiers = [];
+            }
+
+            const lastTier = services[index].priceTiers[services[index].priceTiers.length - 1];
+            const newMinQty = lastTier ? (lastTier.maxQty ? lastTier.maxQty + 1 : lastTier.minQty + 100) : 1;
+
+            services[index].priceTiers.push({
+                minQty: newMinQty,
+                maxQty: null,
+                price: 0,
+                moq: newMinQty,
+                setupFee: 0
+            });
+
+            CoManufacturing.saveServices(services);
+            renderDetailPanel(serviceId);
+        }
+
+        function removePriceTier(serviceId, tierIndex) {
+            const index = services.findIndex(s => s.id === serviceId);
+            if (index === -1) return;
+
+            if (confirm('Remove this price tier?')) {
+                services[index].priceTiers.splice(tierIndex, 1);
+                CoManufacturing.saveServices(services);
+                renderDetailPanel(serviceId);
+            }
+        }
+
+        function deleteService(serviceId) {
+            if (!confirm('Delete this service? This cannot be undone.')) return;
+
+            CoManufacturing.deleteService(serviceId);
+            services = CoManufacturing.getServices();
+            
+            selectedServiceId = null;
+            renderServicesList();
+            
+            document.getElementById('detailPanel').innerHTML = `
+                <div class="detail-panel-empty">
+                    <div class="detail-panel-empty-icon">💼</div>
+                    <div>Select a service to view details</div>
+                </div>
+            `;
+        }
+
+        function addNewService() {
+            // Generate next SKU number
+            const existingSkus = services.map(s => s.sku).filter(sku => sku && sku.startsWith('SVC-'));
+            const numbers = existingSkus.map(sku => {
+                const match = sku.match(/SVC-(\d+)/);
+                return match ? parseInt(match[1]) : 0;
+            });
+            const nextNumber = numbers.length > 0 ? Math.max(...numbers) + 1 : 1;
+            const newSku = `SVC-${String(nextNumber).padStart(3, '0')}`;
+
+            const newService = {
+                sku: newSku,
+                name: 'New Service',
+                provider: '',
+                feeType: 'fixed',
+                leadTimeDays: 0,
+                priceTiers: [
+                    { minQty: 1, maxQty: null, price: 0, moq: 1, setupFee: 0 }
+                ],
+                notes: '',
+                lastUpdated: new Date().toLocaleString()
+            };
+            
+            const newId = CoManufacturing.addService(newService);
+            services = CoManufacturing.getServices();
+            
+            renderServicesList();
+            selectService(newId);
+        }
+
+        function filterServices() {
+            renderServicesList();
+        }
+
+        function exportServices() {
+            const csv = [
+                ['SKU', 'Service Name', 'Provider', 'Fee Type', 'Lead Time Days', 'Price Tiers', 'Notes', 'Last Updated'].join(','),
+                ...services.map(service => [
+                    service.sku || '',
+                    `"${service.name}"`,
+                    service.provider || '',
+                    service.feeType || 'fixed',
+                    service.leadTimeDays || 0,
+                    `"${service.priceTiers?.map(t => `${t.minQty}-${t.maxQty || '∞'}: $${t.price}`).join('; ') || ''}"`,
+                    `"${(service.notes || '').replace(/"/g, '""')}"`,
+                    service.lastUpdated || ''
+                ].join(','))
+            ].join('\n');
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `services_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+        }
+
+        // Attach provider autocomplete
+        function attachProviderAutocomplete() {
+            const providerInputs = document.querySelectorAll('.provider-autocomplete');
+            providerInputs.forEach(input => {
+                if (input.dataset.autocompleteAttached) return;
+                input.dataset.autocompleteAttached = 'true';
+                
+                new AutocompleteField({
+                    input: input,
+                    items: vendors,
+                    searchFields: ['name', 'contact', 'id'],
+                    displayField: 'name',
+                    placeholder: 'Search providers...',
+                    getSecondaryText: (item) => item.id,
+                    minChars: 0,
+                    onSelect: (vendor) => {
+                        const serviceId = input.dataset.serviceId;
+                        updateField(serviceId, 'provider', vendor.name);
+                    }
+                });
+            });
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Don't intercept if user is typing in an input
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
+                return;
+            }
+            
+            const isMod = e.metaKey || e.ctrlKey;
+            
+            // Arrow key navigation
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                const currentIndex = services.findIndex(s => s.id === selectedServiceId);
+                
+                if (e.key === 'ArrowDown' && currentIndex < services.length - 1) {
+                    selectService(services[currentIndex + 1].id);
+                } else if (e.key === 'ArrowUp' && currentIndex > 0) {
+                    selectService(services[currentIndex - 1].id);
+                } else if (e.key === 'ArrowDown' && currentIndex === -1 && services.length > 0) {
+                    // No selection, select first service
+                    selectService(services[0].id);
+                }
+                return;
+            }
+            
+            // Delete key - remove selected service
+            if ((e.key === 'Delete' || e.key === 'Backspace') && selectedServiceId) {
+                e.preventDefault();
+                deleteService(selectedServiceId);
+                return;
+            }
+            
+            // Enter - open/focus first field in detail panel
+            if (e.key === 'Enter' && selectedServiceId) {
+                e.preventDefault();
+                const firstInput = document.querySelector('#detailPanel input');
+                if (firstInput) firstInput.focus();
+                return;
+            }
+            
+            // Escape - deselect
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                selectedServiceId = null;
+                renderServicesList();
+                document.getElementById('detailPanel').innerHTML = `
+                    <div class="detail-panel-empty">
+                        <div class="detail-panel-empty-icon">💼</div>
+                        <div>Select a service to view details</div>
+                        <div style="color: #6b7280; font-size: 13px; margin-top: 12px;">Use ↑↓ arrow keys to navigate</div>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Command palette shortcuts
+            if (isMod && (e.key === 'e' || e.key === 'E')) {
+                e.preventDefault();
+                exportServices();
+            }
+            
+            if (isMod && (e.key === 'i' || e.key === 'I')) {
+                e.preventDefault();
+                addNewService();
+            }
+            
+            if (isMod && (e.key === 'f' || e.key === 'F')) {
+                e.preventDefault();
+                document.getElementById('searchBox').focus();
+            }
+        });
+
+        // Initialize command palette
+        CommandPalette.init([
+            { name: 'New Service', description: 'Add a new service', action: addNewService, shortcut: 'Cmd+I' },
+            { name: 'Export Services', description: 'Download as CSV', action: exportServices, shortcut: 'Cmd+E' },
+            { name: 'Search', description: 'Focus search box', action: () => document.getElementById('searchBox').focus(), shortcut: 'Cmd+F' },
+            { name: 'Delete Current Service', description: 'Remove selected service', action: () => selectedServiceId && deleteService(selectedServiceId), shortcut: 'Delete' },
+            { name: 'Go to Batch Calculator', description: 'Open batch calculator page', action: () => window.location.href = 'batch-calculator-v4.html' },
+            { name: 'Go to Co-Packing', description: 'Open co-packing calculator', action: () => window.location.href = 'copacking-calculator.html' },
+            { name: 'Go to Inventory', description: 'Manage inventory items', action: () => window.location.href = 'inventory.html' },
+            { name: 'Go to Packaging', description: 'Manage packaging materials', action: () => window.location.href = 'packaging.html' }
+        ]);
+
+        // Batch info banner update
+        function updateBatchInfoBanner() {
+            const batch = CoManufacturing.getCurrentBatch();
+            const banner = document.getElementById('batchInfoBanner');
+            
+            if (!batch) {
+                banner.style.display = 'none';
+                return;
+            }
+            
+            banner.style.display = 'block';
+            document.getElementById('batchInfoName').textContent = batch.formulaName || 'Unnamed Formula';
+            document.getElementById('batchInfoSize').textContent = `${batch.batchSize} ${batch.batchSizeUnit}`;
+            document.getElementById('batchInfoYield').textContent = batch.baseYield ? `${batch.baseYield} gal yield` : '—';
+            
+            const time = new Date(batch.timestamp);
+            const timeStr = time.toLocaleString();
+            document.getElementById('batchInfoTime').textContent = `Saved ${timeStr}`;
+        }
+
+        // Initialize
+        renderServicesList();
+        if (serviceIdFromUrl) {
+            selectService(serviceIdFromUrl);
+        }
+        updateBatchInfoBanner();
+    </script>
+    </div>
+</body>
+</html>

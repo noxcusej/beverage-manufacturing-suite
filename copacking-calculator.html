@@ -1,0 +1,1942 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Co-Packing & Packaging Calculator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f6f8;
+            color: #1a1a1a;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        /* Fixed Professional Navigation */
+        .app-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 64px;
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        }
+
+        .app-branding {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-right: 32px;
+            width: 280px;
+            flex-shrink: 0;
+        }
+
+        .app-logo {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .app-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #111827;
+            line-height: 1.2;
+        }
+
+        .app-subtitle {
+            font-size: 12px;
+            color: #6b7280;
+            line-height: 1;
+            margin-top: 2px;
+        }
+
+        .app-nav {
+            display: flex;
+            gap: 2px;
+            padding: 4px;
+            background: #f9fafb;
+            border-radius: 8px;
+            margin-right: auto;
+        }
+
+        .app-nav a {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 32px;
+            padding: 0 20px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #6b7280;
+            text-decoration: none;
+            border-radius: 6px;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+        }
+
+        .app-nav a:hover {
+            color: #111827;
+            background: rgba(0, 0, 0, 0.04);
+        }
+
+        .app-nav a.active {
+            color: #2563eb;
+            background: white;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        }
+
+        .app-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-left: 24px;
+        }
+
+        .app-content {
+            padding-top: 64px;
+        }
+
+        .header {
+            background: white;
+            border-bottom: 1px solid #e1e4e8;
+            padding: 16px 24px;
+            position: sticky;
+            top: 64px;
+            z-index: 90;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .header-subtitle {
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .section {
+            background: white;
+            border: 1px solid #e1e4e8;
+            border-radius: 8px;
+            overflow: visible;
+            margin-bottom: 20px;
+        }
+
+        .section-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #e1e4e8;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #fafbfc;
+        }
+
+        .section-title {
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        .section-body {
+            padding: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 6px;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: border-color 0.15s;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        select:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        table input[type="text"],
+        table input[type="number"],
+        table select {
+            padding: 6px 8px;
+            font-size: 13px;
+        }
+
+        input[type="number"] {
+            appearance: textfield;
+            -moz-appearance: textfield;
+        }
+
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            appearance: none;
+            margin: 0;
+        }
+
+        .input-with-unit {
+            display: flex;
+            gap: 8px;
+        }
+
+        .input-with-unit input {
+            flex: 1;
+        }
+
+        .input-with-unit select {
+            width: 80px;
+        }
+
+        .btn {
+            padding: 8px 14px;
+            border: 1px solid #d1d5db;
+            background: white;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: #374151;
+            font-weight: 500;
+        }
+
+        .btn:hover {
+            background: #f9fafb;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+            border-color: #2563eb;
+        }
+
+        .btn-primary:hover {
+            background: #1d4ed8;
+        }
+
+        .btn-small {
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+
+        .btn-danger {
+            background: white;
+            color: #dc2626;
+            border-color: #fca5a5;
+        }
+
+        .btn-danger:hover {
+            background: #fef2f2;
+        }
+
+        /* Autocomplete Styling - copied from batch calculator */
+        .autocomplete-container {
+            position: relative;
+            width: 100%;
+        }
+
+        .autocomplete-results {
+            position: fixed;
+            background: white;
+            border: 2px solid #2563eb;
+            border-top: none;
+            border-radius: 0 0 6px 6px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+            max-height: 400px;
+            overflow-y: auto;
+            z-index: 9999;
+            display: none;
+        }
+
+        .autocomplete-results.active {
+            display: block;
+        }
+
+        .autocomplete-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 2px solid #db2777;
+            border-top: none;
+            border-radius: 0 0 6px 6px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 9999;
+            margin-top: -1px;
+        }
+
+        .autocomplete-empty {
+            padding: 12px;
+            text-align: center;
+            color: #9ca3af;
+            font-size: 13px;
+        }
+
+        table {
+            position: relative;
+            z-index: 1;
+        }
+
+        tbody tr {
+            position: relative;
+            z-index: 1;
+        }
+
+        tbody tr:has(.autocomplete-container) {
+            position: relative;
+            z-index: 10;
+        }
+
+        .autocomplete-item {
+            padding: 10px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #f3f4f6;
+            font-size: 13px;
+        }
+
+        .autocomplete-item:hover {
+            background: #f9fafb;
+        }
+
+        .autocomplete-item:last-child {
+            border-bottom: none;
+        }
+
+        .autocomplete-item-name {
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+
+        .autocomplete-item-meta {
+            font-size: 12px;
+            color: #6b7280;
+        }
+
+        .autocomplete-create {
+            padding: 10px 12px;
+            background: #f0f9ff;
+            border-top: 2px solid #bae6fd;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            color: #1e40af;
+        }
+
+        .autocomplete-create:hover {
+            background: #e0f2fe;
+        }
+
+        .autocomplete-empty {
+            padding: 20px;
+            text-align: center;
+            color: #9ca3af;
+            font-size: 13px;
+        }
+
+        /* Table styling - matching batch calculator */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        thead {
+            background: #f9fafb;
+            border-bottom: 2px solid #e5e7eb;
+        }
+
+        th {
+            padding: 10px 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #6b7280;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+        }
+
+        th:not(:first-child) {
+            text-align: right;
+        }
+
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #f3f4f6;
+        }
+
+        td:not(:first-child) {
+            text-align: right;
+        }
+
+        tbody tr {
+            transition: background 0.1s;
+        }
+
+        tbody tr:hover {
+            background: #fafbfc;
+        }
+
+        tfoot {
+            background: #f9fafb;
+            border-top: 2px solid #e5e7eb;
+        }
+
+        tfoot td {
+            padding: 12px;
+        }
+
+        .cost-summary {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .cost-card {
+            background: #fafbfc;
+            border: 1px solid #e1e4e8;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .cost-card-label {
+            font-size: 11px;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .cost-card-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1a1a1a;
+            line-height: 1.2;
+        }
+
+        .cost-card-subtitle {
+            font-size: 13px;
+            color: #6b7280;
+            margin-top: 8px;
+            line-height: 1.4;
+        }
+
+        .sku-link {
+            color: #2563eb;
+            text-decoration: none;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .sku-link:hover {
+            text-decoration: underline;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-success {
+            background: #d1fae5;
+            color: #059669;
+        }
+
+        .badge-warning {
+            background: #fef3c7;
+            color: #d97706;
+        }
+
+        .badge-info {
+            background: #dbeafe;
+            color: #2563eb;
+        }
+
+        .badge-danger {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+
+        .link-btn {
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 13px;
+        }
+
+        .link-btn:hover {
+            text-decoration: underline;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 16px;
+        }
+
+        .alert {
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid;
+        }
+
+        .alert-info {
+            background: #eff6ff;
+            border-color: #bfdbfe;
+            color: #1e40af;
+        }
+
+        .alert-warning {
+            background: #fffbeb;
+            border-color: #fde68a;
+            color: #92400e;
+        }
+    </style>
+</head>
+<body>
+    <!-- Fixed Professional Navigation -->
+    <header class="app-header">
+        <div class="app-branding">
+            <div class="app-logo">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M4 10L8 6L12 10L16 6" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M4 14L8 10L12 14L16 10" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+            <div>
+                <div class="app-title">Co-Manufacturing Suite</div>
+                <div class="app-subtitle">Batch & Packaging Calculator</div>
+            </div>
+        </div>
+        
+        <nav class="app-nav">
+            <a href="batch-calculator-v4.html">Batch Calculator</a>
+            <a href="copacking-calculator.html" class="active">Co-Packing</a>
+            <a href="inventory.html">Inventory</a>
+            <a href="services.html">Services</a>
+            <a href="packaging.html">Packaging</a>
+            <a href="mission-control.html" style="margin-left: auto; background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); color: white; border-radius: 6px; padding: 6px 12px;">🎛️ Mission Control</a>
+        </nav>
+        
+        <div class="app-actions">
+            <button class="btn btn-small btn-primary" onclick="exportToExcel()" title="Cmd/Ctrl + E">📊 Export Excel</button>
+        </div>
+    </header>
+
+    <!-- Batch Info Banner -->
+    <div id="batchInfoBanner" style="display: none; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; padding: 12px 24px; border-bottom: 1px solid #1d4ed8; position: sticky; top: 64px; z-index: 999;">
+        <div style="max-width: 1600px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 20px; font-size: 13px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="opacity: 0.9;">📦 Current Batch:</span>
+                    <strong id="batchInfoName">—</strong>
+                </div>
+                <div style="opacity: 0.8;">|</div>
+                <div id="batchInfoSize">—</div>
+                <div style="opacity: 0.8;">|</div>
+                <div id="batchInfoYield">—</div>
+                <div style="opacity: 0.8;">|</div>
+                <div style="font-size: 11px; opacity: 0.7;" id="batchInfoTime">—</div>
+            </div>
+            <button onclick="CoManufacturing.clearBatch(); updateBatchInfoBanner();" style="padding: 4px 12px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.15); border-radius: 4px; color: white; font-size: 12px; cursor: pointer; font-weight: 500;">
+                ✕ Clear Batch
+            </button>
+        </div>
+    </div>
+
+    <div class="app-content">
+    <div class="container">
+        <!-- Batch Info -->
+        <div class="section">
+            <div class="section-header">
+                <div class="section-title">Batch Information</div>
+                <button class="btn btn-small" onclick="importFromBatchCalculator()">📥 Import from Batch Calculator</button>
+            </div>
+            <div class="section-body">
+                <div class="grid-3">
+                    <div class="form-group" style="margin: 0;">
+                        <label class="form-label">Formula Name</label>
+                        <input type="text" id="formulaName" value="Citrus Energy Drink" placeholder="e.g., Citrus Energy Drink">
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label class="form-label">Batch Size</label>
+                        <div class="input-with-unit">
+                            <input type="number" id="batchSize" value="500" min="1" step="0.1" oninput="recalculate()">
+                            <select id="batchSizeUnit" onchange="recalculate()">
+                                <option value="gal">gal</option>
+                                <option value="L">L</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label class="form-label">Ingredient Cost (from batch calc)</label>
+                        <input type="number" id="ingredientCost" value="778.15" min="0" step="0.01" oninput="recalculate()">
+                    </div>
+                </div>
+                <div class="grid-3" style="margin-top: 16px;">
+                    <div class="form-group" style="margin: 0;">
+                        <label class="form-label">Fill Volume per Unit</label>
+                        <div class="input-with-unit">
+                            <input type="number" id="fillVolume" value="12" min="0.1" step="0.1" oninput="recalculate()">
+                            <select id="fillVolumeUnit" onchange="recalculate()">
+                                <option value="oz">oz</option>
+                                <option value="mL">mL</option>
+                                <option value="L">L</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label class="form-label">Units per Case</label>
+                        <input type="number" id="unitsPerCase" value="24" min="1" step="1" oninput="recalculate()">
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label class="form-label">Cases per Pallet</label>
+                        <input type="number" id="casesPerPallet" value="80" min="1" step="1" oninput="recalculate()">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cost Summary -->
+        <div class="cost-summary">
+            <div class="cost-card">
+                <div class="cost-card-label">Total Units</div>
+                <div class="cost-card-value" id="totalUnits">0</div>
+                <div class="cost-card-subtitle"><span id="totalCases">0</span> cases • <span id="totalPallets">0</span> pallets</div>
+            </div>
+            <div class="cost-card">
+                <div class="cost-card-label">Total Cost</div>
+                <div class="cost-card-value" id="totalCost">$0.00</div>
+                <div class="cost-card-subtitle">All-in landed cost</div>
+            </div>
+            <div class="cost-card">
+                <div class="cost-card-label">Cost per Unit</div>
+                <div class="cost-card-value" id="costPerUnit">$0.00</div>
+                <div class="cost-card-subtitle">Including all packaging & services</div>
+            </div>
+            <div class="cost-card">
+                <div class="cost-card-label">Cost per Case</div>
+                <div class="cost-card-value" id="costPerCase">$0.00</div>
+                <div class="cost-card-subtitle"><span id="unitsPerCaseDisplay">24</span> units per case</div>
+            </div>
+        </div>
+
+        <!-- Smart Auto-Population Info -->
+        <div style="background: #eff6ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; font-size: 13px;">
+            <div style="font-weight: 600; color: #1e40af; margin-bottom: 8px;">✨ Smart Auto-Population Enabled</div>
+            <div style="color: #1e3a8a; line-height: 1.6;">
+                Quantities are automatically calculated based on your batch parameters above. 
+                <strong>Cans, bottles, labels, caps</strong> = total units. 
+                <strong>Cases</strong> = total cases. 
+                <strong>Carriers</strong> = units ÷ pack size. 
+                <strong>Pallets</strong> = total pallets.
+                You can manually override any quantity if needed.
+            </div>
+        </div>
+
+        <!-- Hard Goods -->
+        <div class="section">
+            <div class="section-header">
+                <div class="section-title">Hard Goods & Packaging Materials</div>
+            </div>
+            <div style="overflow: visible;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Item & Vendor</th>
+                            <th style="text-align: right;">Unit Cost</th>
+                            <th style="text-align: right;">Qty Needed</th>
+                            <th style="text-align: right;">Order Qty</th>
+                            <th style="text-align: right;">Setup Fee</th>
+                            <th style="text-align: right;">Line Cost</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="packagingTableBody">
+                        <!-- Populated by JS -->
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="7" style="padding: 12px;">
+                                <button class="btn btn-primary" onclick="addPackagingItem()" style="width: 100%; justify-content: center;">
+                                    + Add Packaging Item
+                                </button>
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+
+        <!-- Co-Packing Services -->
+        <div class="section">
+            <div class="section-header">
+                <div class="section-title">Co-Packing Services & Fees</div>
+            </div>
+            <div>
+                <table id="servicesTable">
+                    <thead>
+                        <tr>
+                            <th>Service</th>
+                            <th>Provider</th>
+                            <th>Fee Type</th>
+                            <th>Rate</th>
+                            <th>Qty/Units</th>
+                            <th>Line Cost</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="servicesTableBody">
+                        <!-- Populated by JS -->
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="7" style="padding: 12px;">
+                                <button class="btn btn-primary" onclick="addServiceItem()" style="width: 100%; justify-content: center;">
+                                    + Add Service
+                                </button>
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+
+        <!-- Cost Breakdown -->
+        <div class="section">
+            <div class="section-header">
+                <div class="section-title">Cost Breakdown</div>
+            </div>
+            <div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            <th>Total Cost</th>
+                            <th>Cost per Unit</th>
+                            <th>% of Total</th>
+                        </tr>
+                    </thead>
+                    <tbody id="breakdownTableBody">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="shared-data.js"></script>
+    <script src="autocomplete-component.js"></script>
+    <script src="command-palette.js"></script>
+    <script src="price-sheet-picker.js"></script>
+    <script>
+        // Performance: Load SheetJS only when needed for export
+        let sheetJSLoaded = false;
+        function loadSheetJS() {
+            if (sheetJSLoaded) return Promise.resolve();
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = 'https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js';
+                script.onload = () => {
+                    sheetJSLoaded = true;
+                    resolve();
+                };
+                script.onerror = reject;
+                document.head.appendChild(script);
+            });
+        }
+    </script>
+    <script>
+        // Get data from shared layer
+        let packagingItems = CoManufacturing.getPackaging();
+        let serviceItems = CoManufacturing.getServices();
+        const vendors = CoManufacturing.getVendors();
+        const packagingDatabase = CoManufacturing.getPackaging(); // For autocomplete
+        
+        // Listen for changes
+        window.addEventListener('comanufacturing:datachange', (e) => {
+            if (e.detail.dataType === 'packaging') {
+                packagingItems = CoManufacturing.getPackaging();
+                recalculate();
+            }
+            if (e.detail.dataType === 'services') {
+                serviceItems = CoManufacturing.getServices();
+                recalculate();
+            }
+        });
+        
+        function updatePackagingItem(index, field, value) {
+            packagingItems[index][field] = value;
+            // Don't save to master packaging list - this is job-specific data
+            recalculateOnly();
+        }
+
+        function updateServiceItem(index, field, value) {
+            serviceItems[index][field] = value;
+            // Don't save to master services list - this is job-specific data
+            recalculateOnly();
+        }
+
+        function recalculateOnly() {
+            // Just update the summary numbers, don't re-render tables
+            const batchSize = parseFloat(document.getElementById('batchSize').value) || 0;
+            const batchSizeUnit = document.getElementById('batchSizeUnit').value;
+            const fillVolume = parseFloat(document.getElementById('fillVolume').value) || 0;
+            const fillVolumeUnit = document.getElementById('fillVolumeUnit').value;
+            const unitsPerCase = parseFloat(document.getElementById('unitsPerCase').value) || 1;
+            const casesPerPallet = parseFloat(document.getElementById('casesPerPallet').value) || 1;
+            const ingredientCost = parseFloat(document.getElementById('ingredientCost').value) || 0;
+
+            let batchGal = batchSize;
+            if (batchSizeUnit === 'L') {
+                batchGal = batchSize / 3.78541;
+            }
+
+            let fillOz = fillVolume;
+            if (fillVolumeUnit === 'mL') {
+                fillOz = fillVolume / 29.5735;
+            } else if (fillVolumeUnit === 'L') {
+                fillOz = fillVolume * 33.814;
+            }
+
+            const totalUnits = Math.floor((batchGal * 128) / fillOz);
+            const totalCases = Math.ceil(totalUnits / unitsPerCase);
+            const totalPallets = Math.ceil(totalCases / casesPerPallet);
+
+            let packagingCost = 0;
+            packagingItems.forEach(item => {
+                const firstTier = item.priceTiers?.[0] || {};
+                const unitCost = firstTier.price || item.unitCost || 0;
+                const moq = firstTier.minQty || item.moq || 1;
+                const setupFee = firstTier.setupFee || item.setupFee || 0;
+                const qtyNeeded = item.qtyNeeded || 0;
+                
+                const orderQty = Math.ceil(qtyNeeded / moq) * moq;
+                const lineCost = (orderQty * unitCost) + setupFee;
+                packagingCost += lineCost;
+            });
+
+            let serviceCost = 0;
+            serviceItems.forEach(item => {
+                const rate = item.rate || 0;
+                const qty = item.qty || 0;
+                const lineCost = rate * qty;
+                serviceCost += lineCost;
+            });
+
+            const totalCost = ingredientCost + packagingCost + serviceCost;
+            const costPerUnit = totalUnits > 0 ? totalCost / totalUnits : 0;
+            const costPerCase = totalUnits > 0 ? (totalCost / totalUnits) * unitsPerCase : 0;
+
+            document.getElementById('totalCost').textContent = '$' + totalCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            document.getElementById('costPerUnit').textContent = '$' + costPerUnit.toFixed(4);
+            document.getElementById('costPerCase').textContent = '$' + costPerCase.toFixed(2);
+
+            // Update breakdown table (it doesn't have editable fields)
+            renderBreakdownTable(ingredientCost, packagingCost, serviceCost, totalCost, totalUnits);
+        }
+
+        function handlePackagingTabNavigation(event, currentRow, currentCol) {
+            if (event.key !== 'Tab' && event.key !== 'Enter') return;
+            
+            if (event.key === 'Tab') {
+                event.preventDefault();
+            } else if (event.key === 'Enter' && event.target.tagName !== 'SELECT') {
+                event.preventDefault();
+            }
+            
+            // Field order: unitCost (0), qtyNeeded (1), setupFee (2)
+            const numCols = 3;
+            
+            let nextRow = currentRow;
+            let nextCol = currentCol;
+            
+            if (event.shiftKey && event.key === 'Tab') {
+                nextCol--;
+                if (nextCol < 0) {
+                    nextRow--;
+                    nextCol = numCols - 1;
+                }
+            } else {
+                nextCol++;
+                if (nextCol >= numCols) {
+                    nextRow++;
+                    nextCol = 0;
+                }
+            }
+            
+            if (nextRow >= packagingItems.length || nextRow < 0) {
+                return;
+            }
+            
+            const isCurrentSelect = event.target.tagName === 'SELECT';
+            const delay = isCurrentSelect ? 50 : 10;
+            
+            setTimeout(() => {
+                const nextField = document.querySelector(`[data-pkg-row="${nextRow}"][data-pkg-col="${nextCol}"]`);
+                if (nextField && !nextField.disabled) {
+                    nextField.focus();
+                    if (nextField.tagName === 'SELECT') {
+                        nextField.click();
+                    }
+                }
+            }, delay);
+        }
+
+        function handleServiceTabNavigation(event, currentRow, currentCol) {
+            if (event.key !== 'Tab' && event.key !== 'Enter') return;
+            
+            if (event.key === 'Tab') {
+                event.preventDefault();
+            } else if (event.key === 'Enter' && event.target.tagName !== 'SELECT') {
+                event.preventDefault();
+            }
+            
+            // Field order: name (0), provider (1), feeType (2), rate (3), qty (4)
+            const numCols = 5;
+            
+            let nextRow = currentRow;
+            let nextCol = currentCol;
+            
+            if (event.shiftKey && event.key === 'Tab') {
+                nextCol--;
+                if (nextCol < 0) {
+                    nextRow--;
+                    nextCol = numCols - 1;
+                }
+            } else {
+                nextCol++;
+                if (nextCol >= numCols) {
+                    nextRow++;
+                    nextCol = 0;
+                }
+            }
+            
+            if (nextRow >= serviceItems.length || nextRow < 0) {
+                return;
+            }
+            
+            const isCurrentSelect = event.target.tagName === 'SELECT';
+            const delay = isCurrentSelect ? 50 : 10;
+            
+            setTimeout(() => {
+                const nextField = document.querySelector(`[data-svc-row="${nextRow}"][data-svc-col="${nextCol}"]`);
+                if (nextField && !nextField.disabled) {
+                    nextField.focus();
+                    if (nextField.tagName === 'SELECT') {
+                        nextField.click();
+                    }
+                }
+            }, delay);
+        }
+
+        function recalculate() {
+            const batchSize = parseFloat(document.getElementById('batchSize').value) || 0;
+            const batchSizeUnit = document.getElementById('batchSizeUnit').value;
+            const fillVolume = parseFloat(document.getElementById('fillVolume').value) || 0;
+            const fillVolumeUnit = document.getElementById('fillVolumeUnit').value;
+            const unitsPerCase = parseFloat(document.getElementById('unitsPerCase').value) || 1;
+            const casesPerPallet = parseFloat(document.getElementById('casesPerPallet').value) || 1;
+            const ingredientCost = parseFloat(document.getElementById('ingredientCost').value) || 0;
+
+            // Convert batch to gallons
+            let batchGal = batchSize;
+            if (batchSizeUnit === 'L') {
+                batchGal = batchSize / 3.78541;
+            }
+
+            // Convert fill volume to oz
+            let fillOz = fillVolume;
+            if (fillVolumeUnit === 'mL') {
+                fillOz = fillVolume / 29.5735;
+            } else if (fillVolumeUnit === 'L') {
+                fillOz = fillVolume * 33.814;
+            }
+
+            // Calculate units
+            const totalUnits = Math.floor((batchGal * 128) / fillOz);
+            const totalCases = Math.ceil(totalUnits / unitsPerCase);
+            const totalPallets = Math.ceil(totalCases / casesPerPallet);
+
+            // Update summary
+            document.getElementById('totalUnits').textContent = totalUnits.toLocaleString();
+            document.getElementById('totalCases').textContent = totalCases.toLocaleString();
+            document.getElementById('totalPallets').textContent = totalPallets.toLocaleString();
+            document.getElementById('unitsPerCaseDisplay').textContent = unitsPerCase;
+
+            // Smart auto-populate packaging quantities based on category
+            packagingItems.forEach(item => {
+                if (!item.category) item.category = 'other'; // Default for items without category
+                
+                switch(item.category) {
+                    case 'cans':
+                    case 'bottles':
+                        item.qtyNeeded = totalUnits;
+                        break;
+                    case 'labels':
+                    case 'caps':
+                    case 'lids':
+                        item.qtyNeeded = totalUnits;
+                        break;
+                    case 'cases':
+                    case 'boxes':
+                        item.qtyNeeded = totalCases;
+                        break;
+                    case 'carriers':
+                        // Assume 6-pack carriers by default
+                        const unitsPerCarrier = parseInt(item.notes?.match(/(\d+)-pack/)?.[1]) || 6;
+                        item.qtyNeeded = Math.ceil(totalUnits / unitsPerCarrier);
+                        break;
+                    case 'pallets':
+                        item.qtyNeeded = totalPallets;
+                        break;
+                    default:
+                        // Don't auto-populate for 'other' - let user specify
+                        if (!item.qtyNeeded) item.qtyNeeded = 0;
+                }
+            });
+
+            // Smart auto-populate service quantities based on feeType
+            serviceItems.forEach(item => {
+                switch(item.feeType) {
+                    case 'per-unit':
+                        item.qty = totalUnits;
+                        break;
+                    case 'per-batch':
+                        item.qty = 1;
+                        break;
+                    case 'per-pallet':
+                        item.qty = totalPallets;
+                        break;
+                    case 'per-case':
+                        item.qty = totalCases;
+                        break;
+                    case 'fixed':
+                        item.qty = 1;
+                        break;
+                    default:
+                        if (!item.qty) item.qty = 0;
+                }
+            });
+
+            // Calculate costs
+            let packagingCost = 0;
+            packagingItems.forEach(item => {
+                const firstTier = item.priceTiers?.[0] || {};
+                const unitCost = firstTier.price || item.unitCost || 0;
+                const moq = firstTier.minQty || item.moq || 1;
+                const setupFee = firstTier.setupFee || item.setupFee || 0;
+                const qtyNeeded = item.qtyNeeded || 0;
+                
+                const orderQty = Math.ceil(qtyNeeded / moq) * moq;
+                const lineCost = (orderQty * unitCost) + setupFee;
+                packagingCost += lineCost;
+            });
+
+            let serviceCost = 0;
+            serviceItems.forEach(item => {
+                const rate = item.rate || 0;
+                const qty = item.qty || 0;
+                const lineCost = rate * qty;
+                serviceCost += lineCost;
+            });
+
+            const totalCost = ingredientCost + packagingCost + serviceCost;
+            const costPerUnit = totalUnits > 0 ? totalCost / totalUnits : 0;
+            const costPerCase = totalUnits > 0 ? (totalCost / totalUnits) * unitsPerCase : 0;
+
+            document.getElementById('totalCost').textContent = '$' + totalCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            document.getElementById('costPerUnit').textContent = '$' + costPerUnit.toFixed(4);
+            document.getElementById('costPerCase').textContent = '$' + costPerCase.toFixed(2);
+
+            // Render tables
+            renderPackagingTable();
+            renderServicesTable();
+            renderBreakdownTable(ingredientCost, packagingCost, serviceCost, totalCost, totalUnits);
+        }
+
+        function renderPackagingTable() {
+            const tbody = document.getElementById('packagingTableBody');
+            tbody.innerHTML = '';
+
+            let totalPackagingCost = 0;
+
+            packagingItems.forEach((item, index) => {
+                // Check if this is a "pending" item (no itemId set yet)
+                if (!item.itemId) {
+                    // Show autocomplete search row
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td colspan="7" style="padding: 16px;">
+                            <div class="autocomplete-container">
+                                <input 
+                                    type="text" 
+                                    id="itemSearch${index}"
+                                    placeholder="Search for packaging item by name or SKU..."
+                                    style="width: 100%; font-size: 14px; padding: 10px; border: 2px solid #2563eb;"
+                                    oninput="searchPackagingItems(${index}, this.value)"
+                                    onfocus="showAllPackagingItems(${index})"
+                                />
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                    
+                    // Create dropdown in body
+                    let resultsDiv = document.getElementById(`autocompleteResults${index}`);
+                    if (!resultsDiv) {
+                        resultsDiv = document.createElement('div');
+                        resultsDiv.id = `autocompleteResults${index}`;
+                        resultsDiv.className = 'autocomplete-results';
+                        document.body.appendChild(resultsDiv);
+                    }
+                    
+                    // Focus the input and show all items initially
+                    setTimeout(() => {
+                        const input = document.getElementById(`itemSearch${index}`);
+                        if (input) {
+                            input.focus();
+                            showAllPackagingItems(index);
+                        }
+                    }, 100);
+                    return;
+                }
+
+                // Handle both old and new data structures
+                const vendorName = item.vendor || (item.vendorId ? (CoManufacturing.getVendor(item.vendorId)?.name || '') : '');
+                const firstTier = item.priceTiers?.[0] || {};
+                const unitCost = firstTier.price || item.unitCost || 0;
+                const moq = firstTier.minQty || item.moq || 1;
+                const setupFee = firstTier.setupFee || item.setupFee || 0;
+                const qtyNeeded = item.qtyNeeded || 0;
+                
+                const orderQty = Math.ceil(qtyNeeded / moq) * moq;
+                const lineCost = (orderQty * unitCost) + setupFee;
+                totalPackagingCost += lineCost;
+                
+                const hasSlack = orderQty > qtyNeeded;
+                const slackQty = orderQty - qtyNeeded;
+                const belowMOQ = qtyNeeded < moq;
+
+                // Category badge with color coding
+                const category = item.category || 'other';
+                const categoryColors = {
+                    'cans': '#3b82f6', 'bottles': '#3b82f6',
+                    'labels': '#8b5cf6', 'caps': '#8b5cf6',
+                    'cases': '#059669', 'boxes': '#059669',
+                    'carriers': '#f59e0b',
+                    'pallets': '#6b7280',
+                    'other': '#9ca3af'
+                };
+                const categoryColor = categoryColors[category] || '#9ca3af';
+                const categoryBadge = `<span style="display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; text-transform: uppercase; background: ${categoryColor}; color: white; margin-left: 6px;">${category}</span>`;
+                
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td style="text-align: left;">
+                        <div style="display: flex; align-items: center; margin-bottom: 4px;">
+                            <strong style="font-size: 14px;">${item.name || ''}</strong>
+                            ${categoryBadge}
+                        </div>
+                        <div class="autocomplete-container" style="margin-top: 4px;">
+                            <input 
+                                type="text" 
+                                value="${vendorName}" 
+                                placeholder="Search vendor..." 
+                                id="vendorSearch${index}"
+                                onchange="updatePackagingItem(${index}, 'vendor', this.value)" 
+                                oninput="searchVendors(${index}, this.value)"
+                                onfocus="showAllVendors(${index})"
+                                style="color: #6b7280; font-size: 12px; min-width: 200px; padding: 4px 8px;"
+                            />
+                        </div>
+                        ${belowMOQ ? '<div style="margin-top: 6px;"><span class="badge badge-warning">⚠️ Below minimum order quantity</span></div>' : ''}
+                    </td>
+                    <td>
+                        <input type="number" value="${unitCost}" step="0.0001" onchange="updatePackagingItem(${index}, 'unitCost', parseFloat(this.value))" onkeydown="handlePackagingTabNavigation(event, ${index}, 0)" data-pkg-row="${index}" data-pkg-col="0" style="width: 90px;">
+                    </td>
+                    <td>
+                        <input type="number" value="${qtyNeeded}" step="1" onchange="updatePackagingItem(${index}, 'qtyNeeded', parseInt(this.value))" onkeydown="handlePackagingTabNavigation(event, ${index}, 1)" data-pkg-row="${index}" data-pkg-col="1" style="width: 100px; font-weight: 600;" title="Auto-calculated based on category. Edit to override.">
+                    </td>
+                    <td>
+                        ${orderQty.toLocaleString()}
+                        ${hasSlack ? `<div style="color: #f59e0b; font-size: 11px; margin-top: 2px;">(+${slackQty.toLocaleString()})</div>` : ''}
+                    </td>
+                    <td>
+                        <input type="number" value="${setupFee}" step="1" onchange="updatePackagingItem(${index}, 'setupFee', parseFloat(this.value))" onkeydown="handlePackagingTabNavigation(event, ${index}, 2)" data-pkg-row="${index}" data-pkg-col="2" style="width: 90px;">
+                    </td>
+                    <td><strong>$${lineCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></td>
+                    <td><button class="btn btn-small" onclick="removePackagingItem(${index})" style="color: #dc2626;">×</button></td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            // Add total row
+            const totalRow = document.createElement('tr');
+            totalRow.style.background = '#f9fafb';
+            totalRow.style.borderTop = '2px solid #e5e7eb';
+            totalRow.style.fontWeight = '700';
+            totalRow.innerHTML = `
+                <td style="text-align: left;">TOTAL PACKAGING COST</td>
+                <td colspan="4"></td>
+                <td><strong>$${totalPackagingCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></td>
+                <td></td>
+            `;
+            tbody.appendChild(totalRow);
+            
+            // Attach autocomplete to vendor fields
+            attachVendorAutocomplete();
+        }
+
+        // Packaging item search functions
+        function showAllPackagingItems(index) {
+            const resultsDiv = document.getElementById(`autocompleteResults${index}`);
+            const inputEl = document.getElementById(`itemSearch${index}`);
+            if (!resultsDiv || !inputEl) return;
+
+            // Position the dropdown relative to the input
+            const rect = inputEl.getBoundingClientRect();
+            resultsDiv.style.top = (rect.bottom) + 'px';
+            resultsDiv.style.left = rect.left + 'px';
+            resultsDiv.style.width = rect.width + 'px';
+
+            const allItems = packagingDatabase.filter(item => item.category !== 'services');
+            
+            resultsDiv.innerHTML = `
+                <div style="padding: 8px 12px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; font-size: 12px; font-weight: 600; color: #6b7280;">
+                    Available Items (${allItems.length})
+                </div>
+            ` + allItems.map(item => {
+                const vendor = item.vendorId ? CoManufacturing.getVendor(item.vendorId) : null;
+                const firstTier = item.priceTiers?.[0] || {};
+                const priceInfo = firstTier.price ? `$${firstTier.price.toFixed(4)}/${item.unit}` : 'No pricing';
+                const vendorInfo = vendor ? ` • ${vendor.name}` : '';
+                const categoryBadge = item.category ? `<span class="badge badge-info" style="margin-left: 4px;">${item.category}</span>` : '';
+                return `
+                    <div class="autocomplete-item" onclick="selectPackagingItem(${index}, '${item.id}')">
+                        <div class="autocomplete-item-name">${item.name}${categoryBadge}</div>
+                        <div class="autocomplete-item-meta">
+                            ${item.sku || 'No SKU'} • ${priceInfo}${vendorInfo}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            resultsDiv.classList.add('active');
+        }
+
+        function searchPackagingItems(index, query) {
+            const resultsDiv = document.getElementById(`autocompleteResults${index}`);
+            const inputEl = document.getElementById(`itemSearch${index}`);
+            if (!resultsDiv || !inputEl) return;
+
+            // Position the dropdown relative to the input
+            const rect = inputEl.getBoundingClientRect();
+            resultsDiv.style.top = (rect.bottom) + 'px';
+            resultsDiv.style.left = rect.left + 'px';
+            resultsDiv.style.width = rect.width + 'px';
+
+            query = query.toLowerCase().trim();
+
+            if (!query) {
+                showAllPackagingItems(index);
+                return;
+            }
+
+            // Search price sheet items
+            const matches = packagingDatabase.filter(item => {
+                if (item.category === 'services') return false;
+                return item.name.toLowerCase().includes(query) || 
+                       (item.sku && item.sku.toLowerCase().includes(query)) ||
+                       (item.id && item.id.toLowerCase().includes(query));
+            });
+
+            if (matches.length === 0) {
+                resultsDiv.innerHTML = `
+                    <div class="autocomplete-empty">
+                        No matching items found for "${query}"
+                    </div>
+                `;
+            } else {
+                resultsDiv.innerHTML = `
+                    <div style="padding: 8px 12px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; font-size: 12px; font-weight: 600; color: #6b7280;">
+                        Found ${matches.length} item${matches.length !== 1 ? 's' : ''}
+                    </div>
+                ` + matches.map(item => {
+                    const vendor = item.vendorId ? CoManufacturing.getVendor(item.vendorId) : null;
+                    const firstTier = item.priceTiers?.[0] || {};
+                    const priceInfo = firstTier.price ? `$${firstTier.price.toFixed(4)}/${item.unit}` : 'No pricing';
+                    const vendorInfo = vendor ? ` • ${vendor.name}` : '';
+                    const categoryBadge = item.category ? `<span class="badge badge-info" style="margin-left: 4px;">${item.category}</span>` : '';
+                    return `
+                        <div class="autocomplete-item" onclick="selectPackagingItem(${index}, '${item.id}')">
+                            <div class="autocomplete-item-name">${item.name}${categoryBadge}</div>
+                            <div class="autocomplete-item-meta">
+                                ${item.sku || 'No SKU'} • ${priceInfo}${vendorInfo}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            resultsDiv.classList.add('active');
+        }
+
+        function selectPackagingItem(index, itemId) {
+            const item = packagingDatabase.find(i => i.id === itemId);
+            if (!item) return;
+
+            // Close and cleanup the dropdown
+            const resultsDiv = document.getElementById(`autocompleteResults${index}`);
+            if (resultsDiv) {
+                resultsDiv.classList.remove('active');
+                resultsDiv.remove();
+            }
+
+            const vendor = item.vendorId ? CoManufacturing.getVendor(item.vendorId) : null;
+            const firstTier = item.priceTiers?.[0] || {};
+            
+            // Update packaging item with selected item data
+            packagingItems[index] = {
+                itemId: item.id,
+                id: item.id,
+                name: item.name,
+                sku: item.sku,
+                vendor: vendor ? vendor.name : '',
+                vendorId: item.vendorId,
+                category: item.category || 'other',
+                unit: item.unit || 'ea',
+                unitCost: firstTier.price || 0,
+                moq: firstTier.minQty || 1,
+                setupFee: firstTier.setupFee || 0,
+                qtyNeeded: 0,
+                priceTiers: item.priceTiers,
+                fromPriceSheet: true
+            };
+            
+            // Don't save to master packaging list - this is job-specific data
+            recalculate(); // This will auto-populate qtyNeeded based on category
+        }
+
+        // Service autocomplete functions
+        function searchServiceItems(index, query) {
+            const resultsDiv = document.getElementById(`serviceResults${index}`);
+            if (!resultsDiv) return;
+
+            query = query.toLowerCase().trim();
+
+            if (!query) {
+                showAllServiceItems(index);
+                return;
+            }
+
+            // Get services from shared database
+            const servicesDatabase = CoManufacturing.getServices();
+            const matches = servicesDatabase.filter(service => {
+                return service.name.toLowerCase().includes(query) || 
+                       (service.id && service.id.toLowerCase().includes(query)) ||
+                       (service.notes && service.notes.toLowerCase().includes(query));
+            });
+
+            if (matches.length === 0) {
+                resultsDiv.innerHTML = `
+                    <div class="autocomplete-empty">
+                        No matching services found for "${query}"
+                    </div>
+                `;
+                resultsDiv.style.display = 'block';
+                return;
+            }
+
+            resultsDiv.innerHTML = `
+                <div style="padding: 8px 12px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; font-size: 12px; font-weight: 600; color: #6b7280;">
+                    ${matches.length} Service${matches.length === 1 ? '' : 's'} Found
+                </div>
+            ` + matches.map(service => {
+                const vendor = service.providerId ? CoManufacturing.getVendor(service.providerId) : null;
+                const vendorName = vendor ? vendor.name : 'Unknown Provider';
+                return `
+                    <div class="autocomplete-item" onmousedown="selectServiceItem(${index}, '${service.id}')">
+                        <div class="autocomplete-item-name">${service.name}</div>
+                        <div class="autocomplete-item-meta">
+                            ${vendorName} • ${service.feeType} • $${service.rate.toFixed(2)}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            resultsDiv.style.display = 'block';
+        }
+
+        function showAllServiceItems(index) {
+            const resultsDiv = document.getElementById(`serviceResults${index}`);
+            if (!resultsDiv) return;
+
+            const servicesDatabase = CoManufacturing.getServices();
+
+            resultsDiv.innerHTML = `
+                <div style="padding: 8px 12px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; font-size: 12px; font-weight: 600; color: #6b7280;">
+                    Available Services (${servicesDatabase.length})
+                </div>
+            ` + servicesDatabase.map(service => {
+                const vendor = service.providerId ? CoManufacturing.getVendor(service.providerId) : null;
+                const vendorName = vendor ? vendor.name : 'Unknown Provider';
+                return `
+                    <div class="autocomplete-item" onmousedown="selectServiceItem(${index}, '${service.id}')">
+                        <div class="autocomplete-item-name">${service.name}</div>
+                        <div class="autocomplete-item-meta">
+                            ${vendorName} • ${service.feeType} • $${service.rate.toFixed(2)}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            resultsDiv.style.display = 'block';
+        }
+
+        function selectServiceItem(index, serviceId) {
+            const servicesDatabase = CoManufacturing.getServices();
+            const service = servicesDatabase.find(s => s.id === serviceId);
+            if (!service) return;
+
+            // Get vendor name
+            const vendor = service.providerId ? CoManufacturing.getVendor(service.providerId) : null;
+            const providerName = vendor ? vendor.name : '';
+
+            // Update service item with selected service data
+            serviceItems[index] = {
+                ...serviceItems[index],
+                id: service.id,
+                name: service.name,
+                provider: providerName,
+                providerId: service.providerId,
+                feeType: service.feeType,
+                rate: service.rate,
+                qty: serviceItems[index].qty || 1 // Keep existing qty or default to 1
+            };
+
+            // Don't save to master services list - this is job-specific data
+            
+            // Hide dropdown
+            hideServiceResults(index);
+            
+            // Re-render and recalculate
+            renderServicesTable();
+            recalculate();
+        }
+
+        function hideServiceResults(index) {
+            const resultsDiv = document.getElementById(`serviceResults${index}`);
+            if (resultsDiv) {
+                resultsDiv.style.display = 'none';
+            }
+        }
+
+        // Vendor search functions
+        function showAllVendors(index) {
+            const resultsDiv = document.getElementById(`vendorAutocompleteResults${index}`) || createVendorDropdown(index);
+            const inputEl = document.getElementById(`vendorSearch${index}`);
+            if (!resultsDiv || !inputEl) return;
+
+            // Position the dropdown relative to the input
+            const rect = inputEl.getBoundingClientRect();
+            resultsDiv.style.top = (rect.bottom) + 'px';
+            resultsDiv.style.left = rect.left + 'px';
+            resultsDiv.style.width = rect.width + 'px';
+
+            resultsDiv.innerHTML = `
+                <div style="padding: 8px 12px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; font-size: 12px; font-weight: 600; color: #6b7280;">
+                    Available Vendors (${vendors.length})
+                </div>
+            ` + vendors.map(vendor => {
+                return `
+                    <div class="autocomplete-item" onclick="selectVendor(${index}, '${vendor.id}')">
+                        <div class="autocomplete-item-name">${vendor.name}</div>
+                        <div class="autocomplete-item-meta">${vendor.id}${vendor.contact ? ' • ' + vendor.contact : ''}</div>
+                    </div>
+                `;
+            }).join('');
+
+            resultsDiv.classList.add('active');
+        }
+
+        function searchVendors(index, query) {
+            const resultsDiv = document.getElementById(`vendorAutocompleteResults${index}`) || createVendorDropdown(index);
+            const inputEl = document.getElementById(`vendorSearch${index}`);
+            if (!resultsDiv || !inputEl) return;
+
+            // Position the dropdown relative to the input
+            const rect = inputEl.getBoundingClientRect();
+            resultsDiv.style.top = (rect.bottom) + 'px';
+            resultsDiv.style.left = rect.left + 'px';
+            resultsDiv.style.width = rect.width + 'px';
+
+            query = query.toLowerCase().trim();
+
+            if (!query) {
+                showAllVendors(index);
+                return;
+            }
+
+            // Search vendors
+            const matches = vendors.filter(vendor => {
+                return vendor.name.toLowerCase().includes(query) || 
+                       vendor.id.toLowerCase().includes(query) ||
+                       (vendor.contact && vendor.contact.toLowerCase().includes(query));
+            });
+
+            if (matches.length === 0) {
+                resultsDiv.innerHTML = `
+                    <div class="autocomplete-empty">
+                        No matching vendors found for "${query}"
+                    </div>
+                `;
+            } else {
+                resultsDiv.innerHTML = `
+                    <div style="padding: 8px 12px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; font-size: 12px; font-weight: 600; color: #6b7280;">
+                        Found ${matches.length} vendor${matches.length !== 1 ? 's' : ''}
+                    </div>
+                ` + matches.map(vendor => {
+                    return `
+                        <div class="autocomplete-item" onclick="selectVendor(${index}, '${vendor.id}')">
+                            <div class="autocomplete-item-name">${vendor.name}</div>
+                            <div class="autocomplete-item-meta">${vendor.id}${vendor.contact ? ' • ' + vendor.contact : ''}</div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            resultsDiv.classList.add('active');
+        }
+
+        function createVendorDropdown(index) {
+            let resultsDiv = document.getElementById(`vendorAutocompleteResults${index}`);
+            if (!resultsDiv) {
+                resultsDiv = document.createElement('div');
+                resultsDiv.id = `vendorAutocompleteResults${index}`;
+                resultsDiv.className = 'autocomplete-results';
+                document.body.appendChild(resultsDiv);
+            }
+            return resultsDiv;
+        }
+
+        function selectVendor(index, vendorId) {
+            const vendor = vendors.find(v => v.id === vendorId);
+            if (!vendor) return;
+
+            // Close dropdown
+            const resultsDiv = document.getElementById(`vendorAutocompleteResults${index}`);
+            if (resultsDiv) {
+                resultsDiv.classList.remove('active');
+            }
+
+            // Update vendor
+            updatePackagingItem(index, 'vendor', vendor.name);
+            updatePackagingItem(index, 'vendorId', vendor.id);
+            
+            // Update input value
+            const input = document.getElementById(`vendorSearch${index}`);
+            if (input) {
+                input.value = vendor.name;
+            }
+        }
+
+        // Close autocomplete when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.autocomplete-container') && !e.target.closest('.autocomplete-results')) {
+                document.querySelectorAll('.autocomplete-results').forEach(div => {
+                    div.classList.remove('active');
+                });
+            }
+        });
+
+        function renderServicesTable() {
+            const tbody = document.getElementById('servicesTableBody');
+            tbody.innerHTML = '';
+
+            let totalServiceCost = 0;
+
+            serviceItems.forEach((item, index) => {
+                // Handle both old and new data structures
+                const providerName = item.provider || (item.providerId ? (CoManufacturing.getVendor(item.providerId)?.name || '') : '');
+                const rate = item.rate || 0;
+                const qty = item.qty || 0;
+                const feeType = item.feeType || 'per-unit';
+                
+                const lineCost = rate * qty;
+                totalServiceCost += lineCost;
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td style="position: relative;">
+                        <input 
+                            type="text" 
+                            id="serviceSearch${index}"
+                            value="${item.name || ''}" 
+                            onchange="updateServiceItem(${index}, 'name', this.value)" 
+                            oninput="searchServiceItems(${index}, this.value)"
+                            onfocus="showAllServiceItems(${index})"
+                            onblur="setTimeout(() => hideServiceResults(${index}), 200)"
+                            onkeydown="handleServiceTabNavigation(event, ${index}, 0)" 
+                            data-svc-row="${index}" 
+                            data-svc-col="0" 
+                            placeholder="Search services..."
+                            style="font-weight: 600; min-width: 180px;">
+                        <div id="serviceResults${index}" class="autocomplete-dropdown" style="display: none;"></div>
+                    </td>
+                    <td>
+                        <input type="text" value="${providerName}" onchange="updateServiceItem(${index}, 'provider', this.value)" onkeydown="handleServiceTabNavigation(event, ${index}, 1)" data-svc-row="${index}" data-svc-col="1" class="vendor-autocomplete" data-item-index="${index}" data-item-type="services" style="color: #6b7280; font-size: 13px; min-width: 150px;">
+                    </td>
+                    <td>
+                        <select onchange="updateServiceItem(${index}, 'feeType', this.value)" onkeydown="handleServiceTabNavigation(event, ${index}, 2)" data-svc-row="${index}" data-svc-col="2" style="width: 120px;">
+                            <option value="fixed" ${feeType === 'fixed' ? 'selected' : ''}>Fixed</option>
+                            <option value="per-unit" ${feeType === 'per-unit' ? 'selected' : ''}>Per Unit</option>
+                            <option value="per-batch" ${feeType === 'per-batch' ? 'selected' : ''}>Per Batch</option>
+                            <option value="per-pallet" ${feeType === 'per-pallet' ? 'selected' : ''}>Per Pallet</option>
+                        </select>
+                    </td>
+                    <td>
+                        <input type="number" value="${rate}" step="0.01" onchange="updateServiceItem(${index}, 'rate', parseFloat(this.value))" onkeydown="handleServiceTabNavigation(event, ${index}, 3)" data-svc-row="${index}" data-svc-col="3" style="width: 90px;">
+                    </td>
+                    <td>
+                        <input type="number" value="${qty}" step="1" onchange="updateServiceItem(${index}, 'qty', parseFloat(this.value))" onkeydown="handleServiceTabNavigation(event, ${index}, 4)" data-svc-row="${index}" data-svc-col="4" style="width: 80px;">
+                    </td>
+                    <td><strong>$${lineCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></td>
+                    <td><button class="btn btn-small" onclick="removeServiceItem(${index})" style="color: #dc2626;">×</button></td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            // Add total row
+            const totalRow = document.createElement('tr');
+            totalRow.style.background = '#f9fafb';
+            totalRow.style.borderTop = '2px solid #e5e7eb';
+            totalRow.style.fontWeight = '700';
+            totalRow.innerHTML = `
+                <td colspan="5">TOTAL SERVICE COST</td>
+                <td><strong>$${totalServiceCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></td>
+                <td></td>
+            `;
+            tbody.appendChild(totalRow);
+            
+            // Attach autocomplete to vendor fields
+            attachVendorAutocomplete();
+        }
+
+        function renderBreakdownTable(ingredientCost, packagingCost, serviceCost, totalCost, totalUnits) {
+            const tbody = document.getElementById('breakdownTableBody');
+            tbody.innerHTML = '';
+
+            const categories = [
+                { name: 'Ingredients & Formula', cost: ingredientCost, color: '#2563eb' },
+                { name: 'Packaging Materials & Hard Goods', cost: packagingCost, color: '#7c3aed' },
+                { name: 'Co-Packing Services & Fees', cost: serviceCost, color: '#db2777' }
+            ];
+
+            categories.forEach((cat, idx) => {
+                const costPerUnit = totalUnits > 0 ? cat.cost / totalUnits : 0;
+                const percent = totalCost > 0 ? (cat.cost / totalCost * 100) : 0;
+
+                const row = document.createElement('tr');
+                row.style.background = idx % 2 === 0 ? '#fafbfc' : 'white';
+                row.innerHTML = `
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <div style="width: 4px; height: 24px; background: ${cat.color}; border-radius: 2px;"></div>
+                            <strong>${cat.name}</strong>
+                        </div>
+                    </td>
+                    <td><strong>$${cat.cost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></td>
+                    <td>$${costPerUnit.toFixed(4)}</td>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <div style="flex: 1; height: 8px; background: #f3f4f6; border-radius: 4px; overflow: hidden;">
+                                <div style="width: ${percent}%; height: 100%; background: ${cat.color};"></div>
+                            </div>
+                            <span style="min-width: 50px; text-align: right; font-weight: 600;">${percent.toFixed(1)}%</span>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            // Total row
+            const totalRow = document.createElement('tr');
+            totalRow.style.background = '#f9fafb';
+            totalRow.style.fontWeight = '700';
+            totalRow.style.borderTop = '2px solid #e5e7eb';
+            const totalCostPerUnit = totalUnits > 0 ? totalCost / totalUnits : 0;
+            totalRow.innerHTML = `
+                <td><strong>TOTAL LANDED COST</strong></td>
+                <td><strong>$${totalCost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong></td>
+                <td><strong>$${totalCostPerUnit.toFixed(4)}</strong></td>
+                <td><strong>100.0%</strong></td>
+            `;
+            tbody.appendChild(totalRow);
+        }
+
+        function addPackagingItem() {
+            // Remove any existing pending items first (items with no itemId)
+            packagingItems = packagingItems.filter(item => item.itemId);
+            
+            // Add a new "pending" item that will show autocomplete
+            packagingItems.push({
+                itemId: null,  // Will show autocomplete search
+                qtyNeeded: 0
+            });
+            renderPackagingTable();
+        }
+
+        function addServiceItem() {
+            // Add blank row for inline editing
+            serviceItems.push({
+                name: 'New Service',
+                provider: '',
+                feeType: 'per-unit',
+                rate: 0,
+                qty: 0
+            });
+            // Don't save to master services list - this is job-specific data
+            renderServicesTable();
+            recalculate();
+        }
+
+        function removePackagingItem(index) {
+            if (confirm('Remove this packaging item?')) {
+                packagingItems.splice(index, 1);
+                // Don't save to master packaging list - this is job-specific data
+                recalculate();
+            }
+        }
+
+        function removeServiceItem(index) {
+            if (confirm('Remove this service?')) {
+                serviceItems.splice(index, 1);
+                // Don't save to master services list - this is job-specific data
+                recalculate();
+            }
+        }
+
+        function importFromBatchCalculator() {
+            alert('Import from batch calculator:\n\n1. Open the Batch Calculator\n2. Click "Export Excel" or "Save Formula"\n3. Copy the batch details here\n\n(In production, this would read from localStorage or a shared data format)');
+        }
+
+        function exportToExcel() {
+            const formulaName = document.getElementById('formulaName').value || 'Co-Packing';
+            const batchSize = document.getElementById('batchSize').value;
+            const batchSizeUnit = document.getElementById('batchSizeUnit').value;
+
+            // Create workbook
+            const wb = XLSX.utils.book_new();
+
+            // Overview sheet
+            const overview = [
+                ['Co-Packing & Packaging Calculator'],
+                [''],
+                ['Formula:', formulaName],
+                ['Batch Size:', `${batchSize} ${batchSizeUnit}`],
+                ['Date:', new Date().toLocaleDateString()],
+                [''],
+
+                ['Total Units:', document.getElementById('totalUnits').textContent],
+                ['Total Cases:', document.getElementById('totalCases').textContent],
+                ['Total Pallets:', document.getElementById('totalPallets').textContent],
+                [''],
+                ['Total Cost:', document.getElementById('totalCost').textContent],
+                ['Cost per Unit:', document.getElementById('costPerUnit').textContent],
+                ['Cost per Case:', document.getElementById('costPerCase').textContent]
+            ];
+            const wsOverview = XLSX.utils.aoa_to_sheet(overview);
+            XLSX.utils.book_append_sheet(wb, wsOverview, 'Overview');
+
+            // Packaging sheet
+            const packagingData = [
+                ['Item', 'Vendor', 'Unit Cost', 'Qty Needed', 'Order Qty', 'Setup Fee', 'Line Cost']
+            ];
+            packagingItems.forEach(item => {
+                if (!item.itemId) return; // Skip pending items
+                const firstTier = item.priceTiers?.[0] || {};
+                const unitCost = firstTier.price || item.unitCost || 0;
+                const moq = firstTier.minQty || item.moq || 1;
+                const setupFee = firstTier.setupFee || item.setupFee || 0;
+                const qtyNeeded = item.qtyNeeded || 0;
+                const orderQty = Math.ceil(qtyNeeded / moq) * moq;
+                const lineCost = (orderQty * unitCost) + setupFee;
+                
+                packagingData.push([
+                    item.name,
+                    item.vendor || '',
+                    unitCost,
+                    qtyNeeded,
+                    orderQty,
+                    setupFee,
+                    lineCost
+                ]);
+            });
+            const wsPackaging = XLSX.utils.aoa_to_sheet(packagingData);
+            XLSX.utils.book_append_sheet(wb, wsPackaging, 'Packaging');
+
+            // Services sheet
+            const servicesData = [
+                ['Service', 'Provider', 'Fee Type', 'Rate', 'Qty', 'Line Cost']
+            ];
+            serviceItems.forEach(item => {
+                const lineCost = (item.rate || 0) * (item.qty || 0);
+                servicesData.push([
+                    item.name,
+                    item.provider,
+                    item.feeType,
+                    item.rate,
+                    item.qty,
+                    lineCost
+                ]);
+            });
+            const wsServices = XLSX.utils.aoa_to_sheet(servicesData);
+            XLSX.utils.book_append_sheet(wb, wsServices, 'Services');
+
+            // Export
+            XLSX.writeFile(wb, `${formulaName.replace(/\s+/g, '_')}_CoPacking_${new Date().toISOString().split('T')[0]}.xlsx`);
+        }
+
+        // Attach vendor autocomplete to all vendor input fields
+        function attachVendorAutocomplete() {
+            // This function is called but actual autocomplete is handled inline
+            // for each vendor input field via the oninput/onfocus handlers
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Check for Cmd (Mac) or Ctrl (Windows/Linux)
+            const isMod = e.metaKey || e.ctrlKey;
+            
+            if (!isMod) return;
+            
+            // Cmd/Ctrl + E - Export Excel
+            if (e.key === 'e' || e.key === 'E') {
+                e.preventDefault();
+                exportToExcel();
+            }
+            
+            // Cmd/Ctrl + Shift + P - Add Packaging Item
+            if ((e.key === 'p' || e.key === 'P') && e.shiftKey) {
+                e.preventDefault();
+                addPackagingItem();
+            }
+            
+            // Cmd/Ctrl + Shift + S - Add Service Item
+            if ((e.key === 's' || e.key === 'S') && e.shiftKey) {
+                e.preventDefault();
+                addServiceItem();
+            }
+        });
+
+        // Initialize command palette
+        CommandPalette.init([
+            { name: 'Export to Excel', description: 'Download Excel workbook', action: exportToExcel, shortcut: 'Cmd+E' },
+            { name: 'Add Packaging Item', description: 'Add hard goods / packaging material', action: addPackagingItem, shortcut: 'Cmd+Shift+P' },
+            { name: 'Add Service', description: 'Add co-packing service', action: addServiceItem, shortcut: 'Cmd+Shift+S' },
+            { name: 'Import from Batch Calculator', description: 'Load batch details', action: importFromBatchCalculator },
+            { name: 'Go to Batch Calculator', description: 'Calculate formula costs', action: () => window.location.href = 'batch-calculator-v4.html' },
+            { name: 'Go to Inventory', description: 'Manage inventory items', action: () => window.location.href = 'inventory.html' },
+            { name: 'Go to Services', description: 'Manage services', action: () => window.location.href = 'services.html' },
+            { name: 'Go to Packaging', description: 'Manage packaging', action: () => window.location.href = 'packaging.html' }
+        ]);
+
+        // Batch info banner update
+        function updateBatchInfoBanner() {
+            const batch = CoManufacturing.getCurrentBatch();
+            const banner = document.getElementById('batchInfoBanner');
+            
+            if (!batch) {
+                banner.style.display = 'none';
+                return;
+            }
+            
+            banner.style.display = 'block';
+            document.getElementById('batchInfoName').textContent = batch.formulaName || 'Unnamed Formula';
+            document.getElementById('batchInfoSize').textContent = `${batch.batchSize} ${batch.batchSizeUnit}`;
+            document.getElementById('batchInfoYield').textContent = batch.baseYield ? `${batch.baseYield} gal yield` : '—';
+            
+            const time = new Date(batch.timestamp);
+            const timeStr = time.toLocaleString();
+            document.getElementById('batchInfoTime').textContent = `Saved ${timeStr}`;
+        }
+
+        // Initialize
+        recalculate();
+        updateBatchInfoBanner();
+    </script>
+    </div>
+</body>
+</html>

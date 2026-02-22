@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Co-Manufacturing Calculator Suite</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            width: 100%;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 48px;
+        }
+
+        .header h1 {
+            font-size: 48px;
+            font-weight: 700;
+            margin-bottom: 16px;
+        }
+
+        .header p {
+            font-size: 20px;
+            opacity: 0.9;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 32px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s, box-shadow 0.2s;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .card-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+
+        .card-title {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #1a1a1a;
+        }
+
+        .card-description {
+            font-size: 14px;
+            color: #6b7280;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+
+        .card-features {
+            font-size: 12px;
+            color: #9ca3af;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .feature-badge {
+            background: #f3f4f6;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+
+        .new-badge {
+            background: #10b981;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            display: inline-block;
+            margin-left: 8px;
+        }
+
+        .info-box {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 24px;
+            color: white;
+            margin-top: 40px;
+        }
+
+        .info-box h3 {
+            font-size: 18px;
+            margin-bottom: 12px;
+        }
+
+        .info-box ul {
+            list-style: none;
+            font-size: 14px;
+            line-height: 2;
+        }
+
+        .info-box li::before {
+            content: "✓ ";
+            color: #10b981;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+
+        .keyboard-hint {
+            text-align: center;
+            color: white;
+            opacity: 0.8;
+            font-size: 14px;
+            margin-top: 32px;
+        }
+
+        kbd {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            margin: 0 2px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Co-Manufacturing Calculator</h1>
+            <p>Professional batch costing and production planning tools</p>
+        </div>
+
+        <div class="grid">
+            <a href="batch-calculator-v3.html" class="card">
+                <div class="card-icon">🧪</div>
+                <div class="card-title">Batch Calculator</div>
+                <div class="card-description">
+                    Calculate ingredient costs, scale recipes, and analyze batch economics with MOQ optimization.
+                </div>
+                <div class="card-features">
+                    <span class="feature-badge">Imperial/Metric</span>
+                    <span class="feature-badge">Excel Export</span>
+                    <span class="feature-badge">Analytics</span>
+                </div>
+            </a>
+
+            <a href="copacking-calculator.html" class="card">
+                <div class="card-icon">📦</div>
+                <div class="card-title">Co-Packing Calculator <span class="new-badge">Updated</span></div>
+                <div class="card-description">
+                    Calculate packaging materials and co-packing services with smart auto-population.
+                </div>
+                <div class="card-features">
+                    <span class="feature-badge">Auto-Calc</span>
+                    <span class="feature-badge">Categories</span>
+                    <span class="feature-badge">Services</span>
+                </div>
+            </a>
+
+            <a href="inventory.html" class="card">
+                <div class="card-icon">📊</div>
+                <div class="card-title">Inventory Management <span class="new-badge">New</span></div>
+                <div class="card-description">
+                    Manage ingredients, track stock levels, and configure price tiers with keyboard navigation.
+                </div>
+                <div class="card-features">
+                    <span class="feature-badge">Price Tiers</span>
+                    <span class="feature-badge">Keyboard Nav</span>
+                    <span class="feature-badge">ERP Ready</span>
+                </div>
+            </a>
+
+            <a href="price-sheets.html" class="card">
+                <div class="card-icon">💰</div>
+                <div class="card-title">Price Sheets</div>
+                <div class="card-description">
+                    Maintain pricing for packaging materials, services, and supplier relationships.
+                </div>
+                <div class="card-features">
+                    <span class="feature-badge">Vendors</span>
+                    <span class="feature-badge">Autocomplete</span>
+                    <span class="feature-badge">CSV Export</span>
+                </div>
+            </a>
+        </div>
+
+        <div class="info-box">
+            <h3>✨ What's New in This Update</h3>
+            <ul>
+                <li><strong>Smart Auto-Population:</strong> Co-packing quantities calculate automatically based on categories</li>
+                <li><strong>Command Palette:</strong> Press <kbd>Cmd</kbd>+<kbd>K</kbd> anywhere for quick actions</li>
+                <li><strong>Keyboard Navigation:</strong> Navigate inventory with arrow keys, delete items, all without mouse</li>
+                <li><strong>Master-Detail UI:</strong> New inventory page with side-by-side layout</li>
+                <li><strong>Category System:</strong> Color-coded badges for packaging types (cans, labels, cases, etc.)</li>
+                <li><strong>Vendor Autocomplete:</strong> Search vendors while typing across all pages</li>
+                <li><strong>Unified Data Layer:</strong> All pages share data via localStorage with real-time sync</li>
+            </ul>
+        </div>
+
+        <div class="keyboard-hint">
+            <strong>Keyboard Shortcuts:</strong> 
+            <kbd>Cmd</kbd>+<kbd>K</kbd> Command Palette • 
+            <kbd>Cmd</kbd>+<kbd>N</kbd> New • 
+            <kbd>Cmd</kbd>+<kbd>E</kbd> Export • 
+            <kbd>Cmd</kbd>+<kbd>S</kbd> Save
+        </div>
+    </div>
+</body>
+</html>
