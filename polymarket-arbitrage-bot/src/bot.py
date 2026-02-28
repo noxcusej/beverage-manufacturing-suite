@@ -21,6 +21,7 @@ from src.core.arbitrage import ArbitrageEngine
 from src.core.clob_api import ClobApiClient
 from src.core.config import Settings, TradingMode
 from src.core.types import BinaryMarket, OrderBookSnapshot
+from src.dashboard.server import DashboardServer
 from src.trading.executor import TradeExecutor
 from src.utils.tailscale import TailscaleManager
 from src.ws.client import PolymarketWSClient
@@ -44,7 +45,7 @@ class ArbitrageBot:
     # How often to refresh the market list (seconds)
     MARKET_REFRESH_INTERVAL = 300
 
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, dashboard_port: int = 8899):
         self.settings = settings
         self.api = ClobApiClient(settings)
         self.arb_engine = ArbitrageEngine(settings)
@@ -54,6 +55,7 @@ class ArbitrageBot:
             exit_node=settings.tailscale_exit_node,
             enabled=settings.tailscale_enabled,
         )
+        self.dashboard = DashboardServer(self, port=dashboard_port)
 
         self._running = False
         self._start_time: float = 0
@@ -81,6 +83,9 @@ class ArbitrageBot:
         )
 
         try:
+            # --- Phase 0: Start dashboard ---
+            await self.dashboard.start()
+
             # --- Phase 1: Pre-flight checks ---
             await self._preflight()
 
@@ -290,6 +295,9 @@ class ArbitrageBot:
 
         # Stop API client
         await self.api.stop()
+
+        # Stop dashboard
+        await self.dashboard.stop()
 
         # Restore Tailscale
         await self.tailscale.teardown()
