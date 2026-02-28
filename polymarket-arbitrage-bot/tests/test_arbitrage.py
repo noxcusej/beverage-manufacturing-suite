@@ -50,21 +50,21 @@ def _make_market(
 class TestFeeCalculation:
     def test_fee_at_50_cents(self):
         engine = ArbitrageEngine(_make_settings(taker_fee_bps=200))
-        # fee = 0.02 * min(0.50, 0.50) * 100 = 1.0
+        # fee = 0.02 * 0.50 * 0.50 * 100 = 0.5
         fee = engine.calculate_fee(price=0.50, size=100, is_taker=True)
-        assert fee == 1.0
+        assert fee == 0.5
 
     def test_fee_at_80_cents(self):
         engine = ArbitrageEngine(_make_settings(taker_fee_bps=200))
-        # fee = 0.02 * min(0.80, 0.20) * 100 = 0.4
+        # fee = 0.02 * 0.80 * 0.20 * 100 = 0.32
         fee = engine.calculate_fee(price=0.80, size=100, is_taker=True)
-        assert fee == 0.4
+        assert fee == 0.32
 
     def test_fee_at_20_cents(self):
         engine = ArbitrageEngine(_make_settings(taker_fee_bps=200))
-        # fee = 0.02 * min(0.20, 0.80) * 100 = 0.4
+        # fee = 0.02 * 0.20 * 0.80 * 100 = 0.32
         fee = engine.calculate_fee(price=0.20, size=100, is_taker=True)
-        assert fee == 0.4
+        assert fee == 0.32
 
     def test_fee_symmetry(self):
         """Fees at price p should equal fees at price (1-p)."""

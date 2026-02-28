@@ -203,6 +203,7 @@ class PolymarketWSClient:
         msg = json.dumps({
             "assets_ids": token_ids,
             "type": "market",
+            "custom_feature_enabled": True,
         })
         await self._ws.send(msg)
         log.debug("ws_subscribed", tokens=len(token_ids))
