@@ -141,7 +141,7 @@ class ClobApiClient:
 
     async def get_orderbook(self, token_id: str) -> OrderBookSnapshot:
         """Fetch the full orderbook for a single token."""
-        data = await self._get(self._clob_base, "/book", {"token_id": token_id})
+        data = await self._get(self._clob_base, "/orderbook", {"token_id": token_id})
 
         bids = [
             OrderBookLevel(price=float(b["price"]), size=float(b["size"]))
@@ -192,18 +192,18 @@ class ClobApiClient:
         }
 
     async def get_fee_rate(self, token_id: str) -> int:
-        """Get fee rate in basis points for a token."""
-        data = await self._get(self._clob_base, "/fee-rate", {"token_id": token_id})
+        """Get fee rate in basis points for a token. Most markets are 0%."""
+        data = await self._get(self._clob_base, "/feerate", {"token_id": token_id})
         return int(data.get("fee_rate_bps", 0))
 
     async def get_tick_size(self, token_id: str) -> str:
-        """Get tick size for a token (e.g. '0.01')."""
-        data = await self._get(self._clob_base, "/tick-size", {"token_id": token_id})
+        """Get tick size for a token (e.g. '0.01'). Can change dynamically."""
+        data = await self._get(self._clob_base, "/ticksize", {"token_id": token_id})
         return str(data.get("minimum_tick_size", "0.01"))
 
     async def get_neg_risk(self, token_id: str) -> bool:
-        """Check if a token uses neg-risk exchange."""
-        data = await self._get(self._clob_base, "/neg-risk", {"token_id": token_id})
+        """Check if a token uses the neg-risk CTF exchange."""
+        data = await self._get(self._clob_base, "/negrisk", {"token_id": token_id})
         return bool(data.get("neg_risk", False))
 
     # ------------------------------------------------------------------

@@ -10,8 +10,8 @@ Arbitrage exists when:
   SELL BOTH: best_bid(YES) + best_bid(NO) > 1.00  (after fees)
     → Sell both sides, collect > $1.00, pay $1.00 on resolution
 
-Fee formula from Polymarket docs:
-  fee = base_fee_rate * min(price, 1 - price) * size
+Fee formula from Polymarket docs (symmetric parabola):
+  fee = fee_rate * price * (1 - price) * size
 
 The engine scans all tracked markets and emits ArbitrageOpportunity
 objects when spread exceeds the configured minimum.
@@ -96,13 +96,15 @@ class ArbitrageEngine:
 
     def calculate_fee(self, price: float, size: float, is_taker: bool = True) -> float:
         """
-        Calculate trading fee per Polymarket's formula:
-          fee = base_fee_rate * min(price, 1 - price) * size
+        Calculate trading fee per Polymarket's symmetric parabola:
+          fee = fee_rate * price * (1 - price) * size
 
-        Maker fee is typically 0; taker fee varies.
+        This ensures complementary tokens (YES at p, NO at 1-p) incur
+        identical fees. Max fee is at price=0.50; approaches 0 at extremes.
+        Maker fee is typically 0; taker fee varies by market.
         """
         fee_rate = self.settings.taker_fee_rate if is_taker else self.settings.maker_fee_rate
-        fee = fee_rate * min(price, 1.0 - price) * size
+        fee = fee_rate * price * (1.0 - price) * size
         # Round to nearest $0.001 (Polymarket minimum)
         return max(round(fee, 3), 0.001) if fee > 0 else 0.0
 

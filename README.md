@@ -109,11 +109,14 @@ arb-bot run --mode live
 
 ## Fee Model
 
-Polymarket fees follow: `fee = base_rate × min(price, 1-price) × size`
+Polymarket fees use a symmetric parabola: `fee = fee_rate × price × (1 - price) × size`
 
-- **Maker fee:** 0% (orders resting on the book)
-- **Taker fee:** ~1-2% base rate (consuming liquidity)
-- Fees are symmetric: buying at $0.80 costs the same fee as buying at $0.20
+- **Most markets:** 0% fees for both makers and takers
+- **Selected markets** (e.g., crypto minute-markets): taker fees enabled, funding maker rebates
+- **Maker fee:** always 0% (orders resting on the book)
+- Fees are symmetric: buying at $0.80 costs the same as buying at $0.20
+- Max fee impact is at price = $0.50; approaches 0 at extreme prices
+- The bot fetches `fee_rate_bps` per token dynamically via `GET /feerate`
 
 ## Safety Controls
 
