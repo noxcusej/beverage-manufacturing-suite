@@ -81,12 +81,19 @@ def cli() -> None:
     default=None,
     help="Override Tailscale VPN usage",
 )
+@click.option(
+    "--port",
+    type=int,
+    default=8899,
+    help="Dashboard web UI port (default: 8899)",
+)
 def run(
     mode: str | None,
     min_spread: int | None,
     max_position: float | None,
     log_level: str | None,
     tailscale: bool | None,
+    port: int,
 ) -> None:
     """Start the arbitrage bot."""
     # Load base settings from .env
@@ -127,8 +134,10 @@ def run(
             console.print("Aborted.")
             sys.exit(0)
 
-    # Run the bot
-    bot = ArbitrageBot(settings)
+    # Run the bot with dashboard
+    bot = ArbitrageBot(settings, dashboard_port=port)
+    console.print(f"Dashboard: [cyan]http://localhost:{port}[/cyan]")
+    console.print()
     try:
         asyncio.run(bot.run())
     except KeyboardInterrupt:
