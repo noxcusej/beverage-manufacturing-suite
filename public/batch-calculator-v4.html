@@ -852,12 +852,10 @@
         </div>
         
         <nav class="app-nav">
-            <a href="batch-calculator-v4.html" class="active">Batch Calculator</a>
-            <a href="copacking-calculator.html">Co-Packing</a>
-            <a href="inventory.html">Inventory</a>
-            <a href="services.html">Services</a>
-            <a href="packaging.html">Packaging</a>
-            <a href="mission-control.html" style="margin-left: auto; background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); color: white; border-radius: 6px; padding: 6px 12px;">🎛️ Mission Control</a>
+            <a href="/batch-calculator" class="active">Batch Calculator</a>
+            <a href="/copacking">Co-Packing</a>
+            <a href="/packaging">Packaging</a>
+            <a href="/formulas">Formulas</a>
         </nav>
         
         <div class="app-actions">
@@ -904,13 +902,16 @@
                         <div style="display: flex; gap: 8px;">
                             <button class="btn btn-small" onclick="newFormula()" title="Cmd/Ctrl + N">✨ New</button>
                             <button class="btn btn-small" onclick="exportToExcel()" title="Cmd/Ctrl + E">📊 Export Excel</button>
+                            <button class="btn btn-small" onclick="exportFormulaJSON()" title="Export formula as JSON file">📤 Export Formula</button>
                             <button class="btn btn-small" onclick="loadFormula()" title="Cmd/Ctrl + O">📂 Load</button>
                             <button class="btn btn-small btn-primary" onclick="saveFormula()" title="Cmd/Ctrl + S">💾 Save</button>
                             <button class="btn btn-small" onclick="saveCurrentBatch()" title="Save as current batch" style="background: #059669; color: white; border-color: #059669;">📦 Save Batch</button>
                         </div>
                     </div>
                     <div class="section-body">
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
+                        <input type="hidden" id="formulaClient" value="">
+                        <datalist id="clientList"></datalist>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                             <div class="form-group" style="margin: 0;">
                                 <label class="form-label">Formula Name</label>
                                 <input type="text" id="formulaName" value="Citrus Energy Drink" placeholder="e.g., Citrus Energy Drink">
@@ -1181,25 +1182,35 @@
 
     <!-- Modal for Load Formula -->
     <div class="modal-overlay" id="loadFormulaModal">
-        <div class="modal">
-            <div class="modal-header">
-                <div class="modal-title">Load Formula</div>
+        <div class="modal" style="max-width: 580px;">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <div class="modal-title">Formula Library</div>
+                <button class="btn btn-small" onclick="addNewClientFolder()" style="font-size: 12px;">+ New Folder</button>
             </div>
             <div class="modal-body">
                 <div style="margin-bottom: 20px;">
-                    <div style="font-weight: 600; margin-bottom: 12px;">Recent Formulas</div>
-                    <div id="recentFormulas" style="max-height: 200px; overflow-y: auto;">
+                    <div style="font-size: 12px; color: #6b7280; margin-bottom: 10px;">Drag formulas between folders to reorganize</div>
+                    <div id="recentFormulas" style="max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;">
                         <!-- Populated by JS -->
                     </div>
                 </div>
                 <div style="border-top: 1px solid #e5e7eb; padding-top: 20px;">
                     <div style="font-weight: 600; margin-bottom: 12px;">Load from File</div>
-                    <input type="file" id="formulaFileInput" accept=".json" style="width: 100%; padding: 10px; border: 2px dashed #d1d5db; border-radius: 6px; cursor: pointer;">
-                    <div class="form-hint">Select a saved formula JSON file</div>
+                    <input type="file" id="formulaFileInput" accept=".json" style="display: none;" onchange="handleFormulaFileSelect(this)">
+                    <div id="fileDropZone" onclick="document.getElementById('formulaFileInput').click()"
+                         style="width: 100%; padding: 24px; border: 2px dashed #d1d5db; border-radius: 8px; cursor: pointer; text-align: center; background: #f9fafb; transition: all 0.15s;"
+                         onmouseover="this.style.borderColor='#2563eb'; this.style.background='#eff6ff';"
+                         onmouseout="if(!this.dataset.hasFile){this.style.borderColor='#d1d5db'; this.style.background='#f9fafb';}">
+                        <div id="fileDropText" style="color: #6b7280; font-size: 13px;">
+                            <span style="font-size: 24px; display: block; margin-bottom: 6px;">📂</span>
+                            Click to select a formula JSON file
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="btn" onclick="closeLoadFormula()">Cancel</button>
+                <button class="btn btn-primary" id="loadFileBtn" onclick="loadFormulaFromFile()" style="display: none;">📂 Load Formula</button>
             </div>
         </div>
     </div>
@@ -1282,9 +1293,20 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <script src="shared-data.js"></script>
     <script src="command-palette.js"></script>
     <script>
+        // Initialize Supabase connection for formula persistence
+        CoManufacturing.initSupabase(
+            'https://qmptueceanpvmhlcycoi.supabase.co',
+            'sb_publishable_8L01aOOOVs9EyhOJVyhpwA_XWjpthDK'
+        );
+        // Hydrate formulas from Supabase on page load
+        CoManufacturing.hydrateFormulasFromSupabase().catch(err =>
+            console.error('[BatchCalc] Supabase hydration failed:', err)
+        );
+
         // Performance: Load SheetJS only when needed for export
         let sheetJSLoaded = false;
         function loadSheetJS() {
@@ -1374,6 +1396,13 @@
             if (!batch) return;
             
             // Populate form fields
+            // Restore formula ID and client for save-in-place
+            if (batch.formulaId) {
+                currentFormulaId = batch.formulaId;
+            }
+            if (batch.formulaClient) {
+                document.getElementById('formulaClient').value = batch.formulaClient;
+            }
             if (batch.formulaName) {
                 document.getElementById('formulaName').value = batch.formulaName;
             }
@@ -1594,6 +1623,9 @@
                 '\n\nTo modify tanks, edit shared-data.js or add a config UI.');
         }
 
+        // Track the currently loaded formula's ID for save-in-place
+        let currentFormulaId = null;
+
         // Sample formula ingredients
         let ingredients = [
             {
@@ -1778,7 +1810,7 @@
                 ${currentPricingHTML}
                 
                 <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid #e5e7eb;">
-                    <a href="inventory.html?item=${invId}" class="btn btn-primary" style="width: 100%; justify-content: center; margin-bottom: 10px; text-decoration: none; display: flex;">
+                    <a href="/inventory?item=${invId}" class="btn btn-primary" style="width: 100%; justify-content: center; margin-bottom: 10px; text-decoration: none; display: flex;">
                         📝 Edit in Inventory
                     </a>
                     <button class="btn" onclick="searchSuppliers('${invId}')" style="width: 100%; justify-content: center; margin-bottom: 10px;">
@@ -3078,65 +3110,73 @@
         }
 
 
-// API Configuration
-const API_BASE_URL = 'http://127.0.0.1:9003/api';
 
-// API Helper Functions
-const API = {
-    async listBatches() {
-        const response = await fetch(`${API_BASE_URL}/batches`);
-        if (!response.ok) throw new Error('Failed to list batches');
-        return await response.json();
-    },
-    
-    async getBatch(id) {
-        const response = await fetch(`${API_BASE_URL}/batches/${id}`);
-        if (!response.ok) throw new Error('Failed to get batch');
-        return await response.json();
-    },
-    
-    async saveBatch(id, name, data) {
-        // Try PUT first (update), if it fails try POST (create)
-        let response = await fetch(`${API_BASE_URL}/batches/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, data })
-        });
-        
-        if (response.status === 404) {
-            // Batch doesn't exist, create it
-            response = await fetch(`${API_BASE_URL}/batches`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id, name, data })
-            });
-        }
-        
-        if (!response.ok) throw new Error('Failed to save batch');
-        return await response.json();
-    },
-    
-    async deleteBatch(id) {
-        const response = await fetch(`${API_BASE_URL}/batches/${id}`, {
-            method: 'DELETE'
-        });
-        if (!response.ok) throw new Error('Failed to delete batch');
-        return await response.json();
-    }
-};
-
-// Modified saveFormula function
-async function saveFormula() {
+// Save formula to localStorage via shared data layer
+function exportFormulaJSON() {
     const formulaName = document.getElementById('formulaName').value;
-    
+    if (!formulaName) {
+        alert('Please enter a formula name before exporting');
+        return;
+    }
+    if (ingredients.length === 0) {
+        alert('No ingredients to export. Add some ingredients first.');
+        return;
+    }
+
+    const formulaClient = document.getElementById('formulaClient').value.trim();
+    const formula = {
+        version: '1.0',
+        name: formulaName,
+        client: formulaClient || 'Uncategorized',
+        baseYield: parseFloat(document.getElementById('baseYield').value),
+        baseYieldUnit: document.getElementById('baseYieldUnit').value,
+        batchSize: parseFloat(document.getElementById('batchSize').value),
+        batchSizeUnit: document.getElementById('batchSizeUnit').value,
+        unitSize: parseFloat(document.getElementById('unitSize')?.value || 12),
+        unitSizeUnit: document.getElementById('unitSizeUnit')?.value || 'oz',
+        unitsPerCase: parseInt(document.getElementById('unitsPerCase')?.value || 24),
+        ingredients: ingredients.map(ing => {
+            const inv = CoManufacturing.getInventory().find(i => i.id === ing.inventoryId);
+            return {
+                inventoryId: ing.inventoryId,
+                name: inv ? inv.name : (ing.draftName || 'Unknown'),
+                sku: inv ? inv.sku : '',
+                draftName: ing.draftName,
+                type: ing.type,
+                recipeAmount: ing.recipeAmount,
+                recipeUnit: ing.recipeUnit,
+                specificGravity: ing.specificGravity,
+                buyUnit: ing.buyUnit,
+                pricePerBuyUnit: ing.pricePerBuyUnit,
+                moq: ing.moq
+            };
+        }),
+        exportedAt: new Date().toISOString()
+    };
+
+    const json = JSON.stringify(formula, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${formulaName.replace(/[^a-zA-Z0-9]/g, '_')}_formula.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+
+function saveFormula() {
+    const formulaName = document.getElementById('formulaName').value;
+    const formulaClient = document.getElementById('formulaClient').value.trim();
+
     if (!formulaName) {
         alert('Please enter a formula name before saving');
         return;
     }
 
     const formula = {
+        id: currentFormulaId,
         version: '1.0',
         name: formulaName,
+        client: formulaClient || 'Uncategorized',
         baseYield: parseFloat(document.getElementById('baseYield').value),
         baseYieldUnit: document.getElementById('baseYieldUnit').value,
         batchSize: parseFloat(document.getElementById('batchSize').value),
@@ -3155,73 +3195,167 @@ async function saveFormula() {
         savedAt: new Date().toISOString()
     };
 
-    try {
-        // Generate ID from name (URL-safe)
-        const id = formulaName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-        
-        // Save to API
-        await API.saveBatch(id, formulaName, formula);
+    CoManufacturing.saveFormula(formula);
+    // Update currentFormulaId in case this was a new formula
+    const saved = CoManufacturing.getFormulas();
+    const match = saved.find(f => f.name === formulaName);
+    if (match) currentFormulaId = match.id;
+    alert(`✅ Formula "${formulaName}" saved!\n\nYou can load it anytime from the "Load" button.`);
+}
 
-        alert(`✅ Formula "${formulaName}" saved!\n\nSaved to database. You can load it anytime from the "Load" button.`);
-    } catch (err) {
-        alert(`❌ Error saving formula: ${err.message}\n\nPlease try again or check your connection.`);
-        console.error('Save error:', err);
+// Populate client datalist for autocomplete
+function populateClientList() {
+    const formulas = CoManufacturing.getFormulas();
+    const clients = [...new Set(formulas.map(f => f.client).filter(Boolean))];
+    const datalist = document.getElementById('clientList');
+    if (datalist) {
+        datalist.innerHTML = clients.map(c => `<option value="${c}">`).join('');
     }
 }
 
-// Modified displayRecentFormulas function
-async function displayRecentFormulas() {
+// Display saved formulas grouped by client folder
+function displayRecentFormulas() {
     const container = document.getElementById('recentFormulas');
-    
-    try {
-        const result = await API.listBatches();
-        const savedFormulas = result.batches || [];
+    const savedFormulas = CoManufacturing.getFormulas();
+    populateClientList();
 
-        if (savedFormulas.length === 0) {
-            container.innerHTML = `
-                <div style="padding: 20px; text-align: center; color: #9ca3af; font-size: 13px;">
-                    No saved formulas yet.<br>
-                    Save your first formula to see it here!
-                </div>
-            `;
-            return;
-        }
-
-        container.innerHTML = savedFormulas.map((formula) => {
-            const date = new Date(formula.updated_at);
-            const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            
-            return `
-                <div style="padding: 12px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 8px; cursor: pointer; transition: all 0.15s;"
-                     onmouseover="this.style.background='#f9fafb'; this.style.borderColor='#2563eb';"
-                     onmouseout="this.style.background='white'; this.style.borderColor='#e5e7eb';"
-                     onclick="loadFormulaById('${formula.id}')">
-                    <div style="display: flex; justify-content: space-between; align-items: start;">
-                        <div>
-                            <div style="font-weight: 600; margin-bottom: 4px;">${formula.name}</div>
-                            <div style="font-size: 12px; color: #6b7280;">
-                                Last modified
-                            </div>
-                        </div>
-                        <div style="text-align: right;">
-                            <div style="font-size: 11px; color: #6b7280;">${dateStr}</div>
-                            <button class="btn btn-small btn-danger" onclick="event.stopPropagation(); deleteFormulaById('${formula.id}', '${formula.name}')" style="margin-top: 4px;">
-                                Delete
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-    } catch (err) {
+    if (savedFormulas.length === 0) {
         container.innerHTML = `
-            <div style="padding: 20px; text-align: center; color: #ef4444; font-size: 13px;">
-                ❌ Error loading formulas<br>
-                ${err.message}
+            <div style="padding: 20px; text-align: center; color: #9ca3af; font-size: 13px;">
+                No saved formulas yet.<br>
+                Save your first formula to see it here!
             </div>
         `;
-        console.error('Load error:', err);
+        return;
     }
+
+    // Group by client
+    const groups = {};
+    savedFormulas.forEach((formula, index) => {
+        const client = formula.client || 'Uncategorized';
+        if (!groups[client]) groups[client] = [];
+        groups[client].push({ ...formula, _index: index });
+    });
+
+    // Sort client names, but put Uncategorized last
+    const sortedClients = Object.keys(groups).sort((a, b) => {
+        if (a === 'Uncategorized') return 1;
+        if (b === 'Uncategorized') return -1;
+        return a.localeCompare(b);
+    });
+
+    container.innerHTML = sortedClients.map(client => {
+        const formulas = groups[client];
+        const isUncategorized = client === 'Uncategorized';
+        return `
+            <div class="formula-folder" data-client="${client}"
+                 ondragover="handleFolderDragOver(event)" ondragleave="handleFolderDragLeave(event)" ondrop="handleFolderDrop(event, '${client.replace(/'/g, "\\'")}')">
+                <div onclick="toggleFolder(this)" style="display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: ${isUncategorized ? '#f9fafb' : '#eff6ff'}; border: 1px solid ${isUncategorized ? '#e5e7eb' : '#bfdbfe'}; border-radius: 6px; cursor: pointer; user-select: none; transition: all 0.15s;"
+                     onmouseover="this.style.background='${isUncategorized ? '#f3f4f6' : '#dbeafe'}'" onmouseout="this.style.background='${isUncategorized ? '#f9fafb' : '#eff6ff'}'">
+                    <span class="folder-arrow" style="font-size: 10px; color: #6b7280; transition: transform 0.2s;">&#9654;</span>
+                    <span style="font-size: 16px;">${isUncategorized ? '📁' : '📂'}</span>
+                    <span style="font-weight: 600; font-size: 13px; flex: 1;">${client}</span>
+                    <span style="font-size: 11px; color: #6b7280; background: white; padding: 2px 8px; border-radius: 10px; border: 1px solid #e5e7eb;">${formulas.length}</span>
+                </div>
+                <div class="folder-contents" style="display: none; padding-left: 12px; margin-top: 4px;">
+                    ${formulas.map(formula => {
+                        const date = new Date(formula.updatedAt || formula.createdAt || formula.savedAt);
+                        const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                        const ingCount = (formula.ingredients || []).length;
+                        return `
+                            <div draggable="true" ondragstart="handleFormulaDragStart(event, ${formula._index})"
+                                 style="padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 4px; cursor: grab; transition: all 0.15s; background: white;"
+                                 onmouseover="this.style.background='#f9fafb'; this.style.borderColor='#2563eb';"
+                                 onmouseout="this.style.background='white'; this.style.borderColor='#e5e7eb';">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div style="flex: 1; min-width: 0;" onclick="loadFormulaByIndex(${formula._index})">
+                                        <div style="font-weight: 600; font-size: 13px; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${formula.name}</div>
+                                        <div style="font-size: 11px; color: #6b7280;">${ingCount} ingredient${ingCount !== 1 ? 's' : ''} &middot; ${dateStr}</div>
+                                    </div>
+                                    <div style="display: flex; gap: 4px; flex-shrink: 0;">
+                                        <button class="btn btn-small" onclick="event.stopPropagation(); loadFormulaByIndex(${formula._index})" style="font-size: 11px; padding: 3px 8px;">Load</button>
+                                        <button class="btn btn-small btn-danger" onclick="event.stopPropagation(); deleteFormulaByIndex(${formula._index}, '${formula.name.replace(/'/g, "\\'")}')" style="font-size: 11px; padding: 3px 8px;">Delete</button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Toggle folder open/close
+function toggleFolder(el) {
+    const contents = el.nextElementSibling;
+    const arrow = el.querySelector('.folder-arrow');
+    if (contents.style.display === 'none') {
+        contents.style.display = 'block';
+        arrow.style.transform = 'rotate(90deg)';
+    } else {
+        contents.style.display = 'none';
+        arrow.style.transform = 'rotate(0deg)';
+    }
+}
+
+// Add a new empty client folder
+function addNewClientFolder() {
+    const name = prompt('Enter client/folder name:');
+    if (!name || !name.trim()) return;
+    // Create a placeholder formula to establish the folder, or just refresh
+    // We'll just show a message that they can assign the client when saving
+    alert(`Folder "${name.trim()}" will appear once you save a formula with this client name.\n\nSet the "Client" field to "${name.trim()}" and save your formula.`);
+    // Pre-fill the client field
+    document.getElementById('formulaClient').value = name.trim();
+    closeLoadFormula();
+}
+
+// Drag and drop handlers
+let draggedFormulaIndex = null;
+
+function handleFormulaDragStart(event, index) {
+    draggedFormulaIndex = index;
+    event.dataTransfer.effectAllowed = 'move';
+    event.target.style.opacity = '0.5';
+    setTimeout(() => { event.target.style.opacity = '1'; }, 0);
+}
+
+function handleFolderDragOver(event) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    const folder = event.currentTarget;
+    folder.querySelector('div').style.outline = '2px solid #2563eb';
+    folder.querySelector('div').style.outlineOffset = '-2px';
+}
+
+function handleFolderDragLeave(event) {
+    const folder = event.currentTarget;
+    folder.querySelector('div').style.outline = 'none';
+}
+
+function handleFolderDrop(event, targetClient) {
+    event.preventDefault();
+    const folder = event.currentTarget;
+    folder.querySelector('div').style.outline = 'none';
+
+    if (draggedFormulaIndex === null) return;
+
+    const formulas = CoManufacturing.getFormulas();
+    if (draggedFormulaIndex >= 0 && draggedFormulaIndex < formulas.length) {
+        const formula = formulas[draggedFormulaIndex];
+        const oldClient = formula.client || 'Uncategorized';
+        if (oldClient === targetClient) {
+            draggedFormulaIndex = null;
+            return;
+        }
+        formula.client = targetClient;
+        formula.updatedAt = new Date().toISOString();
+        localStorage.setItem(CoManufacturing.STORAGE_KEYS.formulas, JSON.stringify(formulas));
+        CoManufacturing.notifyChange('formulas');
+        displayRecentFormulas();
+    }
+    draggedFormulaIndex = null;
 }
 
 // Open load modal
@@ -3233,12 +3367,74 @@ function loadFormula() {
 // Close load modal
 function closeLoadFormula() {
     document.getElementById('loadFormulaModal').classList.remove('active');
+    document.getElementById('formulaFileInput').value = '';
+    document.getElementById('loadFileBtn').style.display = 'none';
+    const zone = document.getElementById('fileDropZone');
+    zone.style.borderColor = '#d1d5db';
+    zone.style.background = '#f9fafb';
+    zone.dataset.hasFile = '';
+    document.getElementById('fileDropText').innerHTML = '<span style="font-size: 24px; display: block; margin-bottom: 6px;">📂</span>Click to select a formula JSON file';
+}
+
+// Show load button when file is selected
+function handleFormulaFileSelect(input) {
+    const btn = document.getElementById('loadFileBtn');
+    const zone = document.getElementById('fileDropZone');
+    const text = document.getElementById('fileDropText');
+    if (input.files && input.files.length > 0) {
+        const name = input.files[0].name;
+        btn.style.display = 'inline-flex';
+        zone.style.borderColor = '#2563eb';
+        zone.style.background = '#eff6ff';
+        zone.dataset.hasFile = 'true';
+        text.innerHTML = '<span style="font-size: 20px; display: block; margin-bottom: 4px;">✅</span>' +
+            '<span style="font-weight: 600; color: #1e40af;">' + name + '</span>' +
+            '<br><span style="font-size: 12px; color: #6b7280;">Click to change file</span>';
+    } else {
+        btn.style.display = 'none';
+        zone.style.borderColor = '#d1d5db';
+        zone.style.background = '#f9fafb';
+        zone.dataset.hasFile = '';
+        text.innerHTML = '<span style="font-size: 24px; display: block; margin-bottom: 6px;">📂</span>Click to select a formula JSON file';
+    }
+}
+
+// Load formula from selected JSON file
+function loadFormulaFromFile() {
+    const fileInput = document.getElementById('formulaFileInput');
+    const file = fileInput.files[0];
+    if (!file) {
+        alert('Please select a file first');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const formula = JSON.parse(e.target.result);
+            if (!formula.name || !formula.ingredients) {
+                alert('Invalid formula file. Must contain "name" and "ingredients".');
+                return;
+            }
+            applyFormula(formula);
+            closeLoadFormula();
+            fileInput.value = '';
+            document.getElementById('loadFileBtn').style.display = 'none';
+        } catch (err) {
+            alert('Error reading formula file: ' + err.message);
+        }
+    };
+    reader.readAsText(file);
 }
 
 // Apply formula data to the UI
 function applyFormula(formula) {
+    // Track the loaded formula's ID so Save overwrites it
+    currentFormulaId = formula.id || null;
+
     // Populate formula details
     document.getElementById('formulaName').value = formula.name;
+    document.getElementById('formulaClient').value = formula.client || '';
     document.getElementById('baseYield').value = formula.baseYield;
     document.getElementById('baseYieldUnit').value = formula.baseYieldUnit;
     document.getElementById('batchSize').value = formula.batchSize || formula.baseYield;
@@ -3263,30 +3459,36 @@ function applyFormula(formula) {
     alert(`✅ Loaded formula: ${formula.name}\n\n${formula.ingredients.length} ingredients loaded.`);
 }
 
-// New function to load by ID
-async function loadFormulaById(id) {
-    try {
-        const result = await API.getBatch(id);
-        applyFormula(result.data);
+// Load formula by index from localStorage
+function loadFormulaByIndex(index) {
+    const formulas = CoManufacturing.getFormulas();
+    if (index >= 0 && index < formulas.length) {
+        applyFormula(formulas[index]);
         closeLoadFormula();
-    } catch (err) {
-        alert(`❌ Error loading formula: ${err.message}`);
-        console.error('Load error:', err);
     }
 }
 
-// New function to delete by ID
-async function deleteFormulaById(id, name) {
+// Delete formula by index from localStorage and Supabase
+function deleteFormulaByIndex(index, name) {
     if (!confirm(`Delete formula "${name}"?\n\nThis cannot be undone.`)) {
         return;
     }
 
-    try {
-        await API.deleteBatch(id);
+    const formulas = CoManufacturing.getFormulas();
+    if (index >= 0 && index < formulas.length) {
+        const formulaId = formulas[index].id;
+        formulas.splice(index, 1);
+        localStorage.setItem(CoManufacturing.STORAGE_KEYS.formulas, JSON.stringify(formulas));
+        CoManufacturing.notifyChange('formulas');
         displayRecentFormulas(); // Refresh list
-    } catch (err) {
-        alert(`❌ Error deleting formula: ${err.message}`);
-        console.error('Delete error:', err);
+
+        // Also delete from Supabase
+        if (formulaId && CoManufacturing._supabaseReady && CoManufacturing._supabase) {
+            CoManufacturing._supabase.from('formulas').delete().eq('id', formulaId)
+                .then(({ error }) => {
+                    if (error) console.error('[Supabase] delete error:', error.message);
+                });
+        }
     }
 }
 
@@ -3363,7 +3565,11 @@ async function deleteFormulaById(id, name) {
             
             const moqSavings = costPerUnitWithMOQ - costPerUnitWithoutMOQ;
             const moqSavingsPercent = (moqSavings / costPerUnitWithMOQ * 100);
-            
+            const unitsPerCase = parseFloat(document.getElementById('unitsPerCase').value) || 24;
+            const costPerCaseWithMOQ = costPerUnitWithMOQ * unitsPerCase;
+            const costPerCaseWithoutMOQ = costPerUnitWithoutMOQ * unitsPerCase;
+            const totalCases = Math.ceil(unitsPerBatch / unitsPerCase);
+
             resultsDiv.innerHTML = `
                 <div style="display: grid; gap: 16px;">
                     <!-- Unit Economics -->
@@ -3371,16 +3577,21 @@ async function deleteFormulaById(id, name) {
                         <div style="font-weight: 600; margin-bottom: 12px; color: #1e40af; font-size: 15px;">
                             ${unitSize} ${unitType} Package Economics
                         </div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px;">
                             <div style="text-align: center;">
                                 <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; font-weight: 600; min-height: 28px;">Units per Batch</div>
                                 <div style="font-size: 22px; font-weight: 700;">${unitsPerBatch.toFixed(0)}</div>
-                                <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">from ${batchSize} ${batchSizeUnit}</div>
+                                <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">${totalCases} cases from ${batchSize} ${batchSizeUnit}</div>
                             </div>
                             <div style="text-align: center;">
                                 <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; font-weight: 600; min-height: 28px;">Cost with MOQ</div>
                                 <div style="font-size: 22px; font-weight: 700; color: #1e40af;">$${costPerUnitWithMOQ.toFixed(4)}</div>
                                 <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">per ${unitSize} ${unitType} unit</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; font-weight: 600; min-height: 28px;">Cost per Case</div>
+                                <div style="font-size: 22px; font-weight: 700; color: #7c3aed;">$${costPerCaseWithMOQ.toFixed(2)}</div>
+                                <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">${unitsPerCase} units/case</div>
                             </div>
                             <div style="text-align: center;">
                                 <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; font-weight: 600; min-height: 28px;">Cost without MOQ</div>
@@ -3915,52 +4126,24 @@ async function deleteFormulaById(id, name) {
 
         // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {
-            // Check for Cmd (Mac) or Ctrl (Windows/Linux)
             const isMod = e.metaKey || e.ctrlKey;
-            
             if (!isMod) return;
-            
-            // Cmd/Ctrl + N - New Formula
-            if (e.key === 'n' || e.key === 'N') {
+            const key = e.key.toLowerCase();
+            if (['s', 'n', 'o', 'e', 'i', 'd'].includes(key)) {
                 e.preventDefault();
-                newFormula();
             }
-            
-            // Cmd/Ctrl + I - Add from Inventory
-            if (e.key === 'i' || e.key === 'I') {
+            if (key === 'a' && e.shiftKey) {
                 e.preventDefault();
-                addIngredient();
             }
-            
-            // Cmd/Ctrl + D - Add Draft
-            if (e.key === 'd' || e.key === 'D') {
-                e.preventDefault();
-                addDraftIngredient();
+            switch (key) {
+                case 's': saveFormula(); break;
+                case 'n': newFormula(); break;
+                case 'o': loadFormula(); break;
+                case 'e': exportToExcel(); break;
+                case 'i': addIngredient(); break;
+                case 'd': addDraftIngredient(); break;
             }
-            
-            // Cmd/Ctrl + S - Save Formula
-            if (e.key === 's' || e.key === 'S') {
-                e.preventDefault();
-                saveFormula();
-            }
-            
-            // Cmd/Ctrl + O - Load Formula
-            if (e.key === 'o' || e.key === 'O') {
-                e.preventDefault();
-                loadFormula();
-            }
-            
-            // Cmd/Ctrl + E - Export Excel
-            if (e.key === 'e' || e.key === 'E') {
-                e.preventDefault();
-                exportToExcel();
-            }
-            
-            // Cmd/Ctrl + A - Open Analytics (if Shift is also pressed)
-            if ((e.key === 'a' || e.key === 'A') && e.shiftKey) {
-                e.preventDefault();
-                openAnalytics();
-            }
+            if (key === 'a' && e.shiftKey) openAnalytics();
         });
 
         // Initialize command palette

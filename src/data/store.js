@@ -5,6 +5,12 @@ import {
   defaultVendors,
   defaultTankConfig,
 } from './defaults';
+import {
+  loadFormulasFromSupabase,
+  saveFormulaToSupabase,
+  syncAllFormulasToSupabase,
+  deleteFormulaFromSupabase,
+} from './supabase';
 
 const STORAGE_KEYS = {
   inventory: 'comanufacturing_inventory',
@@ -14,6 +20,8 @@ const STORAGE_KEYS = {
   formulas: 'comanufacturing_formulas',
   currentBatch: 'comanufacturing_current_batch',
   tankConfig: 'comanufacturing_tank_config',
+  runs: 'comanufacturing_runs',
+  clients: 'comanufacturing_clients',
   missionControl: 'openclaw_mission_control',
 };
 
@@ -169,19 +177,156 @@ export function getVendor(id) {
 
 // ── Formulas ──
 
+function generateFormulaId() {
+  return 'FRM-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
+}
+
+// Track whether we've loaded from Supabase this session
+let _supabaseLoaded = false;
+
 export function getFormulas() {
-  return load(STORAGE_KEYS.formulas, []);
+  const formulas = load(STORAGE_KEYS.formulas, []);
+  // Backfill IDs for any formulas that don't have one
+  let changed = false;
+  formulas.forEach(f => {
+    if (!f.id) { f.id = generateFormulaId(); changed = true; }
+  });
+  if (changed) {
+    localStorage.setItem(STORAGE_KEYS.formulas, JSON.stringify(formulas));
+  }
+  return formulas;
+}
+
+/**
+ * Load formulas from Supabase and merge into localStorage.
+ * Call this once on app init to hydrate from the database.
+ */
+export async function hydrateFormulasFromSupabase() {
+  if (_supabaseLoaded) return getFormulas();
+  try {
+    const remote = await loadFormulasFromSupabase();
+    if (remote && remote.length > 0) {
+      const local = getFormulas();
+      // Merge: remote wins on conflict (by ID), keep local-only formulas
+      const remoteIds = new Set(remote.map(f => f.id));
+      const localOnly = local.filter(f => !remoteIds.has(f.id));
+      const merged = [...remote, ...localOnly];
+      localStorage.setItem(STORAGE_KEYS.formulas, JSON.stringify(merged));
+      _supabaseLoaded = true;
+
+      // Push any local-only formulas up to Supabase
+      if (localOnly.length > 0) {
+        syncAllFormulasToSupabase(localOnly).catch(() => {});
+      }
+
+      window.dispatchEvent(
+        new CustomEvent('comanufacturing:datachange', { detail: { dataType: 'formulas' } })
+      );
+      return merged;
+    } else if (remote !== null) {
+      // Supabase returned empty — push local formulas up
+      const local = getFormulas();
+      if (local.length > 0) {
+        syncAllFormulasToSupabase(local).catch(() => {});
+      }
+      _supabaseLoaded = true;
+    }
+  } catch (err) {
+    console.error('[Store] hydrateFormulas error:', err);
+  }
+  return getFormulas();
 }
 
 export function saveFormula(formula) {
   const formulas = getFormulas();
-  const existing = formulas.findIndex((f) => f.name === formula.name);
-  if (existing !== -1) {
-    formulas[existing] = { ...formula, updatedAt: new Date().toISOString() };
-  } else {
-    formulas.push({ ...formula, createdAt: new Date().toISOString() });
+  const now = new Date().toISOString();
+
+  // Match by ID first, then fallback to name
+  let existingIdx = -1;
+  if (formula.id) {
+    existingIdx = formulas.findIndex((f) => f.id === formula.id);
   }
+  if (existingIdx === -1) {
+    existingIdx = formulas.findIndex((f) => f.name === formula.name);
+  }
+
+  let savedFormula;
+  if (existingIdx !== -1) {
+    const old = formulas[existingIdx];
+    const versions = old.versions || [];
+
+    // Only create a version if data actually changed
+    // (skip if last save was within 2 seconds — dedup rapid double-calls)
+    const lastVer = versions[versions.length - 1];
+    const skipVersion = lastVer && (new Date(now) - new Date(lastVer.versionDate)) < 2000;
+
+    if (!skipVersion) {
+      const snapshot = { ...old };
+      delete snapshot.versions;
+      snapshot.versionDate = now;
+      snapshot.versionLabel = 'v' + (versions.length + 1);
+      versions.push(snapshot);
+    }
+
+    formulas[existingIdx] = {
+      ...formula,
+      id: old.id,
+      versions: versions,
+      createdAt: old.createdAt,
+      updatedAt: now,
+    };
+    savedFormula = formulas[existingIdx];
+  } else {
+    // New formula
+    savedFormula = {
+      ...formula,
+      id: formula.id || generateFormulaId(),
+      versions: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    formulas.push(savedFormula);
+  }
+
+  // Write to localStorage
   localStorage.setItem(STORAGE_KEYS.formulas, JSON.stringify(formulas));
+  window.dispatchEvent(
+    new CustomEvent('comanufacturing:datachange', { detail: { dataType: 'formulas' } })
+  );
+
+  // Write-through to Supabase (async, non-blocking)
+  saveFormulaToSupabase(savedFormula).catch(err =>
+    console.error('[Store] Supabase write-through failed:', err)
+  );
+}
+
+/**
+ * Save all formulas (used by FormulaLibrary for bulk ops like rename, delete, reorder).
+ * Also syncs to Supabase.
+ */
+export function saveAllFormulas(formulas) {
+  localStorage.setItem(STORAGE_KEYS.formulas, JSON.stringify(formulas));
+  window.dispatchEvent(
+    new CustomEvent('comanufacturing:datachange', { detail: { dataType: 'formulas' } })
+  );
+  // Sync full set to Supabase
+  syncAllFormulasToSupabase(formulas).catch(err =>
+    console.error('[Store] Supabase bulk sync failed:', err)
+  );
+}
+
+/**
+ * Delete a formula by ID from both localStorage and Supabase.
+ */
+export function deleteFormula(formulaId) {
+  const formulas = getFormulas().filter(f => f.id !== formulaId);
+  localStorage.setItem(STORAGE_KEYS.formulas, JSON.stringify(formulas));
+  window.dispatchEvent(
+    new CustomEvent('comanufacturing:datachange', { detail: { dataType: 'formulas' } })
+  );
+  deleteFormulaFromSupabase(formulaId).catch(err =>
+    console.error('[Store] Supabase delete failed:', err)
+  );
 }
 
 // ── Batch ──
@@ -208,6 +353,60 @@ export function getTankConfig() {
 
 export function saveTankConfig(tanks) {
   save(STORAGE_KEYS.tankConfig, tanks);
+}
+
+// ── Runs ──
+
+export function getRuns() {
+  return load(STORAGE_KEYS.runs, []);
+}
+
+export function saveRun(run) {
+  const runs = getRuns();
+  const now = new Date().toISOString();
+  const existing = runs.findIndex((r) => r.id === run.id);
+  if (existing !== -1) {
+    runs[existing] = { ...run, updatedAt: now };
+  } else {
+    runs.push({ ...run, id: run.id || 'RUN-' + Date.now(), createdAt: now, updatedAt: now });
+  }
+  save(STORAGE_KEYS.runs, runs);
+  return runs[existing !== -1 ? existing : runs.length - 1];
+}
+
+export function deleteRun(runId) {
+  save(STORAGE_KEYS.runs, getRuns().filter((r) => r.id !== runId));
+}
+
+// ── Clients ──
+
+export function getClients() {
+  return load(STORAGE_KEYS.clients, []);
+}
+
+export function saveClient(client) {
+  const clients = getClients();
+  const now = new Date().toISOString();
+  const existing = clients.findIndex((c) => c.id === client.id);
+  if (existing !== -1) {
+    clients[existing] = { ...clients[existing], ...client, updatedAt: now };
+  } else {
+    clients.push({ ...client, id: client.id || 'CLT-' + Date.now(), createdAt: now, updatedAt: now });
+  }
+  save(STORAGE_KEYS.clients, clients);
+  return clients[existing !== -1 ? existing : clients.length - 1];
+}
+
+export function deleteClient(clientId) {
+  save(STORAGE_KEYS.clients, getClients().filter((c) => c.id !== clientId));
+}
+
+export function getFormulasForClient(clientName) {
+  return getFormulas().filter((f) => (f.client || '') === clientName);
+}
+
+export function getRunsForClient(clientName) {
+  return getRuns().filter((r) => (r.client || '') === clientName);
 }
 
 // ── Mission Control ──

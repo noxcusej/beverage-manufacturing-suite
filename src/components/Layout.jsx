@@ -21,54 +21,95 @@ export default function Layout() {
     <>
       <CommandPalette />
 
-      <header className="app-header">
-        <div className="app-branding">
-          <div className="app-logo">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path d="M4 10L8 6L12 10L16 6" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M4 14L8 10L12 14L16 10" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </div>
-          <div>
-            <div className="app-title">Co-Manufacturing Suite</div>
-            <div className="app-subtitle">Batch & Packaging Calculator</div>
-          </div>
-        </div>
-
-        <nav className="app-nav">
-          <NavLink to="/batch-calculator" className={({ isActive }) => isActive ? 'active' : ''}>Batch Calculator</NavLink>
-          <NavLink to="/copacking" className={({ isActive }) => isActive ? 'active' : ''}>Co-Packing</NavLink>
-          <NavLink to="/inventory" className={({ isActive }) => isActive ? 'active' : ''}>Inventory</NavLink>
-          <NavLink to="/services" className={({ isActive }) => isActive ? 'active' : ''}>Services</NavLink>
-          <NavLink to="/packaging" className={({ isActive }) => isActive ? 'active' : ''}>Packaging</NavLink>
-          <NavLink to="/mission-control" className="mission-control-link">Mission Control</NavLink>
-        </nav>
-      </header>
-
-      {batch && (
-        <div className="batch-info-banner">
-          <div className="batch-info-inner">
-            <div className="batch-info-details">
-              <span className="batch-info-label">Current Batch:</span>
-              <strong>{batch.formulaName || '\u2014'}</strong>
-              <span className="batch-info-sep">|</span>
-              <span>{batch.batchSize || '\u2014'} {batch.batchSizeUnit || 'gal'}</span>
-              <span className="batch-info-sep">|</span>
-              <span>{batch.totalUnits || '\u2014'} units</span>
-              <span className="batch-info-sep">|</span>
-              <span className="batch-info-time">
-                {batch.timestamp ? new Date(batch.timestamp).toLocaleString() : '\u2014'}
-              </span>
+      <div className="app-shell">
+        {/* Sidebar */}
+        <aside className="app-sidebar">
+          <div className="sidebar-brand">
+            <div className="sidebar-logo">
+              <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                <path d="M5 11L9 7L13 11L17 7" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M5 15L9 11L13 15L17 11" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </div>
-            <button className="batch-info-clear" onClick={handleClearBatch}>
-              Clear Batch
-            </button>
+            <div>
+              <div className="sidebar-title">BeverageOS</div>
+              <div className="sidebar-subtitle">Precision Manufacturing</div>
+            </div>
+          </div>
+
+          <nav className="sidebar-nav">
+            <NavLink to="/batch-calculator" className={({ isActive }) => isActive ? 'active' : ''}>
+              <span className="nav-icon">&#x2211;</span>
+              Formula Calculator
+            </NavLink>
+            <NavLink to="/copacking" className={({ isActive }) => isActive ? 'active' : ''}>
+              <span className="nav-icon">&#x2B1C;</span>
+              Run Quoting
+            </NavLink>
+            <NavLink to="/clients" className={({ isActive }) => isActive ? 'active' : ''}>
+              <span className="nav-icon">&#x263A;</span>
+              Clients
+            </NavLink>
+            <NavLink to="/packaging" className={({ isActive }) => isActive ? 'active' : ''}>
+              <span className="nav-icon">&#x2750;</span>
+              Packaging
+            </NavLink>
+            <NavLink to="/formulas" className={({ isActive }) => isActive ? 'active' : ''}>
+              <span className="nav-icon">&#x2697;</span>
+              Formulas
+            </NavLink>
+            <NavLink to="/summary" className={({ isActive }) => isActive ? 'active' : ''}>
+              <span className="nav-icon">&#x2211;</span>
+              Summary
+            </NavLink>
+          </nav>
+
+          <div className="sidebar-footer">
+            <a href="#settings">
+              <span>&#x2699;</span> Settings
+            </a>
+            <a href="#support">
+              <span>&#x2709;</span> Support
+            </a>
+          </div>
+        </aside>
+
+        {/* Main */}
+        <div className="app-main">
+          <header className="app-topbar">
+            <input
+              type="text"
+              className="topbar-search"
+              placeholder="Search projects or logs..."
+            />
+            <div className="topbar-actions">
+              <a href="#reports" className="topbar-link">Reports</a>
+              <a href="#history" className="topbar-link">History</a>
+            </div>
+          </header>
+
+          {batch && (
+            <div className="batch-info-banner">
+              <div className="batch-info-inner">
+                <div className="batch-info-details">
+                  <span className="batch-info-label">Current Batch:</span>
+                  <strong>{batch.formulaName || '\u2014'}</strong>
+                  <span className="batch-info-sep">|</span>
+                  <span>{batch.batchSize || '\u2014'} {batch.batchSizeUnit || 'gal'}</span>
+                  <span className="batch-info-sep">|</span>
+                  <span>{batch.totalUnits || '\u2014'} units</span>
+                </div>
+                <button className="batch-info-clear" onClick={handleClearBatch}>
+                  Clear Batch
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="app-content">
+            <Outlet />
           </div>
         </div>
-      )}
-
-      <div className="app-content">
-        <Outlet />
       </div>
     </>
   );

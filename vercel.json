@@ -1,0 +1,11 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/((?!batch-calculator-v4\\.html|assets/).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

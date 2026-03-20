@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { getInventory, saveInventory, addInventoryItem, getVendors, getTankConfig, getCurrentBatch, saveBatch, getFormulas, saveFormula as saveFormulaToStore } from '../data/store';
+import { exportBatchToExcel } from '../utils/exportExcel';
 
 const conversions = {
   gal_L: 3.78541, L_gal: 0.264172, gal_ml: 3785.41, ml_gal: 0.000264172,
@@ -18,15 +19,6 @@ function convert(value, from, to) {
   return value;
 }
 
-const defaultIngredients = [
-  { inventoryId: 'INV-001', type: 'liquid', recipeAmount: 85.5, recipeUnit: 'gal', specificGravity: 1.0, buyUnit: 'gal', pricePerBuyUnit: 0.003, moq: 1000 },
-  { inventoryId: 'INV-002', type: 'dry', recipeAmount: 120, recipeUnit: 'lbs', specificGravity: 1.59, buyUnit: 'lbs', pricePerBuyUnit: 0.65, moq: 50 },
-  { inventoryId: 'INV-003', type: 'dry', recipeAmount: 2.5, recipeUnit: 'lbs', specificGravity: 1.665, buyUnit: 'kg', pricePerBuyUnit: 6.50, moq: 11.34 },
-  { inventoryId: 'INV-004', type: 'liquid', recipeAmount: 1.2, recipeUnit: 'gal', specificGravity: 1.0, buyUnit: 'gal', pricePerBuyUnit: 85.00, moq: 5 },
-  { inventoryId: 'INV-005', type: 'dry', recipeAmount: 0.8, recipeUnit: 'lbs', specificGravity: 1.23, buyUnit: 'kg', pricePerBuyUnit: 275.00, moq: 2.27 },
-  { inventoryId: 'INV-006', type: 'dry', recipeAmount: 0.15, recipeUnit: 'lbs', specificGravity: 1.44, buyUnit: 'lbs', pricePerBuyUnit: 4.50, moq: 10 },
-];
-
 export default function BatchCalculator() {
   const [inventoryArr, setInventoryArr] = useState(getInventory());
   const inventory = useMemo(() => {
@@ -36,7 +28,7 @@ export default function BatchCalculator() {
   }, [inventoryArr]);
 
   const [unitSystem, setUnitSystem] = useState('imperial');
-  const [formulaName, setFormulaName] = useState('Citrus Energy Drink');
+  const [formulaName, setFormulaName] = useState('');
   const [baseYield, setBaseYield] = useState(100);
   const [baseYieldUnit, setBaseYieldUnit] = useState('gal');
   const [batchSize, setBatchSize] = useState(500);
@@ -44,7 +36,7 @@ export default function BatchCalculator() {
   const [unitSizeVal, setUnitSizeVal] = useState(12);
   const [unitSizeUnit, setUnitSizeUnitState] = useState('oz');
   const [unitsPerCase, setUnitsPerCase] = useState(24);
-  const [ingredients, setIngredients] = useState(defaultIngredients);
+  const [ingredients, setIngredients] = useState([]);
   const [showUnitCalc, setShowUnitCalc] = useState(false);
 
   useEffect(() => {
@@ -70,6 +62,7 @@ export default function BatchCalculator() {
   // Calculate scaled batch data
   const scaledData = useMemo(() => {
     let totalCost = 0;
+    let totalCostWithInventory = 0;
     const rows = ingredients.map((ing) => {
       const item = inventory[ing.inventoryId];
       const scaledRecipe = ing.recipeAmount * scaleFactor;
@@ -84,6 +77,24 @@ export default function BatchCalculator() {
       const slack = orderQty - buyUnitAmount;
       const lineCost = orderQty * (ing.pricePerBuyUnit || 0);
       totalCost += lineCost;
+
+      // Current inventory in buy units (from manually entered field)
+      let onHandBuyUnits = 0;
+      const invQty = ing.currentInventory || 0;
+      const invUnit = ing.inventoryUnit || ing.buyUnit;
+      if (invQty > 0) {
+        if (invUnit === ing.buyUnit) {
+          onHandBuyUnits = invQty;
+        } else {
+          onHandBuyUnits = convert(invQty, invUnit, ing.buyUnit);
+        }
+      }
+
+      // Net amount to purchase (what we actually need to buy)
+      const netNeeded = Math.max(0, buyUnitAmount - onHandBuyUnits);
+      const netOrderQty = netNeeded > 0 ? Math.ceil(netNeeded / (ing.moq || 1)) * (ing.moq || 1) : 0;
+      const netLineCost = netOrderQty * (ing.pricePerBuyUnit || 0);
+      totalCostWithInventory += netLineCost;
 
       // Liquid volume in gallons for volume tracking
       let liquidGal = 0;
@@ -105,11 +116,16 @@ export default function BatchCalculator() {
         slack,
         lineCost,
         liquidGal,
-        stockOk: item ? item.currentStock >= buyUnitAmount : false,
+        onHandBuyUnits,
+        netNeeded,
+        netOrderQty,
+        netLineCost,
+        stockOk: onHandBuyUnits >= buyUnitAmount && buyUnitAmount > 0,
+        stockPartial: onHandBuyUnits > 0 && onHandBuyUnits < buyUnitAmount,
       };
     });
 
-    return { rows, totalCost };
+    return { rows, totalCost, totalCostWithInventory };
   }, [ingredients, inventory, scaleFactor]);
 
   // Tank allocation
@@ -147,11 +163,23 @@ export default function BatchCalculator() {
     const totalCases = unitsPerCase > 0 ? Math.ceil(totalUnits / unitsPerCase) : 0;
     const costPerUnit = totalUnits > 0 ? scaledData.totalCost / totalUnits : 0;
     const costPerCase = costPerUnit * unitsPerCase;
-    return { totalUnits, totalCases, costPerUnit, costPerCase };
-  }, [batchSize, batchSizeUnit, unitSizeVal, unitSizeUnit, unitsPerCase, scaledData.totalCost]);
+    // Net cost (after using inventory on hand)
+    const netCostPerUnit = totalUnits > 0 ? scaledData.totalCostWithInventory / totalUnits : 0;
+    const netCostPerCase = netCostPerUnit * unitsPerCase;
+    const inventorySavings = scaledData.totalCost - scaledData.totalCostWithInventory;
+    return { totalUnits, totalCases, costPerUnit, costPerCase, netCostPerUnit, netCostPerCase, inventorySavings };
+  }, [batchSize, batchSizeUnit, unitSizeVal, unitSizeUnit, unitsPerCase, scaledData.totalCost, scaledData.totalCostWithInventory]);
 
   function updateIngredient(index, field, value) {
-    setIngredients((prev) => prev.map((ing, i) => (i === index ? { ...ing, [field]: value } : ing)));
+    setIngredients((prev) => prev.map((ing, i) => {
+      if (i !== index) return ing;
+      const updated = { ...ing, [field]: value };
+      // When buy unit changes, sync inventory unit to match
+      if (field === 'buyUnit' && ing.inventoryUnit === ing.buyUnit) {
+        updated.inventoryUnit = value;
+      }
+      return updated;
+    }));
   }
 
   function removeIngredient(index) {
@@ -179,6 +207,8 @@ export default function BatchCalculator() {
         buyUnit: tier?.buyUnit || item.unit || 'gal',
         pricePerBuyUnit: tier?.price || 0,
         moq: tier?.moq || 1,
+        currentInventory: item.currentStock || 0,
+        inventoryUnit: tier?.buyUnit || item.unit || 'gal',
       },
     ]);
   }
@@ -196,6 +226,8 @@ export default function BatchCalculator() {
         buyUnit: 'gal',
         pricePerBuyUnit: 0,
         moq: 1,
+        currentInventory: 0,
+        inventoryUnit: 'gal', // defaults to buy unit
       },
     ]);
   }
@@ -241,17 +273,59 @@ export default function BatchCalculator() {
 
   return (
     <div className="container">
-      <div className="grid batch-grid">
+      {/* Page Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+        <div>
+          <div style={{ display: 'inline-block', padding: '3px 10px', background: 'var(--brand-100)', color: 'var(--brand)', borderRadius: 4, fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 }}>
+            Pro Edition
+          </div>
+          <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', margin: 0, lineHeight: 1.2 }}>Formula Calculator</h1>
+          <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 4 }}>Configure batch scaling and ingredient costs for production runs.</p>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn" onClick={() => exportBatchToExcel({
+            formulaName, baseYield, baseYieldUnit, batchSize, batchSizeUnit,
+            unitSizeVal, unitSizeUnit, unitsPerCase,
+            ingredients, scaledRows: scaledData.rows,
+            totalCost: scaledData.totalCost, unitEcon,
+          })}>Export Excel</button>
+          <button className="btn btn-primary" onClick={handleSaveFormula}>Save Recipe</button>
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="cost-summary" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 24 }}>
+        <div className="cost-card">
+          <div className="cost-card-label">Scale Factor</div>
+          <div className="cost-card-value">{scaleFactor.toFixed(2)}x</div>
+          <div className="cost-card-subtitle">{baseYield} {baseYieldUnit} &rarr; {batchSize} {batchSizeUnit}</div>
+        </div>
+        <div className="cost-card">
+          <div className="cost-card-label">Total Ingredient Cost</div>
+          <div className="cost-card-value">${scaledData.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          <div className="cost-card-subtitle">${unitEcon.costPerUnit.toFixed(3)} / unit</div>
+        </div>
+        <div className="cost-card hero">
+          <div className="cost-card-label">Net Purchase Cost</div>
+          <div className="cost-card-value">${scaledData.totalCostWithInventory.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          <div className="cost-card-subtitle">${unitEcon.netCostPerUnit.toFixed(3)} / unit</div>
+        </div>
+        <div className="cost-card" style={{ background: unitEcon.inventorySavings > 0 ? '#d1fae5' : undefined }}>
+          <div className="cost-card-label">Inventory Savings</div>
+          <div className="cost-card-value" style={{ color: unitEcon.inventorySavings > 0 ? '#065f46' : undefined }}>${unitEcon.inventorySavings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          <div className="cost-card-subtitle">{unitEcon.totalCases.toLocaleString()} cases &bull; {unitEcon.totalUnits.toLocaleString()} units</div>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 24, alignItems: 'start' }}>
         {/* Main Column */}
         <div>
-          {/* Formula Details */}
+          {/* Formula Architecture */}
           <div className="section" style={{ marginBottom: 20 }}>
             <div className="section-header">
-              <div className="section-title">Formula Details</div>
+              <div className="section-title">Formula Architecture</div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-small" onClick={exportCSV}>Export CSV</button>
-                <button className="btn btn-small btn-primary" onClick={handleSaveFormula}>Save Formula</button>
-                <button className="btn btn-small" onClick={handleSaveBatch} style={{ background: '#059669', color: 'white', borderColor: '#059669' }}>Save Batch</button>
+                <button className="btn btn-small" onClick={handleSaveBatch}>Push to Production</button>
               </div>
             </div>
             <div className="section-body">
@@ -323,7 +397,9 @@ export default function BatchCalculator() {
                     <th>Buy Unit</th>
                     <th>Price/Buy Unit</th>
                     <th>MOQ</th>
-                    <th>Stock</th>
+                    <th>On Hand</th>
+                    <th>Inv. Unit</th>
+                    <th>Status</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -352,6 +428,8 @@ export default function BatchCalculator() {
                                             buyUnit: tier?.buyUnit || newItem.unit || i.buyUnit,
                                             pricePerBuyUnit: tier?.price || i.pricePerBuyUnit,
                                             moq: tier?.moq || i.moq,
+                                            currentInventory: newItem.currentStock || 0,
+                                            inventoryUnit: tier?.buyUnit || newItem.unit || i.inventoryUnit,
                                           }
                                         : i
                                     )
@@ -427,8 +505,44 @@ export default function BatchCalculator() {
                             style={{ width: 70 }}
                           />
                         </td>
-                        <td style={{ fontSize: 12, color: '#6b7280' }}>
-                          {item ? `${item.currentStock} ${item.unit}` : '\u2014'}
+                        <td>
+                          <input
+                            type="number"
+                            value={ing.currentInventory || 0}
+                            onChange={(e) => updateIngredient(idx, 'currentInventory', parseFloat(e.target.value) || 0)}
+                            style={{ width: 80 }}
+                          />
+                        </td>
+                        <td>
+                          <select value={ing.inventoryUnit || 'gal'} onChange={(e) => updateIngredient(idx, 'inventoryUnit', e.target.value)}>
+                            <option value="gal">gal</option><option value="L">L</option><option value="lbs">lbs</option>
+                            <option value="kg">kg</option><option value="oz">oz</option><option value="g">g</option>
+                          </select>
+                        </td>
+                        <td style={{ fontSize: 12 }}>
+                          {scaleFactor > 0 && ing.recipeAmount > 0 ? (() => {
+                            const scaledRecipe = ing.recipeAmount * scaleFactor;
+                            let buyNeeded = scaledRecipe;
+                            if (ing.recipeUnit !== ing.buyUnit) buyNeeded = convert(scaledRecipe, ing.recipeUnit, ing.buyUnit);
+                            const invQty = ing.currentInventory || 0;
+                            const invUnit = ing.inventoryUnit || ing.buyUnit;
+                            let onHand = invUnit === ing.buyUnit ? invQty : convert(invQty, invUnit, ing.buyUnit);
+                            const pct = buyNeeded > 0 ? Math.min((onHand / buyNeeded) * 100, 100) : 100;
+                            const net = Math.max(0, buyNeeded - onHand);
+                            const color = pct >= 100 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444';
+                            return (
+                              <div>
+                                <div style={{ height: 4, background: '#e5e7eb', borderRadius: 2, overflow: 'hidden', marginBottom: 3 }}>
+                                  <div style={{ height: '100%', background: color, width: `${pct}%`, transition: 'width 0.3s' }} />
+                                </div>
+                                {net > 0 ? (
+                                  <span style={{ color, fontWeight: 600 }}>Need {net.toFixed(1)} {ing.buyUnit}</span>
+                                ) : (
+                                  <span style={{ color: '#10b981', fontWeight: 600 }}>Covered ✓</span>
+                                )}
+                              </div>
+                            );
+                          })() : '\u2014'}
                         </td>
                         <td>
                           <button className="btn btn-small btn-danger" onClick={() => removeIngredient(idx)}>x</button>
@@ -439,7 +553,7 @@ export default function BatchCalculator() {
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td colSpan={10} style={{ padding: 12, background: '#f9fafb', borderTop: '2px solid #e5e7eb' }}>
+                    <td colSpan={12} style={{ padding: 12, background: '#f9fafb', borderTop: '2px solid #e5e7eb' }}>
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button className="btn btn-primary" onClick={addIngredient} style={{ flex: 1, justifyContent: 'center' }}>
                           + Add from Inventory
@@ -467,14 +581,14 @@ export default function BatchCalculator() {
                   <tr>
                     <th>Inventory Item</th>
                     <th>SKU</th>
-                    <th>Required (Recipe)</th>
-                    <th>Required (Buy Unit)</th>
+                    <th>Required</th>
+                    <th>On Hand</th>
+                    <th>Net to Order</th>
                     <th>Price/Unit</th>
                     <th>MOQ</th>
                     <th>Order Qty</th>
-                    <th>Slack</th>
-                    <th>Stock</th>
-                    <th>Line Cost</th>
+                    <th>Full Cost</th>
+                    <th>Net Cost</th>
                     <th>Status</th>
                   </tr>
                 </thead>
@@ -483,17 +597,21 @@ export default function BatchCalculator() {
                     <tr key={idx}>
                       <td style={{ fontWeight: 600 }}>{row.item?.name || row.draftName || 'Unknown'}</td>
                       <td style={{ fontSize: 12, color: '#6b7280' }}>{row.item?.sku || '\u2014'}</td>
-                      <td>{row.scaledRecipe.toFixed(2)} {row.recipeUnit}</td>
                       <td>{row.buyUnitAmount.toFixed(2)} {row.buyUnit}</td>
+                      <td style={{ fontWeight: 600, color: row.stockOk ? '#10b981' : row.stockPartial ? '#f59e0b' : '#6b7280' }}>
+                        {row.onHandBuyUnits > 0 ? `${row.onHandBuyUnits.toFixed(2)} ${row.buyUnit}` : '\u2014'}
+                      </td>
+                      <td style={{ fontWeight: 600, color: row.netNeeded > 0 ? '#ef4444' : '#10b981' }}>
+                        {row.netNeeded > 0 ? `${row.netNeeded.toFixed(2)} ${row.buyUnit}` : 'Covered ✓'}
+                      </td>
                       <td>${(row.pricePerBuyUnit || 0).toFixed(4)}</td>
                       <td>{row.moq}</td>
-                      <td style={{ fontWeight: 600 }}>{row.orderQty.toFixed(2)} {row.buyUnit}</td>
-                      <td style={{ color: '#6b7280' }}>+{row.slack.toFixed(2)}</td>
-                      <td>{row.item ? `${row.item.currentStock} ${row.item.unit}` : '\u2014'}</td>
-                      <td style={{ fontWeight: 600 }}>${row.lineCost.toFixed(2)}</td>
+                      <td style={{ fontWeight: 600 }}>{row.netOrderQty > 0 ? `${row.netOrderQty.toFixed(2)} ${row.buyUnit}` : '\u2014'}</td>
+                      <td style={{ color: '#6b7280', fontSize: 12 }}>${row.lineCost.toFixed(2)}</td>
+                      <td style={{ fontWeight: 700 }}>${row.netLineCost.toFixed(2)}</td>
                       <td>
-                        <span className={`badge ${row.stockOk ? 'badge-success' : 'badge-warning'}`}>
-                          {row.stockOk ? 'OK' : 'Order'}
+                        <span className={`badge ${row.stockOk ? 'badge-success' : row.stockPartial ? 'badge-warning' : 'badge-danger'}`}>
+                          {row.stockOk ? 'In Stock' : row.stockPartial ? 'Partial' : 'Order'}
                         </span>
                       </td>
                     </tr>
@@ -501,10 +619,18 @@ export default function BatchCalculator() {
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td colSpan={9} style={{ textAlign: 'right', fontWeight: 600 }}>Total:</td>
-                    <td style={{ fontWeight: 700, fontSize: 15 }}>${scaledData.totalCost.toFixed(2)}</td>
+                    <td colSpan={8} style={{ textAlign: 'right', fontWeight: 600 }}>Totals:</td>
+                    <td style={{ fontSize: 13, color: '#6b7280' }}>${scaledData.totalCost.toFixed(2)}</td>
+                    <td style={{ fontWeight: 700, fontSize: 15 }}>${scaledData.totalCostWithInventory.toFixed(2)}</td>
                     <td></td>
                   </tr>
+                  {unitEcon.inventorySavings > 0 && (
+                    <tr>
+                      <td colSpan={8} style={{ textAlign: 'right', fontWeight: 600, color: '#10b981' }}>Inventory Savings:</td>
+                      <td colSpan={2} style={{ fontWeight: 700, color: '#10b981', fontSize: 14 }}>−${unitEcon.inventorySavings.toFixed(2)}</td>
+                      <td></td>
+                    </tr>
+                  )}
                 </tfoot>
               </table>
             </div>
@@ -513,75 +639,79 @@ export default function BatchCalculator() {
 
         {/* Sidebar */}
         <div>
-          {/* Batch Scaling */}
-          <div className="section" style={{ marginBottom: 20 }}>
-            <div className="section-header">
-              <div className="section-title">Batch Scaling</div>
+          {/* Calculated Batch ROI */}
+          <div className="projection-card" style={{ marginBottom: 20 }}>
+            <h3>Calculated Batch ROI</h3>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Net Purchase Cost</div>
+            <div className="projection-total">${scaledData.totalCostWithInventory.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            {unitEcon.inventorySavings > 0 && (
+              <div style={{ fontSize: 12, color: '#6ee7b7', marginBottom: 8 }}>
+                Saving ${unitEcon.inventorySavings.toFixed(2)} from inventory on hand
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 24, marginBottom: 16 }}>
+              <div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase' }}>Net Cost/Unit</div>
+                <div style={{ fontSize: 18, fontWeight: 700 }}>${unitEcon.netCostPerUnit.toFixed(3)}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase' }}>Yield</div>
+                <div style={{ fontSize: 18, fontWeight: 700 }}>{unitEcon.totalUnits.toLocaleString()}</div>
+              </div>
             </div>
-            <div className="section-body">
-              <div className="metric-box">
-                <div className="metric-label">Scale Factor</div>
-                <div className="metric-value">{scaleFactor.toFixed(2)}x</div>
-                <div className="metric-secondary">
-                  {baseYield} {baseYieldUnit} &rarr; {batchSize} {batchSizeUnit}
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', marginBottom: 4 }}>Capacity Utilization</div>
+              <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 4, height: 8 }}>
+                <div style={{ background: '#A78BFA', borderRadius: 4, height: 8, width: `${Math.min(scaleFactor * 10, 100)}%`, transition: 'width 0.3s' }}></div>
+              </div>
+              <div style={{ fontSize: 12, marginTop: 4, textAlign: 'right' }}>{Math.min(scaleFactor * 10, 100).toFixed(0)}%</div>
+            </div>
+            <div className="cost-breakdown" style={{ marginTop: 12 }}>
+              {scaledData.rows.slice(0, 5).map((row, idx) => (
+                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', fontSize: 13, borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                  <span style={{ color: 'rgba(255,255,255,0.6)' }}>
+                    {row.item?.name || row.draftName || 'Unknown'}
+                    {row.stockOk && <span style={{ color: '#6ee7b7', marginLeft: 4, fontSize: 10 }}>✓</span>}
+                  </span>
+                  <span style={{ fontWeight: 600 }}>
+                    {row.netLineCost < row.lineCost ? (
+                      <>
+                        <span style={{ textDecoration: 'line-through', color: 'rgba(255,255,255,0.3)', marginRight: 6, fontSize: 11 }}>${row.lineCost.toFixed(2)}</span>
+                        ${row.netLineCost.toFixed(2)}
+                      </>
+                    ) : `$${row.lineCost.toFixed(2)}`}
+                  </span>
                 </div>
-              </div>
-              <div className="alert alert-info" style={{ margin: 0 }}>
-                Adjust "Target Batch Size" to scale the formula up or down
-              </div>
+              ))}
             </div>
           </div>
 
-          {/* Cost Analysis */}
-          <div className="section" style={{ marginBottom: 20 }}>
-            <div className="section-header">
-              <div className="section-title">Cost Analysis</div>
-              <button className="btn btn-small" onClick={() => setShowUnitCalc(!showUnitCalc)}>
-                Unit Calculator
-              </button>
+          {/* Production Constants */}
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius)', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.04)', marginBottom: 20 }}>
+            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', background: 'var(--surface-alt)' }}>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>Production Constants</div>
             </div>
-            <div className="section-body">
-              <div className="metric-box">
-                <div className="metric-label">Total Batch Cost</div>
-                <div className="metric-value large">${scaledData.totalCost.toFixed(2)}</div>
-                <div className="metric-secondary">
-                  ${(batchSize > 0 ? scaledData.totalCost / batchSize : 0).toFixed(2)} per {batchSizeUnit}
-                </div>
+            <div style={{ padding: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #F1F5F9' }}>
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Total Units</span>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>{unitEcon.totalUnits.toLocaleString()}</span>
               </div>
-
-              <div className="cost-breakdown">
-                {scaledData.rows.map((row, idx) => (
-                  <div key={idx} className="cost-row">
-                    <span>{row.item?.name || row.draftName || 'Unknown'}</span>
-                    <span>${row.lineCost.toFixed(2)}</span>
-                  </div>
-                ))}
-                <div className="cost-row total">
-                  <span>Total</span>
-                  <span>${scaledData.totalCost.toFixed(2)}</span>
-                </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #F1F5F9' }}>
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Total Cases</span>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>{unitEcon.totalCases.toLocaleString()}</span>
               </div>
-
-              {showUnitCalc && (
-                <div style={{ marginTop: 24, paddingTop: 24, borderTop: '2px solid #e5e7eb' }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>
-                    Finished Product Unit Economics
-                  </div>
-                  <div className="metric-box">
-                    <div className="metric-label">Total Units</div>
-                    <div className="metric-value">{unitEcon.totalUnits.toLocaleString()}</div>
-                    <div className="metric-secondary">{unitEcon.totalCases.toLocaleString()} cases</div>
-                  </div>
-                  <div className="metric-box">
-                    <div className="metric-label">Cost per Unit</div>
-                    <div className="metric-value">${unitEcon.costPerUnit.toFixed(4)}</div>
-                  </div>
-                  <div className="metric-box">
-                    <div className="metric-label">Cost per Case</div>
-                    <div className="metric-value">${unitEcon.costPerCase.toFixed(2)}</div>
-                  </div>
-                </div>
-              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #F1F5F9' }}>
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Cost per Case (Full)</span>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>${unitEcon.costPerCase.toFixed(2)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #F1F5F9' }}>
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Cost per Case (Net)</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#10b981' }}>${unitEcon.netCostPerCase.toFixed(2)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0' }}>
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Scale Factor</span>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>{scaleFactor.toFixed(2)}x</span>
+              </div>
             </div>
           </div>
 
@@ -632,24 +762,59 @@ export default function BatchCalculator() {
           </div>
 
           {/* Inventory Alerts */}
-          <div className="section">
-            <div className="section-header">
-              <div className="section-title">Inventory Alerts</div>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius)', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', background: 'var(--surface-alt)' }}>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>Inventory Alerts</div>
             </div>
-            <div className="section-body">
+            <div style={{ padding: 14 }}>
               {scaledData.rows.filter((r) => !r.stockOk).length === 0 ? (
-                <div className="alert alert-info" style={{ margin: 0 }}>All ingredients are in stock for this batch</div>
+                <div style={{ fontSize: 13, color: '#10b981', padding: '8px 0' }}>✓ All ingredients covered by current inventory</div>
               ) : (
                 scaledData.rows
                   .filter((r) => !r.stockOk)
                   .map((r, idx) => (
-                    <div key={idx} className="alert alert-warning" style={{ marginBottom: 8 }}>
-                      <strong>{r.item?.name || r.draftName}</strong>: Need {r.buyUnitAmount.toFixed(2)} {r.buyUnit}, have {r.item?.currentStock || 0} {r.item?.unit || r.buyUnit}
+                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #F1F5F9', fontSize: 13 }}>
+                      <span style={{ color: r.stockPartial ? '#F59E0B' : '#EF4444', fontSize: 16 }}>{r.stockPartial ? '⚠' : '✕'}</span>
+                      <div>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{r.item?.name || r.draftName}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                          Need {r.buyUnitAmount.toFixed(2)} {r.buyUnit} — have {r.onHandBuyUnits.toFixed(2)} — order {r.netNeeded.toFixed(2)} {r.buyUnit}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 600 }}>Est. ${r.netLineCost.toFixed(2)}</div>
+                      </div>
                     </div>
                   ))
               )}
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Insight Cards */}
+      <div className="insight-cards" style={{ marginTop: 24 }}>
+        <div className="insight-card">
+          <h4>Efficiency Alert</h4>
+          <p>
+            {scaleFactor > 5
+              ? `Scale factor of ${scaleFactor.toFixed(1)}x may exceed optimal capacity. Consider splitting into multiple batches.`
+              : `Batch is within efficient range at ${scaleFactor.toFixed(1)}x scale.`}
+          </p>
+        </div>
+        <div className="insight-card">
+          <h4>Cost Optimization</h4>
+          <p>
+            {scaledData.totalCost > 0
+              ? `Total ingredient cost $${scaledData.totalCost.toFixed(2)}. Unit cost $${unitEcon.costPerUnit.toFixed(3)} across ${unitEcon.totalUnits.toLocaleString()} units.`
+              : 'Add ingredients to see cost analysis.'}
+          </p>
+        </div>
+        <div className="insight-card">
+          <h4>Stock Status</h4>
+          <p>
+            {scaledData.rows.filter((r) => !r.stockOk).length === 0
+              ? 'All ingredients are in stock for this batch size.'
+              : `${scaledData.rows.filter((r) => !r.stockOk).length} ingredient(s) need ordering before production.`}
+          </p>
         </div>
       </div>
     </div>

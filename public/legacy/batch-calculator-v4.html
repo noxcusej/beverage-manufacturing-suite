@@ -1,0 +1,3934 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Beverage Batch Calculator v3</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f6f8;
+            color: #1a1a1a;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        /* Fixed Professional Navigation */
+        .app-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 64px;
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        }
+
+        .app-branding {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-right: 32px;
+            width: 280px;
+            flex-shrink: 0;
+        }
+
+        .app-logo {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .app-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #111827;
+            line-height: 1.2;
+        }
+
+        .app-subtitle {
+            font-size: 12px;
+            color: #6b7280;
+            line-height: 1;
+            margin-top: 2px;
+        }
+
+        .app-nav {
+            display: flex;
+            gap: 2px;
+            padding: 4px;
+            background: #f9fafb;
+            border-radius: 8px;
+            margin-right: auto;
+        }
+
+        .app-nav a {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 32px;
+            padding: 0 20px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #6b7280;
+            text-decoration: none;
+            border-radius: 6px;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+        }
+
+        .app-nav a:hover {
+            color: #111827;
+            background: rgba(0, 0, 0, 0.04);
+        }
+
+        .app-nav a.active {
+            color: #2563eb;
+            background: white;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        }
+
+        .app-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-left: 24px;
+        }
+
+        .app-content {
+            padding-top: 64px;
+        }
+
+        .header {
+            background: white;
+            border-bottom: 1px solid #e1e4e8;
+            padding: 16px 24px;
+            position: sticky;
+            top: 64px;
+            z-index: 90;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .header-subtitle {
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        .unit-system-toggle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .toggle-label {
+            font-size: 13px;
+            font-weight: 500;
+            color: #6b7280;
+        }
+
+        .unit-toggle {
+            display: inline-flex;
+            background: #f3f4f6;
+            border-radius: 6px;
+            padding: 2px;
+        }
+
+        .unit-toggle button {
+            padding: 6px 14px;
+            border: none;
+            background: transparent;
+            border-radius: 4px;
+            font-size: 13px;
+            cursor: pointer;
+            font-weight: 500;
+            color: #6b7280;
+            transition: all 0.15s;
+        }
+
+        .unit-toggle button.active {
+            background: #2563eb;
+            color: white;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .section {
+            background: white;
+            border: 1px solid #e1e4e8;
+            border-radius: 8px;
+            overflow: visible;
+        }
+
+        .section-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #e1e4e8;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #fafbfc;
+        }
+
+        .section-title {
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        .section-body {
+            padding: 20px;
+        }
+
+        .btn {
+            padding: 8px 14px;
+            border: 1px solid #d1d5db;
+            background: white;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: #374151;
+            font-weight: 500;
+        }
+
+        .btn:hover {
+            background: #f9fafb;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+            border-color: #2563eb;
+        }
+
+        .btn-primary:hover {
+            background: #1d4ed8;
+        }
+
+        .btn-small {
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+
+        .btn-danger {
+            background: white;
+            color: #dc2626;
+            border-color: #fca5a5;
+        }
+
+        .btn-danger:hover {
+            background: #fef2f2;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            text-align: left;
+            padding: 10px 12px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            background: #f9fafb;
+            border-bottom: 2px solid #e1e4e8;
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #f3f4f6;
+            font-size: 13px;
+        }
+
+        tr:hover td {
+            background: #fafbfc;
+        }
+
+        input, select {
+            padding: 6px 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 13px;
+            font-family: inherit;
+            width: 100%;
+            height: 34px;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        input[type="number"] {
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+        }
+
+        /* Remove spinner arrows from number inputs */
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        input[type="number"] {
+            -moz-appearance: textfield;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 6px;
+        }
+
+        .form-hint {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 4px;
+        }
+
+        .input-with-unit {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 6px;
+        }
+
+        .input-with-unit select {
+            width: 70px;
+        }
+
+        /* Autocomplete */
+        .autocomplete-container {
+            position: relative;
+            width: 100%;
+        }
+
+        .autocomplete-results {
+            position: fixed;
+            background: white;
+            border: 2px solid #2563eb;
+            border-top: none;
+            border-radius: 0 0 6px 6px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+            max-height: 400px;
+            overflow-y: auto;
+            z-index: 9999;
+            display: none;
+        }
+
+        .autocomplete-results.active {
+            display: block;
+        }
+        
+        table {
+            position: relative;
+            z-index: 1;
+        }
+
+        tbody tr {
+            position: relative;
+            z-index: 1;
+        }
+
+        tbody tr:has(.autocomplete-container) {
+            position: relative;
+            z-index: 10;
+        }
+
+        .autocomplete-item {
+            padding: 10px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #f3f4f6;
+            font-size: 13px;
+        }
+
+        .autocomplete-item:hover {
+            background: #f9fafb;
+        }
+
+        .autocomplete-item:last-child {
+            border-bottom: none;
+        }
+
+        .autocomplete-item-name {
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+
+        .autocomplete-item-meta {
+            font-size: 12px;
+            color: #6b7280;
+        }
+
+        .autocomplete-create {
+            padding: 10px 12px;
+            background: #f0f9ff;
+            border-top: 2px solid #bae6fd;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            color: #1e40af;
+        }
+
+        .autocomplete-create:hover {
+            background: #e0f2fe;
+        }
+
+        .autocomplete-empty {
+            padding: 20px;
+            text-align: center;
+            color: #9ca3af;
+            font-size: 13px;
+        }
+
+        .metric-box {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+
+        .metric-label {
+            font-size: 12px;
+            color: #6b7280;
+            margin-bottom: 4px;
+            font-weight: 500;
+        }
+
+        .metric-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1a1a1a;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .metric-value.large {
+            font-size: 36px;
+        }
+
+        .metric-secondary {
+            font-size: 13px;
+            color: #6b7280;
+            margin-top: 4px;
+        }
+
+        .alert {
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: start;
+            gap: 10px;
+            font-size: 13px;
+        }
+
+        .alert-warning {
+            background: #fef3c7;
+            border: 1px solid #fcd34d;
+            color: #78350f;
+        }
+
+        .alert-info {
+            background: #dbeafe;
+            border: 1px solid #93c5fd;
+            color: #1e40af;
+        }
+
+        .alert-danger {
+            background: #fee2e2;
+            border: 1px solid #fca5a5;
+            color: #991b1b;
+        }
+
+        .cost-breakdown {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 16px;
+        }
+
+        .cost-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+        }
+
+        .cost-row.total {
+            border-top: 2px solid #e5e7eb;
+            padding-top: 8px;
+            font-weight: 600;
+            font-size: 15px;
+            color: #1a1a1a;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .badge-warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .badge-success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .badge-danger {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .badge-info {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .inventory-status {
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #9ca3af;
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+
+        .sku-link {
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .sku-link:hover {
+            text-decoration: underline;
+        }
+
+        /* Side Panel */
+        .side-panel-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.4);
+            z-index: 200;
+            display: none;
+        }
+
+        .side-panel-overlay.active {
+            display: block;
+        }
+
+        .side-panel {
+            position: fixed;
+            top: 0;
+            right: -500px;
+            width: 500px;
+            height: 100vh;
+            background: white;
+            box-shadow: -4px 0 24px rgba(0, 0, 0, 0.15);
+            z-index: 201;
+            transition: right 0.3s ease;
+            overflow-y: auto;
+        }
+
+        .side-panel.active {
+            right: 0;
+        }
+
+        .side-panel-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid #e1e4e8;
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            background: #fafbfc;
+        }
+
+        .side-panel-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .side-panel-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #6b7280;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+        }
+
+        .side-panel-close:hover {
+            background: #f3f4f6;
+        }
+
+        .side-panel-body {
+            padding: 24px;
+        }
+
+        .detail-section {
+            margin-bottom: 24px;
+        }
+
+        .detail-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            margin-bottom: 6px;
+        }
+
+        .detail-value {
+            font-size: 15px;
+            color: #1a1a1a;
+            font-weight: 500;
+        }
+
+        .detail-value.large {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        /* Modal for new inventory item */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 300;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: white;
+            border-radius: 8px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        .modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid #e1e4e8;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .modal-body {
+            padding: 24px;
+        }
+
+        .modal-footer {
+            padding: 16px 24px;
+            border-top: 1px solid #e1e4e8;
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        /* Analytics Charts */
+        .chart-container {
+            margin: 20px 0;
+            padding: 20px;
+            background: #fafbfc;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+        }
+
+        .chart-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #1a1a1a;
+        }
+
+        .bar-chart {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .bar-chart-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .bar-chart-label {
+            width: 150px;
+            font-size: 13px;
+            font-weight: 500;
+            flex-shrink: 0;
+        }
+
+        .bar-chart-bar-container {
+            flex: 1;
+            height: 28px;
+            background: #f3f4f6;
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .bar-chart-bar {
+            height: 100%;
+            transition: width 0.5s ease;
+            display: flex;
+            align-items: center;
+            padding: 0 8px;
+            font-size: 12px;
+            font-weight: 600;
+            color: white;
+        }
+
+        .pie-chart {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            align-items: center;
+        }
+
+        .pie-chart-legend {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .pie-chart-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        .pie-chart-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 3px;
+        }
+
+        .analytics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .analytics-card {
+            padding: 20px;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+        }
+
+        .analytics-card-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            margin-bottom: 8px;
+        }
+
+        .analytics-card-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 4px;
+        }
+
+        .analytics-card-subtitle {
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        @media (max-width: 1400px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Fixed Professional Navigation -->
+    <header class="app-header">
+        <div class="app-branding">
+            <div class="app-logo">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M4 10L8 6L12 10L16 6" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M4 14L8 10L12 14L16 10" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+            <div>
+                <div class="app-title">Co-Manufacturing Suite</div>
+                <div class="app-subtitle">Batch & Packaging Calculator</div>
+            </div>
+        </div>
+        
+        <nav class="app-nav">
+            <a href="batch-calculator-v4.html" class="active">Batch Calculator</a>
+            <a href="copacking-calculator.html">Co-Packing</a>
+            <a href="inventory.html">Inventory</a>
+            <a href="services.html">Services</a>
+            <a href="packaging.html">Packaging</a>
+            <a href="mission-control.html" style="margin-left: auto; background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); color: white; border-radius: 6px; padding: 6px 12px;">🎛️ Mission Control</a>
+        </nav>
+        
+        <div class="app-actions">
+            <div class="unit-system-toggle">
+                <span class="toggle-label">Unit System:</span>
+                <div class="unit-toggle">
+                    <button class="active" onclick="setUnitSystem('imperial')">Imperial</button>
+                    <button onclick="setUnitSystem('metric')">Metric</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Batch Info Banner -->
+    <div id="batchInfoBanner" style="display: none; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; padding: 12px 24px; border-bottom: 1px solid #1d4ed8; position: sticky; top: 64px; z-index: 999;">
+        <div style="max-width: 1600px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 20px; font-size: 13px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="opacity: 0.9;">📦 Current Batch:</span>
+                    <strong id="batchInfoName">—</strong>
+                </div>
+                <div style="opacity: 0.8;">|</div>
+                <div id="batchInfoSize">—</div>
+                <div style="opacity: 0.8;">|</div>
+                <div id="batchInfoYield">—</div>
+                <div style="opacity: 0.8;">|</div>
+                <div style="font-size: 11px; opacity: 0.7;" id="batchInfoTime">—</div>
+            </div>
+            <button onclick="CoManufacturing.clearBatch(); updateBatchInfoBanner(); window.location.reload();" style="padding: 4px 12px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.15); border-radius: 4px; color: white; font-size: 12px; cursor: pointer; font-weight: 500;">
+                ✕ Clear Batch
+            </button>
+        </div>
+    </div>
+
+    <div class="app-content">
+    <div class="container">
+        <div class="grid">
+            <!-- Formula Builder -->
+            <div>
+                <!-- Formula Info -->
+                <div class="section" style="margin-bottom: 20px;">
+                    <div class="section-header">
+                        <div class="section-title">Formula Details</div>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn btn-small" onclick="newFormula()" title="Cmd/Ctrl + N">✨ New</button>
+                            <button class="btn btn-small" onclick="exportToExcel()" title="Cmd/Ctrl + E">📊 Export Excel</button>
+                            <button class="btn btn-small" onclick="loadFormula()" title="Cmd/Ctrl + O">📂 Load</button>
+                            <button class="btn btn-small btn-primary" onclick="saveFormula()" title="Cmd/Ctrl + S">💾 Save</button>
+                            <button class="btn btn-small" onclick="saveCurrentBatch()" title="Save as current batch" style="background: #059669; color: white; border-color: #059669;">📦 Save Batch</button>
+                        </div>
+                    </div>
+                    <div class="section-body">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
+                            <div class="form-group" style="margin: 0;">
+                                <label class="form-label">Formula Name</label>
+                                <input type="text" id="formulaName" value="Citrus Energy Drink" placeholder="e.g., Citrus Energy Drink">
+                            </div>
+                            <div class="form-group" style="margin: 0;">
+                                <label class="form-label">Base Yield</label>
+                                <div class="input-with-unit">
+                                    <input type="number" id="baseYield" value="100" min="1" step="0.1" oninput="recalculate()">
+                                    <select id="baseYieldUnit" onchange="recalculate()">
+                                        <option value="gal">gal</option>
+                                        <option value="L">L</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-group" style="margin: 0;">
+                                <label class="form-label">Target Batch Size</label>
+                                <div class="input-with-unit">
+                                    <input type="number" id="batchSize" value="500" min="1" step="0.1" oninput="updateCasesFromBatch(); recalculate()">
+                                    <select id="batchSizeUnit" onchange="updateCasesFromBatch(); recalculate()">
+                                        <option value="gal">gal</option>
+                                        <option value="L">L</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-group" style="margin: 0;">
+                                <label class="form-label">Unit Size</label>
+                                <div class="input-with-unit">
+                                    <input type="number" id="unitSize" value="12" min="0.1" step="0.1" oninput="updateCasesFromBatch()">
+                                    <select id="unitSizeUnit" onchange="updateCasesFromBatch()" style="padding: 6px 10px; background: white; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px;">
+                                        <option value="oz">oz</option>
+                                        <option value="ml">mL</option>
+                                        <option value="L">L</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div class="form-group" style="margin: 0;">
+                                <label class="form-label">Units per Case</label>
+                                <input type="number" id="unitsPerCase" value="24" min="1" step="1" oninput="updateCasesFromBatch()">
+                            </div>
+                            
+                            <div class="form-group" style="margin: 0;">
+                                <label class="form-label">Total Cases (Optional)</label>
+                                <div class="input-with-unit">
+                                    <input type="number" id="totalCases" value="" min="1" step="1" placeholder="Enter cases" oninput="updateBatchFromCases()">
+                                    <span style="padding: 6px 10px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px; color: #6b7280; width: 70px; text-align: center;">cases</span>
+                                </div>
+                                <div class="form-hint">Auto-calculates batch size based on unit size and units/case</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Ingredients Table -->
+                <div class="section" style="overflow: visible;">
+                    <div class="section-header">
+                        <div class="section-title">Ingredients</div>
+                        <div style="font-size: 12px; color: #6b7280;">
+                            <span title="Keyboard Shortcuts: ⌘I = Add from Inventory, ⌘D = Add Draft, ⌘S = Save, ⌘O = Load, ⌘E = Export, ⌘⇧A = Analytics" style="cursor: help; padding: 4px 8px; background: #f3f4f6; border-radius: 4px;">
+                                ⌨️ Shortcuts
+                            </span>
+                        </div>
+                    </div>
+                    <div style="overflow: visible;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Inventory Item</th>
+                                    <th>Type</th>
+                                    <th>Recipe Amt</th>
+                                    <th>Recipe Unit</th>
+                                    <th>SG</th>
+                                    <th>Buy Unit</th>
+                                    <th>Price/Buy Unit</th>
+                                    <th>MOQ</th>
+                                    <th>Stock</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="ingredientsList">
+                                <!-- Populated by JS -->
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="10" style="padding: 12px; background: #f9fafb; border-top: 2px solid #e5e7eb;">
+                                        <div style="display: flex; gap: 8px;">
+                                            <button class="btn btn-primary" onclick="addIngredient()" style="flex: 1; justify-content: center;">
+                                                + Add from Inventory <span style="opacity: 0.6; font-size: 11px; margin-left: 8px;">(⌘I)</span>
+                                            </button>
+                                            <button class="btn" onclick="addDraftIngredient()" style="flex: 1; justify-content: center;">
+                                                ✏️ Add Draft (Quick Entry) <span style="opacity: 0.6; font-size: 11px; margin-left: 8px;">(⌘D)</span>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Batch Calculation Sidebar -->
+            <div>
+                <!-- Scale Factor -->
+                <div class="section" style="margin-bottom: 20px;">
+                    <div class="section-header">
+                        <div class="section-title">Batch Scaling</div>
+                    </div>
+                    <div class="section-body">
+                        <div class="metric-box">
+                            <div class="metric-label">Scale Factor</div>
+                            <div class="metric-value" id="scaleFactor">5.00x</div>
+                            <div class="metric-secondary">
+                                <span id="scaleDescription">100 gal → 500 gal</span>
+                            </div>
+                        </div>
+                        <div class="alert alert-info" style="margin: 0;">
+                            <span>💡</span>
+                            <span>Adjust "Target Batch Size" to scale the formula up or down</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Cost Summary -->
+                <div class="section" style="margin-bottom: 20px;">
+                    <div class="section-header">
+                        <div class="section-title">Cost Analysis</div>
+                        <button class="btn btn-small" onclick="toggleUnitCalculator()" id="unitCalcToggle">
+                            📊 Unit Calculator
+                        </button>
+                    </div>
+                    <div class="section-body">
+                        <div class="metric-box">
+                            <div class="metric-label">Total Batch Cost</div>
+                            <div class="metric-value large" id="totalCost">$0.00</div>
+                            <div class="metric-secondary" id="costPerUnit">$0.00 per gallon</div>
+                        </div>
+
+                        <div class="cost-breakdown" id="costBreakdown">
+                            <!-- Populated by JS -->
+                        </div>
+
+                        <!-- Unit Calculator (hidden by default) -->
+                        <div id="unitCalculator" style="display: none; margin-top: 24px; padding-top: 24px; border-top: 2px solid #e5e7eb;">
+                            <div style="font-size: 14px; font-weight: 600; margin-bottom: 16px;">
+                                Finished Product Unit Economics
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                                <div class="form-group" style="margin: 0;">
+                                    <label class="form-label">Unit Size</label>
+                                    <input type="number" id="unitSize" value="12" step="0.1" oninput="calculateUnitEconomics()">
+                                </div>
+                                <div class="form-group" style="margin: 0;">
+                                    <label class="form-label">Unit</label>
+                                    <select id="unitType" onchange="calculateUnitEconomics()">
+                                        <option value="oz">oz (fluid)</option>
+                                        <option value="ml">mL</option>
+                                        <option value="L">L</option>
+                                        <option value="gal">gal</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div id="unitEconomicsResults" style="font-size: 13px;">
+                                <!-- Populated by JS -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tank Usage -->
+                <div class="section" style="margin-bottom: 20px;">
+                    <div class="section-header">
+                        <div class="section-title">Tank Allocation</div>
+                        <button class="btn btn-small" onclick="openTankConfig()">⚙️ Configure Tanks</button>
+                    </div>
+                    <div class="section-body">
+                        <div id="tankAllocation" style="font-size: 13px;">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Inventory Alerts -->
+                <div class="section" id="inventoryAlertsSection">
+                    <div class="section-header">
+                        <div class="section-title">Inventory Alerts</div>
+                        <button class="btn btn-small" onclick="toggleInventoryAlerts()" id="inventoryAlertsToggle">Hide</button>
+                    </div>
+                    <div class="section-body" id="inventoryAlertsBody">
+                        <div id="inventoryAlerts">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scaled Batch Requirements -->
+        <div class="section">
+            <div class="section-header">
+                <div class="section-title">Scaled Batch Requirements & Purchase Order</div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-small" onclick="openAnalytics()" title="Cmd/Ctrl + Shift + A">📊 Analytics</button>
+                    <button class="btn btn-small" onclick="exportBatch()">📄 Export CSV</button>
+                    <button class="btn btn-primary btn-small" onclick="generatePO()">📋 Generate PO</button>
+                </div>
+            </div>
+            <div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Inventory Item</th>
+                            <th>SKU</th>
+                            <th>Required (Recipe)</th>
+                            <th>Required (Buy Unit)</th>
+                            <th>Liquid Vol.</th>
+                            <th>Price/Unit</th>
+                            <th>MOQ</th>
+                            <th>Order Qty</th>
+                            <th>Slack</th>
+                            <th>Current Stock</th>
+                            <th>Line Cost</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="scaledBatchTable">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Side Panel for Inventory Detail -->
+    <div class="side-panel-overlay" id="sidePanelOverlay" onclick="closeSidePanel()"></div>
+    <div class="side-panel" id="sidePanel">
+        <div class="side-panel-header">
+            <div>
+                <div class="side-panel-title" id="sidePanelTitle">Loading...</div>
+            </div>
+            <button class="side-panel-close" onclick="closeSidePanel()">×</button>
+        </div>
+        <div class="side-panel-body" id="sidePanelBody">
+            <!-- Populated by JS -->
+        </div>
+    </div>
+
+    <!-- Analytics Overlay -->
+    <div class="modal-overlay" id="analyticsModal" style="align-items: start; padding: 20px; overflow-y: auto;">
+        <div style="background: white; border-radius: 8px; width: 100%; max-width: 1400px; margin: 20px auto; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);">
+            <div style="padding: 24px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; background: #fafbfc;">
+                <div>
+                    <div style="font-size: 24px; font-weight: 700; margin-bottom: 4px;">📊 Batch Analytics Dashboard</div>
+                    <div style="font-size: 14px; color: #6b7280;" id="analyticsSubtitle">Loading...</div>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-primary" onclick="optimizeBatchSize()">🎯 Optimize Batch Size</button>
+                    <button class="btn" onclick="closeAnalytics()">✕ Close</button>
+                </div>
+            </div>
+            <div style="padding: 24px;" id="analyticsContent">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Load Formula -->
+    <div class="modal-overlay" id="loadFormulaModal">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">Load Formula</div>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 20px;">
+                    <div style="font-weight: 600; margin-bottom: 12px;">Recent Formulas</div>
+                    <div id="recentFormulas" style="max-height: 200px; overflow-y: auto;">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+                <div style="border-top: 1px solid #e5e7eb; padding-top: 20px;">
+                    <div style="font-weight: 600; margin-bottom: 12px;">Load from File</div>
+                    <input type="file" id="formulaFileInput" accept=".json" style="width: 100%; padding: 10px; border: 2px dashed #d1d5db; border-radius: 6px; cursor: pointer;">
+                    <div class="form-hint">Select a saved formula JSON file</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeLoadFormula()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for New Inventory Item -->
+    <div class="modal-overlay" id="newItemModal">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">Create New Inventory Item</div>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Inventory ID</label>
+                    <input type="text" id="newInvId" placeholder="INV-XXX">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">SKU</label>
+                    <input type="text" id="newSku" placeholder="e.g., SUG-100">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Item Name</label>
+                    <input type="text" id="newName" placeholder="e.g., Organic Cane Sugar">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Current Stock</label>
+                    <input type="number" id="newStock" value="0" step="0.01">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Stock Unit</label>
+                    <select id="newStockUnit">
+                        <option value="gal">gal</option>
+                        <option value="L">L</option>
+                        <option value="lbs">lbs</option>
+                        <option value="kg">kg</option>
+                        <option value="oz">oz</option>
+                        <option value="g">g</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Reorder Point</label>
+                    <input type="number" id="newReorder" value="100" step="0.01">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Type</label>
+                    <select id="newType">
+                        <option value="liquid">Liquid</option>
+                        <option value="dry">Dry</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Last Purchase Price</label>
+                    <input type="number" id="newPrice" value="0" step="0.01">
+                    <div class="form-hint">Price per buy unit (optional)</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Buy Unit</label>
+                    <select id="newBuyUnit">
+                        <option value="gal">gal</option>
+                        <option value="L">L</option>
+                        <option value="lbs">lbs</option>
+                        <option value="kg">kg</option>
+                        <option value="oz">oz</option>
+                        <option value="g">g</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">MOQ (Minimum Order Quantity)</label>
+                    <input type="number" id="newMOQ" value="1" step="0.01">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Specific Gravity (for dry ingredients)</label>
+                    <input type="number" id="newSG" value="1.0" step="0.01">
+                    <div class="form-hint">Used to convert weight to volume</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="cancelNewItem()">Cancel</button>
+                <button class="btn btn-primary" onclick="createNewItem()">Create Item</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="shared-data.js"></script>
+    <script src="command-palette.js"></script>
+    <script>
+        // Performance: Load SheetJS only when needed for export
+        let sheetJSLoaded = false;
+        function loadSheetJS() {
+            if (sheetJSLoaded) return Promise.resolve();
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = 'https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js';
+                script.onload = () => {
+                    sheetJSLoaded = true;
+                    resolve();
+                };
+                script.onerror = reject;
+                document.head.appendChild(script);
+            });
+        }
+    </script>
+    <script>
+        let unitSystem = 'imperial';
+        let pendingIngredientIndex = null;
+        let inventoryAlertsHidden = false;
+        
+        // Get inventory from shared data layer
+        function getInventory() {
+            const inventoryArray = CoManufacturing.getInventory();
+            // Convert array to object with id as key for backwards compatibility
+            const inventoryObj = {};
+            inventoryArray.forEach(item => {
+                inventoryObj[item.id] = item;
+            });
+            return inventoryObj;
+        }
+        
+        let inventory = getInventory();
+        
+        // Listen for data changes from other pages
+        window.addEventListener('comanufacturing:datachange', (e) => {
+            if (e.detail.dataType === 'inventory') {
+                inventory = getInventory();
+                renderIngredients();
+            }
+        });
+        
+        // Batch info banner update
+        function updateBatchInfoBanner() {
+            const batch = CoManufacturing.getCurrentBatch();
+            const banner = document.getElementById('batchInfoBanner');
+            
+            if (!batch) {
+                banner.style.display = 'none';
+                return;
+            }
+            
+            banner.style.display = 'block';
+            document.getElementById('batchInfoName').textContent = batch.formulaName || 'Unnamed Formula';
+            document.getElementById('batchInfoSize').textContent = `${batch.batchSize} ${batch.batchSizeUnit}`;
+            document.getElementById('batchInfoYield').textContent = batch.baseYield ? `${batch.baseYield} gal yield` : '—';
+            
+            const time = new Date(batch.timestamp);
+            const timeStr = time.toLocaleString();
+            document.getElementById('batchInfoTime').textContent = `Saved ${timeStr}`;
+        }
+
+        // Save current batch
+        function saveCurrentBatch() {
+            const formulaName = document.getElementById('formulaName').value;
+            const batchSize = parseFloat(document.getElementById('batchSize').value) || 0;
+            const batchSizeUnit = document.getElementById('batchSizeUnit').value;
+            const baseYield = parseFloat(document.getElementById('baseYield')?.value) || batchSize;
+            const baseYieldUnit = document.getElementById('baseYieldUnit')?.value || batchSizeUnit;
+            
+            CoManufacturing.saveBatch({
+                formulaName,
+                batchSize,
+                batchSizeUnit,
+                baseYield,
+                baseYieldUnit,
+                ingredients: JSON.parse(JSON.stringify(ingredients)) // Deep copy
+            });
+            
+            updateBatchInfoBanner();
+            alert('✓ Batch saved! This batch context will persist across all calculator pages.');
+        }
+
+        // Load saved batch into form (on page load)
+        function loadSavedBatch() {
+            const batch = CoManufacturing.getCurrentBatch();
+            if (!batch) return;
+            
+            // Populate form fields
+            if (batch.formulaName) {
+                document.getElementById('formulaName').value = batch.formulaName;
+            }
+            if (batch.batchSize) {
+                document.getElementById('batchSize').value = batch.batchSize;
+            }
+            if (batch.batchSizeUnit) {
+                document.getElementById('batchSizeUnit').value = batch.batchSizeUnit;
+            }
+            if (batch.baseYield) {
+                const baseYieldInput = document.getElementById('baseYield');
+                if (baseYieldInput) {
+                    baseYieldInput.value = batch.baseYield;
+                }
+            }
+            if (batch.baseYieldUnit) {
+                const baseYieldUnitInput = document.getElementById('baseYieldUnit');
+                if (baseYieldUnitInput) {
+                    baseYieldUnitInput.value = batch.baseYieldUnit;
+                }
+            }
+            
+            // Load ingredients if saved
+            if (batch.ingredients && Array.isArray(batch.ingredients)) {
+                ingredients = JSON.parse(JSON.stringify(batch.ingredients)); // Deep copy
+                renderIngredients();
+            }
+            
+            // Recalculate everything
+            recalculate();
+        }
+
+        // Total cases input handling
+        let updatingFromCases = false;
+        let updatingFromBatch = false;
+
+        // Auto-calculate cases from batch size (default behavior)
+        function updateCasesFromBatch() {
+            if (updatingFromCases) return; // Prevent circular updates
+            updatingFromBatch = true;
+            
+            const batchSize = parseFloat(document.getElementById('batchSize').value);
+            const batchSizeUnit = document.getElementById('batchSizeUnit').value;
+            
+            // Only calculate if we have a valid batch size
+            if (!batchSize || batchSize <= 0 || isNaN(batchSize)) {
+                document.getElementById('totalCases').value = '';
+                updatingFromBatch = false;
+                return;
+            }
+            
+            // Get configurable unit size and units per case
+            const unitSize = parseFloat(document.getElementById('unitSize').value) || 12;
+            const unitSizeUnit = document.getElementById('unitSizeUnit').value || 'oz';
+            const unitsPerCase = parseFloat(document.getElementById('unitsPerCase').value) || 24;
+            
+            // Convert batch size to gallons
+            let batchGallons = batchSize;
+            if (batchSizeUnit === 'L') {
+                batchGallons = batchSize / 3.78541;
+            }
+            
+            // Convert unit size to oz
+            let unitSizeOz = unitSize;
+            if (unitSizeUnit === 'ml') {
+                unitSizeOz = unitSize * 0.033814;
+            } else if (unitSizeUnit === 'L') {
+                unitSizeOz = unitSize * 33.814;
+            }
+            
+            // Calculate cases
+            const ozPerCase = unitSizeOz * unitsPerCase;
+            const gallonsPerCase = ozPerCase / 128;
+            const totalCases = batchGallons / gallonsPerCase;
+            
+            // Only set if it's a valid number
+            if (!isNaN(totalCases) && isFinite(totalCases)) {
+                document.getElementById('totalCases').value = Math.round(totalCases * 100) / 100; // 2 decimal places
+            }
+            
+            updatingFromBatch = false;
+        }
+
+        // Manual override: calculate batch size from cases
+        function updateBatchFromCases() {
+            if (updatingFromBatch) return; // Prevent circular updates
+            updatingFromCases = true;
+            
+            const totalCases = parseFloat(document.getElementById('totalCases').value);
+            if (!totalCases || isNaN(totalCases)) {
+                updatingFromCases = false;
+                return;
+            }
+            
+            // Get configurable unit size and units per case
+            const unitSize = parseFloat(document.getElementById('unitSize').value) || 12;
+            const unitSizeUnit = document.getElementById('unitSizeUnit').value;
+            const unitsPerCase = parseFloat(document.getElementById('unitsPerCase').value) || 24;
+            
+            // Convert unit size to oz
+            let unitSizeOz = unitSize;
+            if (unitSizeUnit === 'ml') {
+                unitSizeOz = unitSize * 0.033814; // mL to oz
+            } else if (unitSizeUnit === 'L') {
+                unitSizeOz = unitSize * 33.814; // L to oz
+            }
+            
+            // Calculate batch size
+            const ozPerCase = unitSizeOz * unitsPerCase;
+            const gallonsPerCase = ozPerCase / 128;
+            const batchGallons = totalCases * gallonsPerCase;
+            
+            const batchSizeUnit = document.getElementById('batchSizeUnit').value;
+            let batchSize = batchGallons;
+            
+            if (batchSizeUnit === 'L') {
+                batchSize = batchGallons * 3.78541; // Convert to liters
+            }
+            
+            document.getElementById('batchSize').value = Math.round(batchSize * 10) / 10;
+            updatingFromCases = false;
+            recalculate();
+        }
+
+        // Calculate tank allocation
+        function calculateTankAllocation() {
+            const batchSize = parseFloat(document.getElementById('batchSize').value) || 0;
+            const batchSizeUnit = document.getElementById('batchSizeUnit').value;
+            
+            // Convert to gallons
+            let batchGallons = batchSize;
+            if (batchSizeUnit === 'L') {
+                batchGallons = batchSize / 3.78541;
+            }
+            
+            const tanks = CoManufacturing.getTankConfig();
+            const tankAllocationDiv = document.getElementById('tankAllocation');
+            
+            if (batchGallons === 0) {
+                tankAllocationDiv.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 20px;">Enter batch size to see tank allocation</div>';
+                return;
+            }
+            
+            // Sort tanks by capacity (largest first)
+            const sortedTanks = [...tanks].sort((a, b) => b.capacity - a.capacity);
+            
+            let remainingBatch = batchGallons;
+            let allocation = [];
+            let totalCapacity = 0;
+            
+            for (const tank of sortedTanks) {
+                if (remainingBatch <= 0) break;
+                
+                const allocated = Math.min(remainingBatch, tank.capacity);
+                allocation.push({
+                    ...tank,
+                    allocated,
+                    utilization: (allocated / tank.capacity * 100).toFixed(0)
+                });
+                remainingBatch -= allocated;
+                totalCapacity += tank.capacity;
+            }
+            
+            const canFit = remainingBatch <= 0;
+            const utilizationPercent = (batchGallons / totalCapacity * 100).toFixed(1);
+            
+            let html = `
+                <div style="margin-bottom: 16px; padding: 12px; background: ${canFit ? '#d1fae5' : '#fee2e2'}; border: 1px solid ${canFit ? '#86efac' : '#fca5a5'}; border-radius: 6px;">
+                    <div style="font-weight: 600; color: ${canFit ? '#065f46' : '#991b1b'}; margin-bottom: 4px;">
+                        ${canFit ? '✓ Batch fits in available tanks' : '⚠️ Batch exceeds tank capacity'}
+                    </div>
+                    <div style="font-size: 12px; color: ${canFit ? '#047857' : '#dc2626'};">
+                        ${batchGallons.toFixed(1)} gal batch • ${allocation.length} tank${allocation.length !== 1 ? 's' : ''} needed • ${utilizationPercent}% capacity utilization
+                    </div>
+                </div>
+                
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+            `;
+            
+            allocation.forEach(tank => {
+                html += `
+                    <div style="padding: 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <div style="font-weight: 600;">${tank.name}</div>
+                            <div style="font-size: 12px; color: #6b7280;">${tank.allocated.toFixed(1)} / ${tank.capacity} ${tank.unit}</div>
+                        </div>
+                        <div style="height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden;">
+                            <div style="height: 100%; background: #3b82f6; width: ${tank.utilization}%;"></div>
+                        </div>
+                        <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">${tank.utilization}% full</div>
+                    </div>
+                `;
+            });
+            
+            if (!canFit) {
+                html += `
+                    <div style="padding: 12px; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; margin-top: 8px;">
+                        <div style="font-weight: 600; color: #78350f; margin-bottom: 4px;">
+                            Insufficient Capacity
+                        </div>
+                        <div style="font-size: 12px; color: #92400e;">
+                            Need ${remainingBatch.toFixed(1)} additional gallons of tank capacity.
+                            Consider splitting into multiple batches or adding more tanks.
+                        </div>
+                    </div>
+                `;
+            }
+            
+            html += '</div>';
+            
+            tankAllocationDiv.innerHTML = html;
+        }
+
+        // Open tank configuration modal (placeholder)
+        function openTankConfig() {
+            alert('Tank Configuration:\n\nCurrent tanks:\n' + 
+                CoManufacturing.getTankConfig().map(t => `• ${t.name}: ${t.capacity} ${t.unit}`).join('\n') +
+                '\n\nTo modify tanks, edit shared-data.js or add a config UI.');
+        }
+
+        // Sample formula ingredients
+        let ingredients = [
+            {
+                inventoryId: 'INV-001',
+                type: 'liquid',
+                recipeAmount: 85.5,
+                recipeUnit: 'gal',
+                specificGravity: 1.0,
+                buyUnit: 'gal',
+                pricePerBuyUnit: 0.003,
+                moq: 1000
+            },
+            {
+                inventoryId: 'INV-002',
+                type: 'dry',
+                recipeAmount: 120,
+                recipeUnit: 'lbs',
+                specificGravity: 1.59,
+                buyUnit: 'lbs',
+                pricePerBuyUnit: 0.65,
+                moq: 50
+            },
+            {
+                inventoryId: 'INV-003',
+                type: 'dry',
+                recipeAmount: 2.5,
+                recipeUnit: 'lbs',
+                specificGravity: 1.665,
+                buyUnit: 'kg',
+                pricePerBuyUnit: 6.50,
+                moq: 11.34
+            },
+            {
+                inventoryId: 'INV-004',
+                type: 'liquid',
+                recipeAmount: 1.2,
+                recipeUnit: 'gal',
+                specificGravity: 1.0,
+                buyUnit: 'gal',
+                pricePerBuyUnit: 85.00,
+                moq: 5
+            },
+            {
+                inventoryId: 'INV-005',
+                type: 'dry',
+                recipeAmount: 0.8,
+                recipeUnit: 'lbs',
+                specificGravity: 1.23,
+                buyUnit: 'kg',
+                pricePerBuyUnit: 275.00,
+                moq: 2.27
+            },
+            {
+                inventoryId: 'INV-006',
+                type: 'dry',
+                recipeAmount: 0.15,
+                recipeUnit: 'lbs',
+                specificGravity: 1.44,
+                buyUnit: 'lbs',
+                pricePerBuyUnit: 4.50,
+                moq: 10
+            }
+        ];
+
+        // Unit conversion functions
+        const conversions = {
+            'gal_L': 3.78541,
+            'L_gal': 0.264172,
+            'gal_ml': 3785.41,
+            'ml_gal': 0.000264172,
+            'gal_oz': 128,
+            'oz_gal': 0.0078125,
+            'L_ml': 1000,
+            'ml_L': 0.001,
+            'L_oz': 33.814,
+            'oz_L': 0.0295735,
+            'oz_ml': 29.5735,
+            'ml_oz': 0.033814,
+            'lbs_kg': 0.453592,
+            'kg_lbs': 2.20462,
+            'lbs_g': 453.592,
+            'g_lbs': 0.00220462,
+            'oz_g': 28.3495,
+            'g_oz': 0.035274
+        };
+
+        function convert(value, fromUnit, toUnit) {
+            if (fromUnit === toUnit) return value;
+            const key = `${fromUnit}_${toUnit}`;
+            if (conversions[key]) return value * conversions[key];
+            
+            const reverseKey = `${toUnit}_${fromUnit}`;
+            if (conversions[reverseKey]) return value / conversions[reverseKey];
+            
+            return value;
+        }
+
+        function getDisplayUnit(originalUnit) {
+            if (unitSystem === 'metric') {
+                if (originalUnit === 'gal') return 'L';
+                if (originalUnit === 'lbs') return 'kg';
+                if (originalUnit === 'oz') return 'g';
+            }
+            return originalUnit;
+        }
+
+        function convertToDisplay(value, unit) {
+            const displayUnit = getDisplayUnit(unit);
+            return {
+                value: convert(value, unit, displayUnit),
+                unit: displayUnit
+            };
+        }
+
+        function setUnitSystem(system) {
+            unitSystem = system;
+            document.querySelectorAll('.unit-toggle button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            renderIngredients();
+        }
+
+        function openInventoryDetail(invId) {
+            const item = inventory[invId];
+            if (!item) return;
+
+            // Find ingredient data if linked to formula
+            const ingredient = ingredients.find(ing => ing.inventoryId === invId);
+
+            document.getElementById('sidePanelTitle').textContent = item.name;
+            
+            const stockStatus = item.currentStock >= item.reorderPoint ? '✅ In Stock' : '⚠️ Below Reorder Point';
+            const stockColor = item.currentStock >= item.reorderPoint ? '#059669' : '#f59e0b';
+
+            let currentPricingHTML = '';
+            if (item.lastPrice) {
+                currentPricingHTML = `
+                    <div class="detail-section">
+                        <div class="detail-label">Last Purchase Price</div>
+                        <div class="detail-value">$${item.lastPrice.toFixed(2)} / ${item.lastBuyUnit || item.unit}</div>
+                        <div style="font-size: 13px; color: #6b7280; margin-top: 4px;">MOQ: ${item.lastMOQ || 'N/A'} ${item.lastBuyUnit || item.unit}</div>
+                    </div>
+                `;
+            } else {
+                currentPricingHTML = `
+                    <div class="detail-section">
+                        <div class="detail-label">Pricing</div>
+                        <div class="detail-value" style="color: #9ca3af; font-size: 14px; font-weight: 400;">No pricing data available</div>
+                    </div>
+                `;
+            }
+
+            document.getElementById('sidePanelBody').innerHTML = `
+                <div class="detail-section">
+                    <div class="detail-label">SKU</div>
+                    <div class="detail-value">${item.sku}</div>
+                </div>
+                
+                ${item.vendor ? `
+                <div class="detail-section">
+                    <div class="detail-label">Primary Vendor</div>
+                    <div class="detail-value">${item.vendor}</div>
+                </div>
+                ` : ''}
+                
+                <div class="detail-section">
+                    <div class="detail-label">Current Stock</div>
+                    <div class="detail-value large">${item.currentStock} ${item.unit}</div>
+                </div>
+                
+                <div class="detail-section">
+                    <div class="detail-label">Reorder Point</div>
+                    <div class="detail-value">${item.reorderPoint} ${item.unit}</div>
+                </div>
+                
+                <div class="detail-section">
+                    <div class="detail-label">Status</div>
+                    <div class="detail-value" style="color: ${stockColor};">${stockStatus}</div>
+                </div>
+
+                ${currentPricingHTML}
+                
+                <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid #e5e7eb;">
+                    <a href="inventory.html?item=${invId}" class="btn btn-primary" style="width: 100%; justify-content: center; margin-bottom: 10px; text-decoration: none; display: flex;">
+                        📝 Edit in Inventory
+                    </a>
+                    <button class="btn" onclick="searchSuppliers('${invId}')" style="width: 100%; justify-content: center; margin-bottom: 10px;">
+                        🔍 Search for Suppliers & Pricing
+                    </button>
+                    <button class="btn" onclick="compareAlternatives('${invId}')" style="width: 100%; justify-content: center; margin-bottom: 10px;">
+                        📊 Compare Alternatives
+                    </button>
+                    <button class="btn" style="width: 100%; justify-content: center;">
+                        📈 View Usage History
+                    </button>
+                </div>
+
+                <div id="supplierResults" style="margin-top: 24px;">
+                    <!-- Supplier search results will appear here -->
+                </div>
+            `;
+
+            document.getElementById('sidePanelOverlay').classList.add('active');
+            document.getElementById('sidePanel').classList.add('active');
+        }
+
+        async function searchSuppliers(invId) {
+            const item = inventory[invId];
+            const resultsDiv = document.getElementById('supplierResults');
+            
+            // Show loading state
+            resultsDiv.innerHTML = `
+                <div style="padding: 20px; text-align: center; color: #6b7280;">
+                    <div style="font-size: 32px; margin-bottom: 10px;">🔄</div>
+                    <div>Searching suppliers for ${item.name}...</div>
+                </div>
+            `;
+
+            // Simulate search (in real app, this would hit your procurement API or supplier database)
+            setTimeout(() => {
+                const suppliers = generateMockSuppliers(item);
+                
+                resultsDiv.innerHTML = `
+                    <div style="padding-top: 24px; border-top: 2px solid #e5e7eb;">
+                        <div style="font-size: 14px; font-weight: 600; margin-bottom: 16px; color: #1a1a1a;">
+                            Available Suppliers (${suppliers.length})
+                        </div>
+                        ${suppliers.map(supplier => `
+                            <div style="border: 1px solid #e5e7eb; border-radius: 6px; padding: 16px; margin-bottom: 12px; background: #fafbfc;">
+                                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+                                    <div>
+                                        <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">${supplier.name}</div>
+                                        <div style="font-size: 12px; color: #6b7280;">${supplier.location}</div>
+                                    </div>
+                                    <div class="badge ${supplier.verified ? 'badge-success' : 'badge-info'}">
+                                        ${supplier.verified ? '✓ Verified' : 'Unverified'}
+                                    </div>
+                                </div>
+                                
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; font-size: 13px;">
+                                    <div>
+                                        <div style="color: #6b7280; font-size: 11px; text-transform: uppercase; font-weight: 600; margin-bottom: 2px;">Price</div>
+                                        <div style="font-weight: 600; color: #1a1a1a; font-size: 16px;">$${supplier.price.toFixed(2)}/${supplier.unit}</div>
+                                        ${supplier.savingsPercent !== 0 ? `
+                                            <div style="color: ${supplier.savingsPercent > 0 ? '#059669' : '#dc2626'}; font-size: 12px; font-weight: 500;">
+                                                ${supplier.savingsPercent > 0 ? '↓' : '↑'} ${Math.abs(supplier.savingsPercent).toFixed(0)}% vs current
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                    <div>
+                                        <div style="color: #6b7280; font-size: 11px; text-transform: uppercase; font-weight: 600; margin-bottom: 2px;">MOQ</div>
+                                        <div style="font-weight: 600;">${supplier.moq} ${supplier.unit}</div>
+                                    </div>
+                                </div>
+
+                                <div style="font-size: 12px; color: #6b7280; margin-bottom: 12px;">
+                                    <div>Lead Time: <strong>${supplier.leadTime}</strong></div>
+                                    <div>Shipping: <strong>${supplier.shipping}</strong></div>
+                                </div>
+
+                                <div style="display: flex; gap: 8px;">
+                                    <button class="btn btn-small btn-primary" onclick="selectSupplier('${invId}', ${JSON.stringify(supplier).replace(/"/g, '&quot;')})">
+                                        Select Supplier
+                                    </button>
+                                    <button class="btn btn-small" onclick="window.open('${supplier.url}', '_blank')">
+                                        Visit Website →
+                                    </button>
+                                    <button class="btn btn-small" onclick="requestQuote('${supplier.name}', '${item.name}')">
+                                        Request Quote
+                                    </button>
+                                </div>
+                            </div>
+                        `).join('')}
+
+                        <div style="margin-top: 16px; padding: 12px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; font-size: 13px;">
+                            💡 <strong>Tip:</strong> Click "Select Supplier" to update your formula pricing automatically
+                        </div>
+                    </div>
+                `;
+            }, 1000);
+        }
+
+        function generateMockSuppliers(item) {
+            // Find current ingredient pricing
+            const ingredient = ingredients.find(ing => ing.inventoryId === Object.keys(inventory).find(k => inventory[k] === item));
+            const currentPrice = ingredient ? ingredient.pricePerBuyUnit : 10.0;
+            const currentUnit = ingredient ? ingredient.buyUnit : item.unit;
+            
+            // Generate 3-5 realistic suppliers with varying prices
+            const supplierNames = [
+                { name: 'Sysco Food Services', location: 'National', verified: true },
+                { name: 'US Foods', location: 'National', verified: true },
+                { name: 'Restaurant Depot', location: 'Regional', verified: true },
+                { name: 'WebstaurantStore', location: 'Online', verified: false },
+                { name: 'Ingredients Inc.', location: 'West Coast', verified: true }
+            ];
+
+            return supplierNames.slice(0, Math.floor(Math.random() * 2) + 3).map((s, idx) => {
+                const priceVariation = (Math.random() - 0.5) * 0.3; // +/- 15%
+                const price = currentPrice * (1 + priceVariation);
+                const savingsPercent = ((currentPrice - price) / currentPrice) * 100;
+                
+                return {
+                    ...s,
+                    price: price,
+                    unit: currentUnit,
+                    moq: Math.ceil((Math.random() * 50 + 10) / 10) * 10,
+                    leadTime: `${Math.floor(Math.random() * 7) + 3}-${Math.floor(Math.random() * 7) + 10} days`,
+                    shipping: Math.random() > 0.5 ? 'Free over $500' : `$${(Math.random() * 50 + 25).toFixed(2)}`,
+                    savingsPercent: savingsPercent,
+                    url: `https://example.com/${s.name.toLowerCase().replace(/\s+/g, '-')}`
+                };
+            }).sort((a, b) => a.price - b.price);
+        }
+
+        function selectSupplier(invId, supplier) {
+            // Find the ingredient in the formula
+            const ingIndex = ingredients.findIndex(ing => ing.inventoryId === invId);
+            if (ingIndex === -1) {
+                alert('This ingredient is not in your current formula');
+                return;
+            }
+
+            const oldPrice = ingredients[ingIndex].pricePerBuyUnit;
+            const oldMOQ = ingredients[ingIndex].moq;
+
+            // Update pricing
+            ingredients[ingIndex].pricePerBuyUnit = supplier.price;
+            ingredients[ingIndex].moq = supplier.moq;
+            ingredients[ingIndex].buyUnit = supplier.unit;
+
+            // Show confirmation
+            const savings = ((oldPrice - supplier.price) / oldPrice * 100).toFixed(1);
+            alert(`✅ Supplier Updated!\n\nSupplier: ${supplier.name}\nOld Price: $${oldPrice.toFixed(2)}/${supplier.unit}\nNew Price: $${supplier.price.toFixed(2)}/${supplier.unit}\nSavings: ${savings > 0 ? savings + '% cheaper' : Math.abs(savings) + '% more expensive'}\n\nYour formula costs will be recalculated.`);
+
+            // Refresh everything
+            closeSidePanel();
+            renderIngredients();
+        }
+
+        function compareAlternatives(invId) {
+            const item = inventory[invId];
+            const resultsDiv = document.getElementById('supplierResults');
+            
+            // Show alternative ingredients/substitutes
+            resultsDiv.innerHTML = `
+                <div style="padding-top: 24px; border-top: 2px solid #e5e7eb;">
+                    <div style="font-size: 14px; font-weight: 600; margin-bottom: 16px; color: #1a1a1a;">
+                        Alternative Ingredients
+                    </div>
+                    <div class="alert alert-info" style="margin: 0;">
+                        <span>💡</span>
+                        <div>
+                            <strong>Feature Coming Soon</strong><br>
+                            This will show alternative ingredients that could substitute for ${item.name} in your formula, including:
+                            <ul style="margin: 8px 0 0 20px; font-size: 12px;">
+                                <li>Direct substitutes (e.g., cane sugar → beet sugar)</li>
+                                <li>Cost comparison per unit</li>
+                                <li>Formula adjustment requirements</li>
+                                <li>Taste/quality impact notes</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function requestQuote(supplierName, itemName) {
+            alert(`📧 Quote Request\n\nA quote request for "${itemName}" will be sent to ${supplierName}.\n\nIn a production system, this would:\n• Generate RFQ with your specifications\n• Email supplier directly\n• Track response in procurement dashboard\n• Notify you when quotes arrive`);
+        }
+
+        function closeSidePanel() {
+            document.getElementById('sidePanelOverlay').classList.remove('active');
+            document.getElementById('sidePanel').classList.remove('active');
+        }
+
+        function promptNewInventoryItem(index) {
+            pendingIngredientIndex = index;
+            document.getElementById('newItemModal').classList.add('active');
+            
+            // Generate next INV ID
+            const maxId = Math.max(...Object.keys(inventory).map(k => parseInt(k.split('-')[1])));
+            document.getElementById('newInvId').value = `INV-${String(maxId + 1).padStart(3, '0')}`;
+        }
+
+        function cancelNewItem() {
+            document.getElementById('newItemModal').classList.remove('active');
+            pendingIngredientIndex = null;
+            
+            // Clear form fields
+            document.getElementById('newName').value = '';
+            document.getElementById('newSku').value = '';
+            document.getElementById('newStock').value = '0';
+            document.getElementById('newReorder').value = '100';
+            document.getElementById('newPrice').value = '0';
+            document.getElementById('newMOQ').value = '1';
+            document.getElementById('newSG').value = '1.0';
+        }
+
+        function createNewItem() {
+            const invId = document.getElementById('newInvId').value;
+            const sku = document.getElementById('newSku').value;
+            const name = document.getElementById('newName').value;
+            const stock = parseFloat(document.getElementById('newStock').value);
+            const unit = document.getElementById('newStockUnit').value;
+            const reorder = parseFloat(document.getElementById('newReorder').value);
+            const type = document.getElementById('newType').value;
+            const price = parseFloat(document.getElementById('newPrice').value);
+            const buyUnit = document.getElementById('newBuyUnit').value;
+            const moq = parseFloat(document.getElementById('newMOQ').value);
+            const sg = parseFloat(document.getElementById('newSG').value);
+
+            if (!invId || !sku || !name) {
+                alert('Please fill in all required fields');
+                return;
+            }
+
+            // Add to inventory
+            inventory[invId] = {
+                sku: sku,
+                name: name,
+                currentStock: stock,
+                unit: unit,
+                reorderPoint: reorder,
+                type: type,
+                lastPrice: price,
+                lastBuyUnit: buyUnit,
+                lastMOQ: moq,
+                specificGravity: sg
+            };
+
+            // Update pending ingredient with the new item
+            if (pendingIngredientIndex !== null) {
+                ingredients[pendingIngredientIndex].inventoryId = invId;
+                ingredients[pendingIngredientIndex].type = type;
+                ingredients[pendingIngredientIndex].recipeUnit = unit;
+                ingredients[pendingIngredientIndex].buyUnit = buyUnit;
+                ingredients[pendingIngredientIndex].specificGravity = sg;
+                ingredients[pendingIngredientIndex].pricePerBuyUnit = price;
+                ingredients[pendingIngredientIndex].moq = moq;
+            }
+
+            // Close modal and refresh
+            cancelNewItem();
+            renderIngredients();
+        }
+
+        function renderIngredients() {
+            const tbody = document.getElementById('ingredientsList');
+            tbody.innerHTML = '';
+
+            ingredients.forEach((ing, index) => {
+                // If inventoryId is null, show autocomplete search
+                if (!ing.inventoryId) {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td colspan="10" style="padding: 16px;">
+                            <div class="autocomplete-container">
+                                <input 
+                                    type="text" 
+                                    id="ingredientSearch${index}"
+                                    placeholder="Add ingredient by name or SKU..."
+                                    style="width: 100%; font-size: 14px; padding: 10px; border: 2px solid #2563eb;"
+                                    oninput="searchInventory(${index}, this.value)"
+                                    onfocus="showAllInventory(${index})"
+                                />
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                    
+                    // Create dropdown in body
+                    let resultsDiv = document.getElementById(`autocompleteResults${index}`);
+                    if (!resultsDiv) {
+                        resultsDiv = document.createElement('div');
+                        resultsDiv.id = `autocompleteResults${index}`;
+                        resultsDiv.className = 'autocomplete-results';
+                        document.body.appendChild(resultsDiv);
+                    }
+                    
+                    // Focus the input and show all items initially
+                    setTimeout(() => {
+                        const input = document.getElementById(`ingredientSearch${index}`);
+                        if (input) {
+                            input.focus();
+                            showAllInventory(index);
+                        }
+                    }, 100);
+                    return;
+                }
+
+                // Check if this is a draft ingredient
+                const isDraft = ing.inventoryId && ing.inventoryId.startsWith('DRAFT-');
+                const invItem = isDraft ? null : inventory[ing.inventoryId];
+                
+                // If not draft and inventory item doesn't exist (stale reference), show error
+                if (!isDraft && !invItem) {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td colspan="10">
+                            <div class="alert alert-warning" style="margin: 0;">
+                                <span>⚠️</span>
+                                <div>
+                                    <strong>Inventory item "${ing.inventoryId}" not found</strong><br>
+                                    <button class="btn btn-small btn-primary" onclick="promptNewInventoryItem(${index})" style="margin-top: 8px;">
+                                        + Create New Inventory Item
+                                    </button>
+                                    <button class="btn btn-small btn-danger" onclick="deleteIngredient(${index})" style="margin-top: 8px;">
+                                        Remove Ingredient
+                                    </button>
+                                </div>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                    return;
+                }
+
+                // For draft ingredients, use the draft data
+                const displayName = isDraft ? (ing.draftName || 'Draft Ingredient') : invItem.name;
+                const displaySku = isDraft ? '(draft)' : invItem.sku;
+
+                let stockBadge = '';
+                if (isDraft) {
+                    stockBadge = `<span class="badge badge-info">Draft</span>`;
+                } else {
+                    const stockLevel = invItem.currentStock / invItem.reorderPoint;
+                    if (stockLevel < 1) {
+                        stockBadge = `<span class="badge badge-danger">Low: ${invItem.currentStock} ${invItem.unit}</span>`;
+                    } else if (stockLevel < 2) {
+                        stockBadge = `<span class="badge badge-warning">${invItem.currentStock} ${invItem.unit}</span>`;
+                    } else {
+                        stockBadge = `<span class="badge badge-success">${invItem.currentStock} ${invItem.unit}</span>`;
+                    }
+                }
+
+                const row = document.createElement('tr');
+                row.style.background = isDraft ? '#fffbeb' : '';
+                row.innerHTML = `
+                    <td>
+                        ${isDraft ? 
+                            `<input type="text" value="${displayName}" onchange="updateIngredient(${index}, 'draftName', this.value)" style="font-weight: 600; min-width: 150px;" placeholder="Ingredient name">` :
+                            `<strong>${displayName}</strong><br><a class="sku-link" onclick="openInventoryDetail('${ing.inventoryId}')">${displaySku} →</a>`
+                        }
+                    </td>
+                    <td>
+                        <select onchange="updateIngredient(${index}, 'type', this.value)" style="width: 80px;">
+                            <option value="liquid" ${ing.type === 'liquid' ? 'selected' : ''}>Liquid</option>
+                            <option value="dry" ${ing.type === 'dry' ? 'selected' : ''}>Dry</option>
+                        </select>
+                    </td>
+                    <td><input type="number" value="${ing.recipeAmount}" step="0.01" onchange="updateIngredient(${index}, 'recipeAmount', parseFloat(this.value))" onkeydown="handleTabNavigation(event, ${index}, 0)" data-row="${index}" data-col="0" style="width: 70px;"></td>
+                    <td>
+                        <select onchange="updateIngredient(${index}, 'recipeUnit', this.value)" onkeydown="handleTabNavigation(event, ${index}, 1)" data-row="${index}" data-col="1" style="width: 70px;">
+                            <option value="gal" ${ing.recipeUnit === 'gal' ? 'selected' : ''}>gal</option>
+                            <option value="L" ${ing.recipeUnit === 'L' ? 'selected' : ''}>L</option>
+                            <option value="lbs" ${ing.recipeUnit === 'lbs' ? 'selected' : ''}>lbs</option>
+                            <option value="kg" ${ing.recipeUnit === 'kg' ? 'selected' : ''}>kg</option>
+                            <option value="oz" ${ing.recipeUnit === 'oz' ? 'selected' : ''}>oz</option>
+                            <option value="g" ${ing.recipeUnit === 'g' ? 'selected' : ''}>g</option>
+                        </select>
+                    </td>
+                    <td><input type="number" value="${ing.specificGravity}" step="0.01" onchange="updateIngredient(${index}, 'specificGravity', parseFloat(this.value))" onkeydown="handleTabNavigation(event, ${index}, 2)" data-row="${index}" data-col="2" style="width: 60px;" ${ing.type === 'liquid' ? 'disabled' : ''}></td>
+                    <td>
+                        <select onchange="updateIngredient(${index}, 'buyUnit', this.value)" onkeydown="handleTabNavigation(event, ${index}, 3)" data-row="${index}" data-col="3" style="width: 70px;">
+                            <option value="gal" ${ing.buyUnit === 'gal' ? 'selected' : ''}>gal</option>
+                            <option value="L" ${ing.buyUnit === 'L' ? 'selected' : ''}>L</option>
+                            <option value="lbs" ${ing.buyUnit === 'lbs' ? 'selected' : ''}>lbs</option>
+                            <option value="kg" ${ing.buyUnit === 'kg' ? 'selected' : ''}>kg</option>
+                            <option value="oz" ${ing.buyUnit === 'oz' ? 'selected' : ''}>oz</option>
+                            <option value="g" ${ing.buyUnit === 'g' ? 'selected' : ''}>g</option>
+                        </select>
+                    </td>
+                    <td><input type="number" value="${ing.pricePerBuyUnit}" step="0.01" onchange="updateIngredient(${index}, 'pricePerBuyUnit', parseFloat(this.value))" onkeydown="handleTabNavigation(event, ${index}, 4)" data-row="${index}" data-col="4" style="width: 70px;"></td>
+                    <td><input type="number" value="${ing.moq}" step="0.01" onchange="updateIngredient(${index}, 'moq', parseFloat(this.value))" onkeydown="handleTabNavigation(event, ${index}, 5)" data-row="${index}" data-col="5" style="width: 70px;"></td>
+                    <td>${stockBadge}</td>
+                    <td><button class="btn btn-danger btn-small" onclick="deleteIngredient(${index})">×</button></td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            recalculate();
+        }
+
+        function handleTabNavigation(event, currentRow, currentCol) {
+            // Only handle Tab and Enter keys
+            if (event.key !== 'Tab' && event.key !== 'Enter') return;
+            
+            // For Tab key, prevent default; for Enter, always prevent
+            if (event.key === 'Tab') {
+                event.preventDefault();
+            } else if (event.key === 'Enter') {
+                // Enter key should navigate for inputs, but let selects handle naturally
+                if (event.target.tagName !== 'SELECT') {
+                    event.preventDefault();
+                }
+            }
+            
+            // Define field order: recipeAmount (0), recipeUnit (1), specificGravity (2), buyUnit (3), pricePerBuyUnit (4), moq (5)
+            const numCols = 6;
+            
+            let nextRow = currentRow;
+            let nextCol = currentCol;
+            
+            if (event.shiftKey && event.key === 'Tab') {
+                // Shift+Tab: go backwards
+                nextCol--;
+                if (nextCol < 0) {
+                    nextRow--;
+                    nextCol = numCols - 1;
+                }
+            } else {
+                // Tab or Enter: go forwards
+                nextCol++;
+                if (nextCol >= numCols) {
+                    nextRow++;
+                    nextCol = 0;
+                }
+            }
+            
+            // If we've gone past the last row, don't auto-add (let user manually add)
+            if (nextRow >= ingredients.length) {
+                // Just stay on last field or let default Tab behavior take over
+                return;
+            }
+            
+            // If we've gone before the first row, wrap to formula fields
+            if (nextRow < 0) {
+                document.getElementById('formulaName').focus();
+                return;
+            }
+            
+            // Find and focus the next field
+            // Use immediate execution for non-select elements, slight delay for selects
+            const isCurrentSelect = event.target.tagName === 'SELECT';
+            const delay = isCurrentSelect ? 50 : 10;
+            
+            setTimeout(() => {
+                const nextField = document.querySelector(`[data-row="${nextRow}"][data-col="${nextCol}"]`);
+                if (nextField && !nextField.disabled) {
+                    nextField.focus();
+                    // For select elements, also trigger a click to ensure dropdown behavior
+                    if (nextField.tagName === 'SELECT') {
+                        nextField.click();
+                    }
+                } else {
+                    // If field is disabled (like SG for liquids), skip to next
+                    handleTabNavigation({ 
+                        key: event.key, 
+                        shiftKey: event.shiftKey, 
+                        preventDefault: () => {}, 
+                        target: event.target 
+                    }, nextRow, nextCol);
+                }
+            }, delay);
+        }
+
+        function addIngredient() {
+            ingredients.push({
+                inventoryId: null,  // Will show autocomplete search
+                type: 'liquid',
+                recipeAmount: 0,
+                recipeUnit: 'gal',
+                specificGravity: 1.0,
+                buyUnit: 'gal',
+                pricePerBuyUnit: 0,
+                moq: 1
+            });
+            renderIngredients();
+        }
+
+        function addDraftIngredient() {
+            const draftId = `DRAFT-${Date.now()}`;
+            ingredients.push({
+                inventoryId: draftId,
+                draftName: 'Draft Ingredient',
+                type: 'liquid',
+                recipeAmount: 0,
+                recipeUnit: 'gal',
+                specificGravity: 1.0,
+                buyUnit: 'gal',
+                pricePerBuyUnit: 0,
+                moq: 1
+            });
+            renderIngredients();
+        }
+
+        function showAllInventory(index) {
+            const resultsDiv = document.getElementById(`autocompleteResults${index}`);
+            const inputEl = document.getElementById(`ingredientSearch${index}`);
+            if (!resultsDiv || !inputEl) return;
+
+            // Position the dropdown relative to the input
+            const rect = inputEl.getBoundingClientRect();
+            resultsDiv.style.top = (rect.bottom) + 'px';
+            resultsDiv.style.left = rect.left + 'px';
+            resultsDiv.style.width = rect.width + 'px';
+
+            const allItems = Object.entries(inventory);
+            
+            resultsDiv.innerHTML = `
+                <div style="padding: 8px 12px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; font-size: 12px; font-weight: 600; color: #6b7280;">
+                    Available Inventory (${allItems.length})
+                </div>
+            ` + allItems.map(([id, item]) => {
+                const stockStatus = item.currentStock >= item.reorderPoint ? '✅' : '⚠️';
+                const priceInfo = item.lastPrice ? `$${item.lastPrice.toFixed(2)}/${item.lastBuyUnit || item.unit}` : 'No pricing';
+                const vendorInfo = item.vendor ? ` • ${item.vendor}` : '';
+                return `
+                    <div class="autocomplete-item" onclick="selectInventoryItem(${index}, '${id}')">
+                        <div class="autocomplete-item-name">${item.name}</div>
+                        <div class="autocomplete-item-meta">
+                            ${item.sku} • ${stockStatus} ${item.currentStock} ${item.unit} • ${priceInfo}${vendorInfo}
+                        </div>
+                    </div>
+                `;
+            }).join('') + `
+                <div class="autocomplete-create" onclick="promptNewInventoryItemWithName(${index}, '')">
+                    + Create new inventory item
+                </div>
+            `;
+
+            resultsDiv.classList.add('active');
+        }
+
+        function searchInventory(index, query) {
+            const resultsDiv = document.getElementById(`autocompleteResults${index}`);
+            const inputEl = document.getElementById(`ingredientSearch${index}`);
+            if (!resultsDiv || !inputEl) return;
+
+            // Position the dropdown relative to the input
+            const rect = inputEl.getBoundingClientRect();
+            resultsDiv.style.top = (rect.bottom) + 'px';
+            resultsDiv.style.left = rect.left + 'px';
+            resultsDiv.style.width = rect.width + 'px';
+
+            query = query.toLowerCase().trim();
+
+            if (!query) {
+                showAllInventory(index);
+                return;
+            }
+
+            // Search inventory by name or SKU
+            const matches = Object.entries(inventory).filter(([id, item]) => {
+                return item.name.toLowerCase().includes(query) || 
+                       item.sku.toLowerCase().includes(query) ||
+                       id.toLowerCase().includes(query);
+            });
+
+            if (matches.length === 0) {
+                resultsDiv.innerHTML = `
+                    <div class="autocomplete-empty">
+                        No matching items found for "${query}"
+                    </div>
+                    <div class="autocomplete-create" onclick="promptNewInventoryItemWithName(${index}, '${query.replace(/'/g, "\\'")}')">
+                        + Create new item "${query}"
+                    </div>
+                `;
+            } else {
+                resultsDiv.innerHTML = `
+                    <div style="padding: 8px 12px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; font-size: 12px; font-weight: 600; color: #6b7280;">
+                        Found ${matches.length} item${matches.length !== 1 ? 's' : ''}
+                    </div>
+                ` + matches.map(([id, item]) => {
+                    const stockStatus = item.currentStock >= item.reorderPoint ? '✅' : '⚠️';
+                    const priceInfo = item.lastPrice ? `$${item.lastPrice.toFixed(2)}/${item.lastBuyUnit || item.unit}` : 'No pricing';
+                    const vendorInfo = item.vendor ? ` • ${item.vendor}` : '';
+                    return `
+                        <div class="autocomplete-item" onclick="selectInventoryItem(${index}, '${id}')">
+                            <div class="autocomplete-item-name">${item.name}</div>
+                            <div class="autocomplete-item-meta">
+                                ${item.sku} • ${stockStatus} ${item.currentStock} ${item.unit} • ${priceInfo}${vendorInfo}
+                            </div>
+                        </div>
+                    `;
+                }).join('') + `
+                    <div class="autocomplete-create" onclick="promptNewInventoryItemWithName(${index}, '${query.replace(/'/g, "\\'")}')">
+                        + Create new inventory item
+                    </div>
+                `;
+            }
+
+            resultsDiv.classList.add('active');
+        }
+
+        function selectInventoryItem(index, invId) {
+            const item = inventory[invId];
+            if (!item) return;
+
+            // Close and cleanup the dropdown
+            const resultsDiv = document.getElementById(`autocompleteResults${index}`);
+            if (resultsDiv) {
+                resultsDiv.classList.remove('active');
+                resultsDiv.remove();
+            }
+
+            // Update ingredient with selected inventory item
+            ingredients[index].inventoryId = invId;
+            
+            // Populate from inventory data (last purchase info)
+            ingredients[index].type = item.type || 'liquid';
+            ingredients[index].recipeUnit = item.unit;
+            ingredients[index].buyUnit = item.lastBuyUnit || item.unit;
+            ingredients[index].specificGravity = item.specificGravity || 1.0;
+            ingredients[index].pricePerBuyUnit = item.lastPrice || 0;
+            ingredients[index].moq = item.lastMOQ || 1;
+
+            // Re-render to show the full ingredient row
+            renderIngredients();
+        }
+
+        function promptNewInventoryItemWithName(index, searchQuery) {
+            pendingIngredientIndex = index;
+            document.getElementById('newItemModal').classList.add('active');
+            
+            // Generate next INV ID
+            const maxId = Math.max(...Object.keys(inventory).map(k => parseInt(k.split('-')[1])));
+            document.getElementById('newInvId').value = `INV-${String(maxId + 1).padStart(3, '0')}`;
+            
+            // Pre-fill name from search query if provided
+            if (searchQuery) {
+                document.getElementById('newName').value = searchQuery;
+                // Try to generate a SKU from the name
+                const skuPrefix = searchQuery.substring(0, 3).toUpperCase();
+                document.getElementById('newSku').value = `${skuPrefix}-${String(maxId + 1).padStart(3, '0')}`;
+            }
+        }
+
+        // Close autocomplete when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.autocomplete-container') && !e.target.closest('.autocomplete-results')) {
+                document.querySelectorAll('.autocomplete-results').forEach(div => {
+                    div.classList.remove('active');
+                });
+            }
+        });
+
+        // Reposition dropdown on scroll to keep it attached
+        window.addEventListener('scroll', function() {
+            document.querySelectorAll('.autocomplete-results.active').forEach(div => {
+                const index = div.id.replace('autocompleteResults', '');
+                const inputEl = document.getElementById(`ingredientSearch${index}`);
+                if (inputEl) {
+                    const rect = inputEl.getBoundingClientRect();
+                    div.style.top = (rect.bottom) + 'px';
+                    div.style.left = rect.left + 'px';
+                    div.style.width = rect.width + 'px';
+                }
+            });
+        }, true);
+
+        // Close dropdown on resize
+        window.addEventListener('resize', function() {
+            document.querySelectorAll('.autocomplete-results').forEach(div => {
+                div.classList.remove('active');
+            });
+        });
+
+        function deleteIngredient(index) {
+            if (confirm('Remove this ingredient?')) {
+                ingredients.splice(index, 1);
+                renderIngredients();
+            }
+        }
+
+        function updateIngredient(index, field, value) {
+            ingredients[index][field] = value;
+            
+            // If changing type between liquid/dry, adjust SG field
+            if (field === 'type') {
+                if (value === 'liquid') {
+                    ingredients[index].specificGravity = 1.0;
+                }
+                // Re-render to update disabled state of SG field
+                renderIngredients();
+            } else {
+                // For other field changes, just recalculate without re-rendering
+                // This preserves focus for tab navigation
+                recalculate();
+            }
+        }
+
+        function recalculate() {
+            const baseYield = parseFloat(document.getElementById('baseYield').value) || 100;
+            const baseYieldUnit = document.getElementById('baseYieldUnit').value;
+            const batchSize = parseFloat(document.getElementById('batchSize').value) || 100;
+            const batchSizeUnit = document.getElementById('batchSizeUnit').value;
+
+            // Convert both to same unit (gallons) for comparison
+            const baseYieldGal = convert(baseYield, baseYieldUnit, 'gal');
+            const batchSizeGal = convert(batchSize, batchSizeUnit, 'gal');
+            const scaleFactor = batchSizeGal / baseYieldGal;
+
+            // Update scale display
+            document.getElementById('scaleFactor').textContent = scaleFactor.toFixed(2) + 'x';
+            document.getElementById('scaleDescription').textContent = `${baseYield} ${baseYieldUnit} → ${batchSize} ${batchSizeUnit}`;
+
+            // Calculate scaled batch
+            const tbody = document.getElementById('scaledBatchTable');
+            tbody.innerHTML = '';
+
+            let totalCost = 0;
+            const costBreakdownItems = [];
+            const inventoryAlertsList = [];
+
+            ingredients.forEach(ing => {
+                const isDraft = ing.inventoryId && ing.inventoryId.startsWith('DRAFT-');
+                const invItem = isDraft ? { 
+                    name: ing.draftName || 'Draft',
+                    sku: '(draft)',
+                    currentStock: 0,
+                    unit: ing.buyUnit
+                } : inventory[ing.inventoryId];
+                if (!invItem && !isDraft) return;
+
+                const scaledRecipeAmount = ing.recipeAmount * scaleFactor;
+                const requiredInBuyUnit = convert(scaledRecipeAmount, ing.recipeUnit, ing.buyUnit);
+                
+                // Get current pricing from inventory (supports price tiers)
+                let pricing = { price: ing.pricePerBuyUnit, moq: ing.moq, buyUnit: ing.buyUnit };
+                if (!isDraft && ing.inventoryId) {
+                    const tierPricing = CoManufacturing.getInventoryPrice(ing.inventoryId, requiredInBuyUnit);
+                    if (tierPricing && tierPricing.price > 0) {
+                        pricing = tierPricing;
+                    }
+                }
+                
+                const orderQty = Math.ceil(requiredInBuyUnit / pricing.moq) * pricing.moq;
+                const slack = orderQty - requiredInBuyUnit;
+                const lineCost = orderQty * pricing.price;
+                totalCost += lineCost;
+
+                let liquidVol = scaledRecipeAmount;
+                let liquidUnit = ing.recipeUnit;
+                if (ing.type === 'dry') {
+                    const weightInLbs = convert(scaledRecipeAmount, ing.recipeUnit, 'lbs');
+                    liquidVol = weightInLbs / (ing.specificGravity * 8.345);
+                    liquidUnit = 'gal';
+                }
+                const displayLiquid = convertToDisplay(liquidVol, liquidUnit);
+
+                const hasSlack = slack > 0.01;
+                const needToOrder = orderQty > invItem.currentStock;
+                const shortfall = needToOrder ? orderQty - invItem.currentStock : 0;
+                
+                let status = '';
+                if (needToOrder && shortfall > 0) {
+                    status = `<span class="badge badge-danger">Need ${shortfall.toFixed(2)} ${pricing.buyUnit}</span>`;
+                    inventoryAlertsList.push({
+                        name: invItem.name,
+                        sku: invItem.sku,
+                        needed: orderQty,
+                        current: invItem.currentStock,
+                        shortfall: shortfall,
+                        unit: pricing.buyUnit,
+                        cost: shortfall * pricing.price
+                    });
+                } else if (hasSlack) {
+                    status = `<span class="badge badge-warning">MOQ Buffer</span>`;
+                } else {
+                    status = `<span class="badge badge-success">In Stock</span>`;
+                }
+
+                costBreakdownItems.push({ name: invItem.name, cost: lineCost });
+
+                const displayRecipe = convertToDisplay(scaledRecipeAmount, ing.recipeUnit);
+                const displayBuy = convertToDisplay(requiredInBuyUnit, ing.buyUnit);
+                const displayOrder = convertToDisplay(orderQty, ing.buyUnit);
+                const displaySlack = convertToDisplay(slack, ing.buyUnit);
+                const displayStock = convertToDisplay(invItem.currentStock, invItem.unit);
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><strong>${invItem.name}</strong></td>
+                    <td><a class="sku-link" onclick="openInventoryDetail('${ing.inventoryId}')">${invItem.sku} →</a></td>
+                    <td>${displayRecipe.value.toFixed(2)} ${displayRecipe.unit}</td>
+                    <td><strong>${displayBuy.value.toFixed(2)} ${displayBuy.unit}</strong></td>
+                    <td style="color: #6b7280;">${displayLiquid.value.toFixed(2)} ${displayLiquid.unit}</td>
+                    <td>$${pricing.price.toFixed(2)}/${pricing.buyUnit}</td>
+                    <td>${pricing.moq.toFixed(2)} ${pricing.buyUnit}</td>
+                    <td><strong>${displayOrder.value.toFixed(2)} ${displayOrder.unit}</strong></td>
+                    <td>${hasSlack ? `<span style="color: #f59e0b;">+${displaySlack.value.toFixed(2)} ${displaySlack.unit}</span>` : '—'}</td>
+                    <td>${displayStock.value.toFixed(0)} ${displayStock.unit}</td>
+                    <td><strong>$${lineCost.toFixed(2)}</strong></td>
+                    <td>${status}</td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            const costPerUnit = totalCost / batchSizeGal;
+            const displayUnit = unitSystem === 'metric' ? 'L' : 'gal';
+            const costPerDisplayUnit = unitSystem === 'metric' 
+                ? totalCost / convert(batchSizeGal, 'gal', 'L')
+                : costPerUnit;
+            
+            document.getElementById('totalCost').textContent = '$' + totalCost.toFixed(2);
+            document.getElementById('costPerUnit').textContent = '$' + costPerDisplayUnit.toFixed(4) + ' per ' + displayUnit;
+
+            const costBreakdown = document.getElementById('costBreakdown');
+            costBreakdown.innerHTML = costBreakdownItems
+                .sort((a, b) => b.cost - a.cost)
+                .map(item => `
+                    <div class="cost-row">
+                        <span>${item.name}</span>
+                        <span><strong>$${item.cost.toFixed(2)}</strong></span>
+                    </div>
+                `).join('') + `
+                <div class="cost-row total">
+                    <span>Total</span>
+                    <span>$${totalCost.toFixed(2)}</span>
+                </div>
+            `;
+
+            // Update unit calculator if it's open
+            if (document.getElementById('unitCalculator').style.display !== 'none') {
+                calculateUnitEconomics();
+            }
+
+            const inventoryAlerts = document.getElementById('inventoryAlerts');
+            if (inventoryAlertsList.length === 0) {
+                inventoryAlerts.innerHTML = `
+                    <div class="alert alert-info" style="margin: 0;">
+                        <span>✅</span>
+                        <span>All ingredients in stock! No purchase orders needed.</span>
+                    </div>
+                `;
+            } else {
+                const totalShortfallCost = inventoryAlertsList.reduce((sum, item) => sum + item.cost, 0);
+                inventoryAlerts.innerHTML = `
+                    <div class="alert alert-danger" style="margin-bottom: 12px;">
+                        <span>⚠️</span>
+                        <div>
+                            <strong>Purchase Order Required</strong><br>
+                            ${inventoryAlertsList.length} ingredient${inventoryAlertsList.length > 1 ? 's' : ''} need ordering — <strong>$${totalShortfallCost.toFixed(2)}</strong>
+                        </div>
+                    </div>
+                    ${inventoryAlertsList.map(item => `
+                        <div style="padding: 10px; background: #fef2f2; border-radius: 6px; margin-bottom: 8px; font-size: 13px;">
+                            <div style="font-weight: 600; margin-bottom: 4px;">
+                                <a class="sku-link" onclick="openInventoryDetail('${Object.keys(inventory).find(k => inventory[k].sku === item.sku)}')">${item.name} (${item.sku}) →</a>
+                            </div>
+                            <div style="color: #991b1b;">
+                                Need: ${item.needed.toFixed(2)} ${item.unit}<br>
+                                Current: ${item.current.toFixed(2)} ${item.unit}<br>
+                                <strong>Order: ${item.shortfall.toFixed(2)} ${item.unit} ($${item.cost.toFixed(2)})</strong>
+                            </div>
+                        </div>
+                    `).join('')}
+                `;
+            }
+            
+            // Update tank allocation and batch banner
+            calculateTankAllocation();
+            updateBatchInfoBanner();
+        }
+
+        function toggleInventoryAlerts() {
+            inventoryAlertsHidden = !inventoryAlertsHidden;
+            const body = document.getElementById('inventoryAlertsBody');
+            const toggle = document.getElementById('inventoryAlertsToggle');
+            const section = document.getElementById('inventoryAlertsSection');
+            
+            if (inventoryAlertsHidden) {
+                body.style.display = 'none';
+                toggle.textContent = 'Show';
+                section.style.marginBottom = '0';
+            } else {
+                body.style.display = 'block';
+                toggle.textContent = 'Hide';
+                section.style.marginBottom = '20px';
+            }
+        }
+
+        async function exportToExcel() {
+            // Load SheetJS if not already loaded
+            const exportBtn = document.querySelector('[onclick*="exportToExcel"]');
+            if (exportBtn) {
+                const originalText = exportBtn.textContent;
+                exportBtn.textContent = '⏳ Loading...';
+                exportBtn.disabled = true;
+            }
+            
+            try {
+                await loadSheetJS();
+            } catch (error) {
+                alert('Failed to load Excel library. Please check your connection.');
+                if (exportBtn) {
+                    exportBtn.textContent = originalText;
+                    exportBtn.disabled = false;
+                }
+                return;
+            }
+            
+            if (exportBtn) {
+                exportBtn.textContent = '⏳ Generating...';
+            }
+            
+            const formulaName = document.getElementById('formulaName').value || 'Formula';
+            const baseYield = parseFloat(document.getElementById('baseYield').value) || 100;
+            const baseYieldUnit = document.getElementById('baseYieldUnit').value;
+            const batchSize = parseFloat(document.getElementById('batchSize').value) || 100;
+            const batchSizeUnit = document.getElementById('batchSizeUnit').value;
+            const batchSizeGal = convert(batchSize, batchSizeUnit, 'gal');
+            const scaleFactor = batchSizeGal / convert(baseYield, baseYieldUnit, 'gal');
+
+            // Create workbook
+            const wb = XLSX.utils.book_new();
+
+            // SHEET 1: Formula Overview
+            const overviewData = [
+                ['BEVERAGE BATCH CALCULATOR'],
+                ['Formula Export - ' + new Date().toLocaleString()],
+                [],
+                ['FORMULA DETAILS', '', 'VALUE', 'UNIT'],
+                ['Formula Name', formulaName],
+                ['Base Yield', baseYield, baseYieldUnit],
+                ['Target Batch Size', batchSize, batchSizeUnit],
+                ['Scale Factor', { f: 'B7/B6' }, '', '(auto-calculated)'],
+                [],
+                ['Instructions:'],
+                ['• Edit the number in B7 (batch size) to recalculate everything'],
+                ['• The scale factor in B8 will update automatically'],
+                ['• All ingredient amounts in "Scaled Recipe" tab will recalculate'],
+                ['• Purchase order totals will update']
+            ];
+            const wsOverview = XLSX.utils.aoa_to_sheet(overviewData);
+            
+            // Set column widths for readability
+            wsOverview['!cols'] = [
+                { wch: 20 },  // Column A
+                { wch: 15 },  // Column B
+                { wch: 10 },  // Column C
+                { wch: 20 }   // Column D
+            ];
+            
+            XLSX.utils.book_append_sheet(wb, wsOverview, 'Overview');
+
+            // SHEET 2: Base Recipe
+            const recipeData = [
+                ['BASE RECIPE', '', '', '', '', ''],
+                ['Ingredient', 'SKU', 'Type', 'Amount', 'Unit', 'Specific Gravity', 'Price/Unit', 'MOQ', 'Buy Unit']
+            ];
+
+            ingredients.forEach((ing, idx) => {
+                const isDraft = ing.inventoryId && ing.inventoryId.startsWith('DRAFT-');
+                const invItem = isDraft ? { 
+                    name: ing.draftName || 'Draft',
+                    sku: '(draft)'
+                } : inventory[ing.inventoryId];
+                if (!invItem && !isDraft) return;
+                
+                recipeData.push([
+                    invItem.name,
+                    invItem.sku,
+                    ing.type,
+                    ing.recipeAmount,
+                    ing.recipeUnit,
+                    ing.specificGravity,
+                    ing.pricePerBuyUnit,
+                    ing.moq,
+                    ing.buyUnit
+                ]);
+            });
+
+            const wsRecipe = XLSX.utils.aoa_to_sheet(recipeData);
+            
+            // Set column widths
+            wsRecipe['!cols'] = [
+                { wch: 25 },  // Ingredient
+                { wch: 12 },  // SKU
+                { wch: 10 },  // Type
+                { wch: 12 },  // Amount
+                { wch: 8 },   // Unit
+                { wch: 12 },  // SG
+                { wch: 12 },  // Price
+                { wch: 10 },  // MOQ
+                { wch: 10 }   // Buy Unit
+            ];
+            
+            XLSX.utils.book_append_sheet(wb, wsRecipe, 'Base Recipe');
+
+            // SHEET 3: Scaled Recipe (with formulas!)
+            const scaledData = [
+                ['SCALED BATCH REQUIREMENTS'],
+                ['Batch Size:', { f: 'Overview!B7' }, { f: 'Overview!C7' }, '', 'Scale Factor:', { f: 'Overview!B8' }],
+                [],
+                ['Ingredient', 'SKU', 'Base Amt', 'Unit', 'Scaled Amt', 'Buy Unit', 'Required (Buy)', 'Price', 'MOQ', 'Order Qty', 'Slack', 'Line Cost', 'Exact Cost']
+            ];
+
+            const startRow = 5;
+            let validIngredients = 0;
+            ingredients.forEach((ing, idx) => {
+                const isDraft = ing.inventoryId && ing.inventoryId.startsWith('DRAFT-');
+                const invItem = isDraft ? { 
+                    name: ing.draftName || 'Draft',
+                    sku: '(draft)'
+                } : inventory[ing.inventoryId];
+                if (!invItem && !isDraft) return;
+                
+                const row = startRow + validIngredients;
+                // Base Recipe sheet: row 1 is header "BASE RECIPE", row 2 is column headers, row 3+ is data
+                const baseRecipeRow = 3 + validIngredients;
+                const scaledFormula = `'Base Recipe'!D${baseRecipeRow}*Overview!$B$8`; // Base amount * scale factor
+                const requiredBuyFormula = `E${row}`; // For now, same as scaled (would need conversion formulas)
+                const orderQtyFormula = `CEILING(G${row}/I${row},1)*I${row}`; // CEILING(required/MOQ, 1)*MOQ
+                const slackFormula = `J${row}-G${row}`; // Order - Required
+                const lineCostFormula = `J${row}*H${row}`; // Order Qty * Price
+                const exactCostFormula = `G${row}*H${row}`; // Required * Price
+
+                scaledData.push([
+                    invItem.name,
+                    invItem.sku,
+                    { f: `'Base Recipe'!D${baseRecipeRow}` }, // Reference to base amount
+                    { f: `'Base Recipe'!E${baseRecipeRow}` }, // Reference to unit
+                    { f: scaledFormula }, // Scaled = Base * Scale Factor
+                    ing.buyUnit,
+                    { f: requiredBuyFormula },
+                    ing.pricePerBuyUnit,
+                    ing.moq,
+                    { f: orderQtyFormula },
+                    { f: slackFormula },
+                    { f: lineCostFormula },
+                    { f: exactCostFormula }
+                ]);
+                
+                validIngredients++;
+            });
+
+            // Totals row
+            const totalRow = startRow + validIngredients;
+            scaledData.push([
+                'TOTALS', '', '', '', '', '', '', '', '',
+                { f: `SUM(J${startRow}:J${totalRow - 1})` },
+                { f: `SUM(K${startRow}:K${totalRow - 1})` },
+                { f: `SUM(L${startRow}:L${totalRow - 1})` },
+                { f: `SUM(M${startRow}:M${totalRow - 1})` }
+            ]);
+
+            scaledData.push([]);
+            scaledData.push(['Total Cost (with MOQ):', { f: `L${totalRow}` }]);
+            scaledData.push(['Total Cost (exact):', { f: `M${totalRow}` }]);
+            scaledData.push(['MOQ Slack Cost:', { f: `L${totalRow}-M${totalRow}` }]);
+            scaledData.push([]);
+            scaledData.push(['DEBUG: Check if B8 in Overview tab shows the scale factor']);
+            scaledData.push(['Expected scale factor:', scaleFactor.toFixed(2)]);
+
+            const wsScaled = XLSX.utils.aoa_to_sheet(scaledData);
+            
+            // Set column widths
+            wsScaled['!cols'] = [
+                { wch: 25 },  // Ingredient
+                { wch: 12 },  // SKU
+                { wch: 10 },  // Base Amt
+                { wch: 8 },   // Unit
+                { wch: 12 },  // Scaled Amt
+                { wch: 10 },  // Buy Unit
+                { wch: 14 },  // Required
+                { wch: 10 },  // Price
+                { wch: 8 },   // MOQ
+                { wch: 12 },  // Order Qty
+                { wch: 10 },  // Slack
+                { wch: 12 },  // Line Cost
+                { wch: 12 }   // Exact Cost
+            ];
+            
+            XLSX.utils.book_append_sheet(wb, wsScaled, 'Scaled Recipe');
+
+            // SHEET 4: Purchase Order
+            const poData = [
+                ['PURCHASE ORDER'],
+                ['Formula:', formulaName, '', 'Date:', new Date().toLocaleDateString()],
+                ['Batch Size:', { f: 'Overview!B7' }, { f: 'Overview!C7' }],
+                [],
+                ['Ingredient', 'SKU', 'Order Quantity', 'Unit', 'Price per Unit', 'Line Total', 'Notes']
+            ];
+
+            const poStartRow = 6;
+            let poValidIngredients = 0;
+            ingredients.forEach((ing, idx) => {
+                const isDraft = ing.inventoryId && ing.inventoryId.startsWith('DRAFT-');
+                const invItem = isDraft ? { 
+                    name: ing.draftName || 'Draft',
+                    sku: '(draft)'
+                } : inventory[ing.inventoryId];
+                if (!invItem && !isDraft) return;
+                
+                const row = poStartRow + poValidIngredients;
+                poData.push([
+                    invItem.name,
+                    invItem.sku,
+                    { f: `'Scaled Recipe'!J${startRow + poValidIngredients}` }, // Reference order qty
+                    ing.buyUnit,
+                    ing.pricePerBuyUnit,
+                    { f: `C${row}*E${row}` }, // Qty * Price
+                    ''
+                ]);
+                
+                poValidIngredients++;
+            });
+
+            const poTotalRow = poStartRow + poValidIngredients;
+            poData.push([]);
+            poData.push(['TOTAL ORDER VALUE', '', '', '', '', { f: `SUM(F${poStartRow}:F${poTotalRow - 1})` }]);
+
+            const wsPO = XLSX.utils.aoa_to_sheet(poData);
+            
+            // Set column widths
+            wsPO['!cols'] = [
+                { wch: 25 },  // Ingredient
+                { wch: 12 },  // SKU
+                { wch: 15 },  // Order Quantity
+                { wch: 10 },  // Unit
+                { wch: 14 },  // Price per Unit
+                { wch: 12 },  // Line Total
+                { wch: 20 }   // Notes
+            ];
+            
+            XLSX.utils.book_append_sheet(wb, wsPO, 'Purchase Order');
+
+            // SHEET 5: Unit Economics
+            const unitSize = parseFloat(document.getElementById('unitSize').value) || 12;
+            const unitType = document.getElementById('unitType').value;
+            
+            const unitData = [
+                ['UNIT ECONOMICS'],
+                ['Package Size:', unitSize, unitType],
+                [],
+                ['Total Cost (with MOQ):', { f: `'Scaled Recipe'!L${totalRow}` }],
+                ['Total Cost (exact):', { f: `'Scaled Recipe'!M${totalRow}` }],
+                ['Batch Size (gal):', batchSizeGal],
+                ['Unit Size (gal):', convert(unitSize, unitType, 'gal')],
+                [],
+                ['Units per Batch:', { f: 'B6/B7' }],
+                ['Cost per Unit (with MOQ):', { f: 'B4/B9' }],
+                ['Cost per Unit (exact):', { f: 'B5/B9' }],
+                ['MOQ Impact per Unit:', { f: 'B10-B11' }],
+                [],
+                ['COMMON PACKAGE SIZES'],
+                ['Size', 'Unit', 'Size (gal)', 'Units/Batch', 'Cost with MOQ', 'Cost Exact']
+            ];
+
+            const commonSizes = [
+                { size: 12, unit: 'oz', sizeGal: 0.09375 },
+                { size: 16, unit: 'oz', sizeGal: 0.125 },
+                { size: 330, unit: 'ml', sizeGal: 0.0872 },
+                { size: 355, unit: 'ml', sizeGal: 0.0938 },
+                { size: 500, unit: 'ml', sizeGal: 0.132 }
+            ];
+
+            commonSizes.forEach(size => {
+                const rowNum = unitData.length + 1;
+                unitData.push([
+                    size.size,
+                    size.unit,
+                    size.sizeGal,
+                    { f: `B6/C${rowNum}` }, // Batch size / package size
+                    { f: `B4/D${rowNum}` }, // Total cost / units
+                    { f: `B5/D${rowNum}` }  // Exact cost / units
+                ]);
+            });
+
+            const wsUnit = XLSX.utils.aoa_to_sheet(unitData);
+            
+            // Set column widths
+            wsUnit['!cols'] = [
+                { wch: 20 },  // Size
+                { wch: 10 },  // Unit
+                { wch: 12 },  // Size (gal)
+                { wch: 14 },  // Units/Batch
+                { wch: 15 },  // Cost with MOQ
+                { wch: 15 }   // Cost Exact
+            ];
+            
+            XLSX.utils.book_append_sheet(wb, wsUnit, 'Unit Economics');
+
+            // Write file
+            XLSX.writeFile(wb, `${formulaName.replace(/\s+/g, '_')}_${batchSize}${batchSizeUnit}_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+            // Reset button
+            if (exportBtn) {
+                exportBtn.textContent = originalText;
+                exportBtn.disabled = false;
+            }
+
+            alert(`✅ Excel workbook exported!\n\nIncludes 5 tabs:\n• Overview\n• Base Recipe\n• Scaled Recipe (with formulas)\n• Purchase Order\n• Unit Economics\n\n🔥 Edit the batch size in Overview tab (cell B7) - everything recalculates automatically!`);
+        }
+
+        function exportBatch() {
+            exportToExcel();
+        }
+
+        function generatePO() {
+            const formulaName = document.getElementById('formulaName').value || 'Formula';
+            const batchSize = parseFloat(document.getElementById('batchSize').value) || 100;
+            const batchSizeUnit = document.getElementById('batchSizeUnit').value;
+            const batchSizeGal = convert(batchSize, batchSizeUnit, 'gal');
+            const baseYield = parseFloat(document.getElementById('baseYield').value) || 100;
+            const baseYieldUnit = document.getElementById('baseYieldUnit').value;
+            const scaleFactor = batchSizeGal / convert(baseYield, baseYieldUnit, 'gal');
+
+            let csv = '';
+            csv += `PURCHASE ORDER\n`;
+            csv += `Formula: ${formulaName}\n`;
+            csv += `Batch Size: ${batchSize} ${batchSizeUnit}\n`;
+            csv += `Date: ${new Date().toLocaleDateString()}\n`;
+            csv += `\n`;
+            csv += `Ingredient,SKU,Order Quantity,Unit,Price per Unit,Line Total,Current Stock,Shortfall,Notes\n`;
+
+            let totalCost = 0;
+            let hasShortfall = false;
+
+            ingredients.forEach(ing => {
+                const isDraft = ing.inventoryId && ing.inventoryId.startsWith('DRAFT-');
+                const invItem = isDraft ? { 
+                    name: ing.draftName || 'Draft',
+                    sku: '(draft)',
+                    currentStock: 0,
+                    unit: ing.buyUnit
+                } : inventory[ing.inventoryId];
+                if (!invItem && !isDraft) return;
+
+                const scaledRecipeAmount = ing.recipeAmount * scaleFactor;
+                const requiredInBuyUnit = convert(scaledRecipeAmount, ing.recipeUnit, ing.buyUnit);
+                const orderQty = Math.ceil(requiredInBuyUnit / ing.moq) * ing.moq;
+                const lineCost = orderQty * ing.pricePerBuyUnit;
+                totalCost += lineCost;
+
+                const needToOrder = orderQty > invItem.currentStock;
+                const shortfall = needToOrder ? orderQty - invItem.currentStock : 0;
+                
+                if (needToOrder) {
+                    hasShortfall = true;
+                }
+
+                const notes = needToOrder ? 'NEED TO ORDER' : 'In Stock';
+                
+                csv += `${invItem.name},${invItem.sku},${orderQty.toFixed(2)},${ing.buyUnit},${ing.pricePerBuyUnit.toFixed(2)},${lineCost.toFixed(2)},${invItem.currentStock} ${invItem.unit},${shortfall > 0 ? shortfall.toFixed(2) : '-'},${notes}\n`;
+            });
+
+            csv += `\n`;
+            csv += `TOTAL ORDER VALUE,,,,,$${totalCost.toFixed(2)}\n`;
+
+            if (!hasShortfall) {
+                csv += `\n`;
+                csv += `NOTE: All ingredients currently in stock. This is a reorder/replenishment PO.\n`;
+            }
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `PO_${formulaName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+
+            alert(`✅ Purchase Order exported!\n\nTotal: $${totalCost.toFixed(2)}\n${hasShortfall ? 'Contains items that need ordering' : 'All items in stock'}`);
+        }
+
+        function newFormula() {
+            if (ingredients.length > 0) {
+                const confirmNew = confirm('Create a new formula? This will clear the current formula.\n\n(Tip: Save your current formula first if you want to keep it!)');
+                if (!confirmNew) return;
+            }
+
+            // Reset everything
+            document.getElementById('formulaName').value = 'New Formula';
+            document.getElementById('baseYield').value = '100';
+            document.getElementById('baseYieldUnit').value = 'gal';
+            document.getElementById('batchSize').value = '100';
+            document.getElementById('batchSizeUnit').value = 'gal';
+            
+            // Clear ingredients
+            ingredients = [];
+            
+            // Recalculate to refresh UI
+            recalculate();
+            
+            // Focus on formula name so user can immediately rename it
+            document.getElementById('formulaName').select();
+        }
+
+
+
+// Save formula to localStorage via shared data layer
+function saveFormula() {
+    const formulaName = document.getElementById('formulaName').value;
+
+    if (!formulaName) {
+        alert('Please enter a formula name before saving');
+        return;
+    }
+
+    const formula = {
+        version: '1.0',
+        name: formulaName,
+        baseYield: parseFloat(document.getElementById('baseYield').value),
+        baseYieldUnit: document.getElementById('baseYieldUnit').value,
+        batchSize: parseFloat(document.getElementById('batchSize').value),
+        batchSizeUnit: document.getElementById('batchSizeUnit').value,
+        ingredients: ingredients.map(ing => ({
+            inventoryId: ing.inventoryId,
+            draftName: ing.draftName,
+            type: ing.type,
+            recipeAmount: ing.recipeAmount,
+            recipeUnit: ing.recipeUnit,
+            specificGravity: ing.specificGravity,
+            buyUnit: ing.buyUnit,
+            pricePerBuyUnit: ing.pricePerBuyUnit,
+            moq: ing.moq
+        })),
+        savedAt: new Date().toISOString()
+    };
+
+    CoManufacturing.saveFormula(formula);
+    alert(`✅ Formula "${formulaName}" saved!\n\nYou can load it anytime from the "Load" button.`);
+}
+
+// Display saved formulas from localStorage
+function displayRecentFormulas() {
+    const container = document.getElementById('recentFormulas');
+    const savedFormulas = CoManufacturing.getFormulas();
+
+    if (savedFormulas.length === 0) {
+        container.innerHTML = `
+            <div style="padding: 20px; text-align: center; color: #9ca3af; font-size: 13px;">
+                No saved formulas yet.<br>
+                Save your first formula to see it here!
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = savedFormulas.map((formula, index) => {
+        const date = new Date(formula.updatedAt || formula.createdAt || formula.savedAt);
+        const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+        return `
+            <div style="padding: 12px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 8px; cursor: pointer; transition: all 0.15s;"
+                 onmouseover="this.style.background='#f9fafb'; this.style.borderColor='#2563eb';"
+                 onmouseout="this.style.background='white'; this.style.borderColor='#e5e7eb';"
+                 onclick="loadFormulaByIndex(${index})">
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                    <div>
+                        <div style="font-weight: 600; margin-bottom: 4px;">${formula.name}</div>
+                        <div style="font-size: 12px; color: #6b7280;">
+                            Last modified
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 11px; color: #6b7280;">${dateStr}</div>
+                        <button class="btn btn-small btn-danger" onclick="event.stopPropagation(); deleteFormulaByIndex(${index}, '${formula.name.replace(/'/g, "\\'")}')" style="margin-top: 4px;">
+                            Delete
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Open load modal
+function loadFormula() {
+    document.getElementById('loadFormulaModal').classList.add('active');
+    displayRecentFormulas();
+}
+
+// Close load modal
+function closeLoadFormula() {
+    document.getElementById('loadFormulaModal').classList.remove('active');
+}
+
+// Apply formula data to the UI
+function applyFormula(formula) {
+    // Populate formula details
+    document.getElementById('formulaName').value = formula.name;
+    document.getElementById('baseYield').value = formula.baseYield;
+    document.getElementById('baseYieldUnit').value = formula.baseYieldUnit;
+    document.getElementById('batchSize').value = formula.batchSize || formula.baseYield;
+    document.getElementById('batchSizeUnit').value = formula.batchSizeUnit || formula.baseYieldUnit;
+
+    // Load ingredients
+    ingredients = formula.ingredients.map(ing => ({
+        inventoryId: ing.inventoryId,
+        draftName: ing.draftName,
+        type: ing.type,
+        recipeAmount: ing.recipeAmount,
+        recipeUnit: ing.recipeUnit,
+        specificGravity: ing.specificGravity,
+        buyUnit: ing.buyUnit,
+        pricePerBuyUnit: ing.pricePerBuyUnit,
+        moq: ing.moq
+    }));
+
+    // Re-render everything
+    renderIngredients();
+
+    alert(`✅ Loaded formula: ${formula.name}\n\n${formula.ingredients.length} ingredients loaded.`);
+}
+
+// Load formula by index from localStorage
+function loadFormulaByIndex(index) {
+    const formulas = CoManufacturing.getFormulas();
+    if (index >= 0 && index < formulas.length) {
+        applyFormula(formulas[index]);
+        closeLoadFormula();
+    }
+}
+
+// Delete formula by index from localStorage
+function deleteFormulaByIndex(index, name) {
+    if (!confirm(`Delete formula "${name}"?\n\nThis cannot be undone.`)) {
+        return;
+    }
+
+    const formulas = CoManufacturing.getFormulas();
+    if (index >= 0 && index < formulas.length) {
+        formulas.splice(index, 1);
+        localStorage.setItem(CoManufacturing.STORAGE_KEYS.formulas, JSON.stringify(formulas));
+        CoManufacturing.notifyChange('formulas');
+        displayRecentFormulas(); // Refresh list
+    }
+}
+
+
+        function toggleUnitCalculator() {
+            const calc = document.getElementById('unitCalculator');
+            const btn = document.getElementById('unitCalcToggle');
+            
+            if (calc.style.display === 'none') {
+                calc.style.display = 'block';
+                btn.textContent = '✕ Close Calculator';
+                calculateUnitEconomics();
+            } else {
+                calc.style.display = 'none';
+                btn.textContent = '📊 Unit Calculator';
+            }
+        }
+
+        function calculateUnitEconomics() {
+            const baseYield = parseFloat(document.getElementById('baseYield').value) || 100;
+            const baseYieldUnit = document.getElementById('baseYieldUnit').value;
+            const batchSize = parseFloat(document.getElementById('batchSize').value) || 100;
+            const batchSizeUnit = document.getElementById('batchSizeUnit').value;
+            
+            const unitSize = parseFloat(document.getElementById('unitSize').value) || 12;
+            const unitType = document.getElementById('unitType').value;
+            
+            // Convert batch size to gallons for calculation
+            const batchSizeGal = convert(batchSize, batchSizeUnit, 'gal');
+            
+            // Get costs from the current calculation
+            const totalCost = parseFloat(document.getElementById('totalCost').textContent.replace('$', '')) || 0;
+            
+            // Calculate cost without MOQ (using exact required amounts)
+            let costWithoutMOQ = 0;
+            const scaleFactor = batchSizeGal / convert(baseYield, baseYieldUnit, 'gal');
+            
+            ingredients.forEach(ing => {
+                const invItem = inventory[ing.inventoryId];
+                if (!invItem) return;
+                
+                const scaledRecipeAmount = ing.recipeAmount * scaleFactor;
+                const requiredInBuyUnit = convert(scaledRecipeAmount, ing.recipeUnit, ing.buyUnit);
+                const exactCost = requiredInBuyUnit * ing.pricePerBuyUnit;
+                costWithoutMOQ += exactCost;
+            });
+            
+            // Convert unit size to gallons
+            const unitSizeGal = convert(unitSize, unitType, 'gal');
+            
+            // Calculate units per batch
+            const unitsPerBatch = batchSizeGal / unitSizeGal;
+            
+            // Calculate cost per unit
+            const costPerUnitWithMOQ = totalCost / unitsPerBatch;
+            const costPerUnitWithoutMOQ = costWithoutMOQ / unitsPerBatch;
+            
+            // Calculate in both imperial and metric
+            const displayResults = [];
+            
+            // Imperial: 12 oz can
+            const imperialSize = unitType === 'oz' ? unitSize : convert(unitSize, unitType, 'oz');
+            const imperialUnitsPerBatch = batchSizeGal * 128 / imperialSize; // 128 oz per gallon
+            const imperialCostWithMOQ = totalCost / imperialUnitsPerBatch;
+            const imperialCostWithoutMOQ = costWithoutMOQ / imperialUnitsPerBatch;
+            
+            // Metric: 330 mL or 355 mL can
+            const metricSize = unitType === 'ml' ? unitSize : convert(unitSize, unitType, 'ml');
+            const metricUnitsPerBatch = batchSizeGal * 3785.41 / metricSize; // 3785.41 mL per gallon
+            const metricCostWithMOQ = totalCost / metricUnitsPerBatch;
+            const metricCostWithoutMOQ = costWithoutMOQ / metricUnitsPerBatch;
+            
+            const resultsDiv = document.getElementById('unitEconomicsResults');
+            
+            const moqSavings = costPerUnitWithMOQ - costPerUnitWithoutMOQ;
+            const moqSavingsPercent = (moqSavings / costPerUnitWithMOQ * 100);
+            const unitsPerCase = parseFloat(document.getElementById('unitsPerCase').value) || 24;
+            const costPerCaseWithMOQ = costPerUnitWithMOQ * unitsPerCase;
+            const costPerCaseWithoutMOQ = costPerUnitWithoutMOQ * unitsPerCase;
+            const totalCases = Math.ceil(unitsPerBatch / unitsPerCase);
+
+            resultsDiv.innerHTML = `
+                <div style="display: grid; gap: 16px;">
+                    <!-- Unit Economics -->
+                    <div style="padding: 16px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px;">
+                        <div style="font-weight: 600; margin-bottom: 12px; color: #1e40af; font-size: 15px;">
+                            ${unitSize} ${unitType} Package Economics
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                            <div style="text-align: center;">
+                                <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; font-weight: 600; min-height: 28px;">Units per Batch</div>
+                                <div style="font-size: 22px; font-weight: 700;">${unitsPerBatch.toFixed(0)}</div>
+                                <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">${totalCases} cases from ${batchSize} ${batchSizeUnit}</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; font-weight: 600; min-height: 28px;">Cost with MOQ</div>
+                                <div style="font-size: 22px; font-weight: 700; color: #1e40af;">$${costPerUnitWithMOQ.toFixed(4)}</div>
+                                <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">per ${unitSize} ${unitType} unit</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; font-weight: 600; min-height: 28px;">Cost per Case</div>
+                                <div style="font-size: 22px; font-weight: 700; color: #7c3aed;">$${costPerCaseWithMOQ.toFixed(2)}</div>
+                                <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">${unitsPerCase} units/case</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; font-weight: 600; min-height: 28px;">Cost without MOQ</div>
+                                <div style="font-size: 22px; font-weight: 700; color: #059669;">$${costPerUnitWithoutMOQ.toFixed(4)}</div>
+                                <div style="font-size: 11px; color: #059669; margin-top: 2px; font-weight: 500;">
+                                    Saves $${moqSavings.toFixed(4)} (${moqSavingsPercent.toFixed(1)}%)
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="padding: 12px; background: white; border-radius: 6px; font-size: 13px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                                <span>Batch cost (with MOQ):</span>
+                                <strong>$${totalCost.toFixed(2)}</strong>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                                <span>Batch cost (exact):</span>
+                                <strong style="color: #059669;">$${costWithoutMOQ.toFixed(2)}</strong>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; padding-top: 6px; border-top: 1px solid #e5e7eb; color: #f59e0b; font-weight: 600;">
+                                <span>MOQ slack cost:</span>
+                                <strong>$${(totalCost - costWithoutMOQ).toFixed(2)}</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="padding: 12px; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; font-size: 12px; color: #78350f;">
+                        <strong>💡 MOQ Impact:</strong> You're paying $${moqSavings.toFixed(4)} extra per unit due to minimum order quantities. Larger batch sizes or negotiating lower MOQs can reduce this overhead.
+                    </div>
+                </div>
+            `;
+        }
+
+        function openAnalytics() {
+            const formulaName = document.getElementById('formulaName').value || 'Untitled Formula';
+            const baseYield = parseFloat(document.getElementById('baseYield').value) || 100;
+            const baseYieldUnit = document.getElementById('baseYieldUnit').value;
+            const batchSize = parseFloat(document.getElementById('batchSize').value) || 100;
+            const batchSizeUnit = document.getElementById('batchSizeUnit').value;
+            const batchSizeGal = convert(batchSize, batchSizeUnit, 'gal');
+            const scaleFactor = batchSizeGal / convert(baseYield, baseYieldUnit, 'gal');
+
+            // Calculate all metrics
+            let totalCost = 0;
+            let totalCostExact = 0;
+            let totalVolumeLiquid = 0;
+            const ingredientAnalytics = [];
+
+            ingredients.forEach(ing => {
+                const isDraft = ing.inventoryId && ing.inventoryId.startsWith('DRAFT-');
+                const invItem = isDraft ? { 
+                    name: ing.draftName || 'Draft',
+                    sku: '(draft)',
+                    currentStock: 0,
+                    unit: ing.buyUnit
+                } : inventory[ing.inventoryId];
+                if (!invItem && !isDraft) return;
+
+                const scaledRecipeAmount = ing.recipeAmount * scaleFactor;
+                const requiredInBuyUnit = convert(scaledRecipeAmount, ing.recipeUnit, ing.buyUnit);
+                const orderQty = Math.ceil(requiredInBuyUnit / ing.moq) * ing.moq;
+                const slack = orderQty - requiredInBuyUnit;
+                const lineCost = orderQty * ing.pricePerBuyUnit;
+                const exactCost = requiredInBuyUnit * ing.pricePerBuyUnit;
+                
+                totalCost += lineCost;
+                totalCostExact += exactCost;
+
+                // Calculate liquid volume
+                let liquidVol = scaledRecipeAmount;
+                if (ing.type === 'dry') {
+                    const weightInLbs = convert(scaledRecipeAmount, ing.recipeUnit, 'lbs');
+                    liquidVol = weightInLbs / (ing.specificGravity * 8.345);
+                }
+                totalVolumeLiquid += liquidVol;
+
+                const costPercent = (exactCost / totalCostExact * 100) || 0;
+                const moqImpact = lineCost - exactCost;
+                const moqImpactPercent = exactCost > 0 ? (moqImpact / exactCost * 100) : 0;
+
+                ingredientAnalytics.push({
+                    name: invItem.name,
+                    sku: invItem.sku,
+                    type: ing.type,
+                    scaledAmount: scaledRecipeAmount,
+                    unit: ing.recipeUnit,
+                    liquidVol: liquidVol,
+                    lineCost: lineCost,
+                    exactCost: exactCost,
+                    costPercent: costPercent,
+                    moqImpact: moqImpact,
+                    moqImpactPercent: moqImpactPercent,
+                    pricePerUnit: ing.pricePerBuyUnit,
+                    moq: ing.moq,
+                    buyUnit: ing.buyUnit,
+                    slack: slack,
+                    orderQty: orderQty
+                });
+            });
+
+            // Sort by cost contribution
+            ingredientAnalytics.sort((a, b) => b.exactCost - a.exactCost);
+
+            const moqSlackCost = totalCost - totalCostExact;
+            const avgMOQImpact = moqSlackCost / totalCostExact * 100;
+
+            // Update subtitle
+            document.getElementById('analyticsSubtitle').textContent = 
+                `${formulaName} • ${batchSize} ${batchSizeUnit} batch • ${ingredients.length} ingredients`;
+
+            // Generate analytics content
+            const colors = ['#2563eb', '#7c3aed', '#db2777', '#dc2626', '#ea580c', '#f59e0b', '#84cc16', '#10b981', '#14b8a6', '#06b6d4'];
+            
+            const content = document.getElementById('analyticsContent');
+            content.innerHTML = `
+                <!-- Key Metrics Cards -->
+                <div class="analytics-grid">
+                    <div class="analytics-card">
+                        <div class="analytics-card-title">Total Batch Cost</div>
+                        <div class="analytics-card-value">$${totalCost.toFixed(2)}</div>
+                        <div class="analytics-card-subtitle">With MOQ: $${totalCost.toFixed(2)} | Exact: $${totalCostExact.toFixed(2)}</div>
+                    </div>
+                    <div class="analytics-card">
+                        <div class="analytics-card-title">Cost per ${unitSystem === 'metric' ? 'Liter' : 'Gallon'}</div>
+                        <div class="analytics-card-value">$${unitSystem === 'metric' ? (totalCost / convert(batchSizeGal, 'gal', 'L')).toFixed(4) : (totalCost / batchSizeGal).toFixed(4)}</div>
+                        <div class="analytics-card-subtitle">Imperial: $${(totalCost / batchSizeGal).toFixed(4)}/gal | Metric: $${(totalCost / convert(batchSizeGal, 'gal', 'L')).toFixed(4)}/L</div>
+                    </div>
+                    <div class="analytics-card">
+                        <div class="analytics-card-title">MOQ Slack Cost</div>
+                        <div class="analytics-card-value" style="color: #f59e0b;">$${moqSlackCost.toFixed(2)}</div>
+                        <div class="analytics-card-subtitle">${avgMOQImpact.toFixed(1)}% overhead from minimum order quantities</div>
+                    </div>
+                    <div class="analytics-card">
+                        <div class="analytics-card-title">Scale Factor</div>
+                        <div class="analytics-card-value">${scaleFactor.toFixed(2)}x</div>
+                        <div class="analytics-card-subtitle">${baseYield} ${baseYieldUnit} → ${batchSize} ${batchSizeUnit}</div>
+                    </div>
+                </div>
+
+                <!-- Cost Breakdown Bar Chart -->
+                <div class="chart-container">
+                    <div class="chart-title">Cost Breakdown by Ingredient</div>
+                    <div class="bar-chart">
+                        ${ingredientAnalytics.map((ing, idx) => `
+                            <div class="bar-chart-row">
+                                <div class="bar-chart-label">${ing.name}</div>
+                                <div class="bar-chart-bar-container">
+                                    <div class="bar-chart-bar" style="width: ${ing.costPercent}%; background: ${colors[idx % colors.length]};">
+                                        ${ing.costPercent.toFixed(1)}%
+                                    </div>
+                                </div>
+                                <div style="min-width: 80px; text-align: right; font-size: 13px; font-weight: 600;">
+                                    $${ing.exactCost.toFixed(2)}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <!-- MOQ Impact Analysis -->
+                <div class="chart-container">
+                    <div class="chart-title">MOQ Impact by Ingredient</div>
+                    <div class="bar-chart">
+                        ${ingredientAnalytics.filter(ing => ing.moqImpact > 0).map((ing, idx) => `
+                            <div class="bar-chart-row">
+                                <div class="bar-chart-label">${ing.name}</div>
+                                <div class="bar-chart-bar-container">
+                                    <div class="bar-chart-bar" style="width: ${ing.moqImpactPercent}%; background: #f59e0b;">
+                                        ${ing.moqImpactPercent.toFixed(1)}%
+                                    </div>
+                                </div>
+                                <div style="min-width: 80px; text-align: right; font-size: 13px; font-weight: 600; color: #f59e0b;">
+                                    +$${ing.moqImpact.toFixed(2)}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    ${ingredientAnalytics.filter(ing => ing.moqImpact > 0).length === 0 ? 
+                        '<div style="padding: 20px; text-align: center; color: #059669; font-size: 14px;">✅ No MOQ slack - all ingredients ordered at exact quantities!</div>' : ''}
+                </div>
+
+                <!-- Detailed Ingredient Analysis Table -->
+                <div style="margin-top: 30px;">
+                    <div style="font-size: 18px; font-weight: 600; margin-bottom: 16px;">Detailed Ingredient Analysis</div>
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <thead style="background: #f9fafb;">
+                                <tr>
+                                    <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e5e7eb;">Ingredient</th>
+                                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e5e7eb;">Scaled Amt</th>
+                                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e5e7eb;">Liquid Vol</th>
+                                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e5e7eb;">Cost</th>
+                                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e5e7eb;">Cost %</th>
+                                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e5e7eb;">Price/Unit</th>
+                                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e5e7eb;">MOQ</th>
+                                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e5e7eb;">Order Qty</th>
+                                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e5e7eb;">Slack</th>
+                                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e5e7eb;">MOQ Impact</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${ingredientAnalytics.map((ing, idx) => {
+                                    // Convert display values based on unit system
+                                    const displayVolumeUnit = unitSystem === 'metric' ? 'L' : 'gal';
+                                    const displayVolume = unitSystem === 'metric' ? convert(ing.liquidVol, 'gal', 'L') : ing.liquidVol;
+                                    
+                                    // Convert scaled amount to display unit
+                                    let displayAmount = ing.scaledAmount;
+                                    let displayUnit = ing.unit;
+                                    if (unitSystem === 'metric') {
+                                        if (ing.unit === 'gal' || ing.unit === 'oz') {
+                                            displayAmount = convert(ing.scaledAmount, ing.unit, ing.unit === 'gal' ? 'L' : 'mL');
+                                            displayUnit = ing.unit === 'gal' ? 'L' : 'mL';
+                                        } else if (ing.unit === 'lbs') {
+                                            displayAmount = convert(ing.scaledAmount, 'lbs', 'kg');
+                                            displayUnit = 'kg';
+                                        }
+                                    }
+                                    
+                                    // Convert buy unit for display
+                                    let displayBuyUnit = ing.buyUnit;
+                                    if (unitSystem === 'metric') {
+                                        if (ing.buyUnit === 'gal') displayBuyUnit = 'L';
+                                        else if (ing.buyUnit === 'lbs') displayBuyUnit = 'kg';
+                                        else if (ing.buyUnit === 'oz') displayBuyUnit = 'mL';
+                                    }
+                                    
+                                    return `
+                                    <tr style="border-bottom: 1px solid #f3f4f6; ${idx % 2 === 0 ? 'background: #fafbfc;' : ''}">
+                                        <td style="padding: 12px; font-weight: 600;">${ing.name}<br><span style="font-size: 11px; color: #6b7280; font-weight: 400;">${ing.sku}</span></td>
+                                        <td style="padding: 12px; text-align: right;">${displayAmount.toFixed(2)} ${displayUnit}</td>
+                                        <td style="padding: 12px; text-align: right;">${displayVolume.toFixed(2)} ${displayVolumeUnit}</td>
+                                        <td style="padding: 12px; text-align: right; font-weight: 600;">$${ing.exactCost.toFixed(2)}</td>
+                                        <td style="padding: 12px; text-align: right;">${ing.costPercent.toFixed(1)}%</td>
+                                        <td style="padding: 12px; text-align: right;">$${ing.pricePerUnit.toFixed(2)}/${displayBuyUnit}</td>
+                                        <td style="padding: 12px; text-align: right;">${ing.moq} ${displayBuyUnit}</td>
+                                        <td style="padding: 12px; text-align: right; font-weight: 600;">${ing.orderQty.toFixed(2)} ${displayBuyUnit}</td>
+                                        <td style="padding: 12px; text-align: right; ${ing.slack > 0 ? 'color: #f59e0b;' : 'color: #6b7280;'}">
+                                            ${ing.slack > 0 ? '+' + ing.slack.toFixed(2) + ' ' + displayBuyUnit : '—'}
+                                        </td>
+                                        <td style="padding: 12px; text-align: right; ${ing.moqImpact > 0 ? 'color: #f59e0b; font-weight: 600;' : 'color: #059669;'}">
+                                            ${ing.moqImpact > 0 ? '+$' + ing.moqImpact.toFixed(2) : '✓'}
+                                        </td>
+                                    </tr>
+                                `}).join('')}
+                                <tr style="background: #f9fafb; border-top: 2px solid #e5e7eb;">
+                                    <td style="padding: 12px; font-weight: 700;">TOTALS</td>
+                                    <td style="padding: 12px;"></td>
+                                    <td style="padding: 12px; text-align: right; font-weight: 600;">${unitSystem === 'metric' ? convert(totalVolumeLiquid, 'gal', 'L').toFixed(2) + ' L' : totalVolumeLiquid.toFixed(2) + ' gal'}</td>
+                                    <td style="padding: 12px; text-align: right; font-weight: 700;">$${totalCostExact.toFixed(2)}</td>
+                                    <td style="padding: 12px; text-align: right; font-weight: 600;">100%</td>
+                                    <td style="padding: 12px;"></td>
+                                    <td style="padding: 12px;"></td>
+                                    <td style="padding: 12px;"></td>
+                                    <td style="padding: 12px;"></td>
+                                    <td style="padding: 12px; text-align: right; font-weight: 700; color: #f59e0b;">+$${moqSlackCost.toFixed(2)}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Insights -->
+                <div style="margin-top: 30px; padding: 20px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px;">
+                    <div style="font-size: 16px; font-weight: 600; margin-bottom: 12px; color: #1e40af;">💡 Key Insights</div>
+                    <ul style="margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.8;">
+                        <li><strong>${ingredientAnalytics[0]?.name || 'N/A'}</strong> is your most expensive ingredient at <strong>$${ingredientAnalytics[0]?.exactCost.toFixed(2)}</strong> (${ingredientAnalytics[0]?.costPercent.toFixed(1)}% of total cost)</li>
+                        ${moqSlackCost > 0 ? `
+                            <li>MOQ requirements add <strong>$${moqSlackCost.toFixed(2)}</strong> (${avgMOQImpact.toFixed(1)}%) to your batch cost</li>
+                            <li>Negotiating lower MOQs or increasing batch size could reduce this overhead</li>
+                        ` : '<li>✅ Your order quantities perfectly match recipe requirements - no MOQ waste!</li>'}
+                        <li>At current pricing, your cost per ${unitSystem === 'metric' ? 'liter' : 'gallon'} is <strong>$${unitSystem === 'metric' ? (totalCost / convert(batchSizeGal, 'gal', 'L')).toFixed(4) : (totalCost / batchSizeGal).toFixed(4)}</strong></li>
+                        ${scaleFactor > 10 ? '<li>⚠️ High scale factor - consider adjusting base recipe for accuracy</li>' : ''}
+                        ${ingredientAnalytics.filter(ing => ing.moqImpact / ing.exactCost > 0.5).length > 0 ? 
+                            `<li>⚠️ ${ingredientAnalytics.filter(ing => ing.moqImpact / ing.exactCost > 0.5).length} ingredient(s) have MOQ impact >50% - review supplier options</li>` : ''}
+                    </ul>
+                </div>
+            `;
+
+            document.getElementById('analyticsModal').classList.add('active');
+        }
+
+        function closeAnalytics() {
+            document.getElementById('analyticsModal').classList.remove('active');
+        }
+
+        function optimizeBatchSize() {
+            const baseYield = parseFloat(document.getElementById('baseYield').value) || 100;
+            const baseYieldUnit = document.getElementById('baseYieldUnit').value;
+            const currentBatchSize = parseFloat(document.getElementById('batchSize').value) || 100;
+            const batchSizeUnit = document.getElementById('batchSizeUnit').value;
+            
+            // Convert to gallons for calculation
+            const baseYieldGal = convert(baseYield, baseYieldUnit, 'gal');
+            const currentBatchSizeGal = convert(currentBatchSize, batchSizeUnit, 'gal');
+            
+            // Test batch sizes from 0.5x to 10x current size
+            const testSizes = [];
+            const minMultiplier = 0.25;
+            const maxMultiplier = 10;
+            const steps = 50;
+            
+            for (let i = 0; i <= steps; i++) {
+                const multiplier = minMultiplier + (maxMultiplier - minMultiplier) * (i / steps);
+                const testSize = baseYieldGal * multiplier;
+                
+                if (testSize < 1) continue; // Skip very small batches
+                
+                const scaleFactor = testSize / baseYieldGal;
+                let totalCost = 0;
+                let totalCostExact = 0;
+                let feasible = true;
+                
+                ingredients.forEach(ing => {
+                    const isDraft = ing.inventoryId && ing.inventoryId.startsWith('DRAFT-');
+                    const invItem = isDraft ? { 
+                        name: ing.draftName || 'Draft',
+                        sku: '(draft)',
+                        currentStock: 0,
+                        unit: ing.buyUnit
+                    } : inventory[ing.inventoryId];
+                    if (!invItem && !isDraft) return;
+                    
+                    const scaledRecipeAmount = ing.recipeAmount * scaleFactor;
+                    const requiredInBuyUnit = convert(scaledRecipeAmount, ing.recipeUnit, ing.buyUnit);
+                    const orderQty = Math.ceil(requiredInBuyUnit / ing.moq) * ing.moq;
+                    const lineCost = orderQty * ing.pricePerBuyUnit;
+                    const exactCost = requiredInBuyUnit * ing.pricePerBuyUnit;
+                    
+                    totalCost += lineCost;
+                    totalCostExact += exactCost;
+                });
+                
+                const moqSlack = totalCost - totalCostExact;
+                const moqSlackPercent = totalCostExact > 0 ? (moqSlack / totalCostExact * 100) : 0;
+                const costPerGal = totalCost / testSize;
+                
+                testSizes.push({
+                    batchSizeGal: testSize,
+                    batchSize: convert(testSize, 'gal', batchSizeUnit),
+                    scaleFactor: scaleFactor,
+                    totalCost: totalCost,
+                    totalCostExact: totalCostExact,
+                    moqSlack: moqSlack,
+                    moqSlackPercent: moqSlackPercent,
+                    costPerGal: costPerGal
+                });
+            }
+            
+            // Find optimal (lowest MOQ slack %)
+            testSizes.sort((a, b) => a.moqSlackPercent - b.moqSlackPercent);
+            const optimal = testSizes[0];
+            const current = testSizes.find(t => Math.abs(t.batchSizeGal - currentBatchSizeGal) < 0.1);
+            
+            // Find top 10 best options
+            const top10 = testSizes.slice(0, 10);
+            
+            // Show optimization results
+            const content = document.getElementById('analyticsContent');
+            const currentContent = content.innerHTML;
+            
+            content.innerHTML = `
+                <div style="margin-bottom: 20px;">
+                    <button class="btn" onclick="openAnalytics()">← Back to Analytics</button>
+                </div>
+
+                <div style="margin-bottom: 30px;">
+                    <div style="font-size: 20px; font-weight: 700; margin-bottom: 16px;">🎯 Batch Size Optimization</div>
+                    <div style="font-size: 14px; color: #6b7280; margin-bottom: 20px;">
+                        Analyzed ${testSizes.length} batch sizes from ${testSizes[testSizes.length-1].batchSize.toFixed(0)} to ${testSizes[0].batchSize.toFixed(0)} ${batchSizeUnit}
+                    </div>
+                </div>
+
+                <!-- Comparison Cards -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
+                    <!-- Current Batch -->
+                    <div style="padding: 24px; border: 2px solid #e5e7eb; border-radius: 8px; background: white;">
+                        <div style="font-size: 12px; color: #6b7280; text-transform: uppercase; font-weight: 600; margin-bottom: 8px;">Current Batch</div>
+                        <div style="font-size: 32px; font-weight: 700; margin-bottom: 8px;">${currentBatchSize.toFixed(1)} ${batchSizeUnit}</div>
+                        <div style="font-size: 14px; color: #6b7280; margin-bottom: 16px;">Scale: ${current?.scaleFactor.toFixed(2)}x</div>
+                        
+                        <div style="border-top: 1px solid #e5e7eb; padding-top: 12px; margin-top: 12px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                                <span style="font-size: 13px; color: #6b7280;">Total Cost:</span>
+                                <span style="font-weight: 600;">$${current?.totalCost.toFixed(2)}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                                <span style="font-size: 13px; color: #6b7280;">MOQ Slack:</span>
+                                <span style="font-weight: 600; color: #f59e0b;">$${current?.moqSlack.toFixed(2)} (${current?.moqSlackPercent.toFixed(2)}%)</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span style="font-size: 13px; color: #6b7280;">Cost/Gal:</span>
+                                <span style="font-weight: 600;">$${current?.costPerGal.toFixed(4)}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Optimal Batch -->
+                    <div style="padding: 24px; border: 2px solid #059669; border-radius: 8px; background: #d1fae5;">
+                        <div style="font-size: 12px; color: #065f46; text-transform: uppercase; font-weight: 600; margin-bottom: 8px;">✨ Optimal Batch</div>
+                        <div style="font-size: 32px; font-weight: 700; margin-bottom: 8px; color: #059669;">${optimal.batchSize.toFixed(1)} ${batchSizeUnit}</div>
+                        <div style="font-size: 14px; color: #065f46; margin-bottom: 16px;">Scale: ${optimal.scaleFactor.toFixed(2)}x</div>
+                        
+                        <div style="border-top: 1px solid #a7f3d0; padding-top: 12px; margin-top: 12px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                                <span style="font-size: 13px; color: #065f46;">Total Cost:</span>
+                                <span style="font-weight: 600; color: #059669;">$${optimal.totalCost.toFixed(2)}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                                <span style="font-size: 13px; color: #065f46;">MOQ Slack:</span>
+                                <span style="font-weight: 600; color: #059669;">$${optimal.moqSlack.toFixed(2)} (${optimal.moqSlackPercent.toFixed(2)}%)</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span style="font-size: 13px; color: #065f46;">Cost/Gal:</span>
+                                <span style="font-weight: 600; color: #059669;">$${optimal.costPerGal.toFixed(4)}</span>
+                            </div>
+                        </div>
+
+                        ${Math.abs(optimal.batchSizeGal - currentBatchSizeGal) > 1 ? `
+                            <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #a7f3d0;">
+                                <button class="btn btn-primary" onclick="applyOptimalBatchSize(${optimal.batchSize})" style="width: 100%; justify-content: center;">
+                                    Apply This Batch Size
+                                </button>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+
+                <!-- Savings -->
+                ${current && Math.abs(optimal.batchSizeGal - currentBatchSizeGal) > 1 ? `
+                    <div style="padding: 20px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; margin-bottom: 30px;">
+                        <div style="font-size: 16px; font-weight: 600; margin-bottom: 12px; color: #1e40af;">💰 Potential Savings</div>
+                        <div style="font-size: 14px; line-height: 1.8;">
+                            By switching to ${optimal.batchSize.toFixed(1)} ${batchSizeUnit} batches:
+                            <ul style="margin: 12px 0 0 20px;">
+                                <li><strong>MOQ slack reduced by ${(current.moqSlackPercent - optimal.moqSlackPercent).toFixed(2)}%</strong> (from ${current.moqSlackPercent.toFixed(2)}% to ${optimal.moqSlackPercent.toFixed(2)}%)</li>
+                                <li>Save <strong>$${(current.moqSlack - optimal.moqSlack).toFixed(2)}</strong> in MOQ waste per batch</li>
+                                <li>Cost per gallon ${optimal.costPerGal < current.costPerGal ? 'decreases' : 'increases'} by <strong>$${Math.abs(optimal.costPerGal - current.costPerGal).toFixed(4)}</strong></li>
+                                ${optimal.batchSizeGal > currentBatchSizeGal ? 
+                                    '<li>⚠️ Note: Larger batches require more upfront investment and storage</li>' :
+                                    '<li>⚠️ Note: Smaller batches mean more frequent production runs</li>'}
+                            </ul>
+                        </div>
+                    </div>
+                ` : `
+                    <div style="padding: 20px; background: #d1fae5; border: 1px solid #6ee7b7; border-radius: 8px; margin-bottom: 30px;">
+                        <div style="font-size: 16px; font-weight: 600; margin-bottom: 8px; color: #059669;">✅ Already Optimized!</div>
+                        <div style="font-size: 14px; color: #065f46;">
+                            Your current batch size is already at or very close to the optimal size for minimizing MOQ waste.
+                        </div>
+                    </div>
+                `}
+
+                <!-- Top 10 Options Table -->
+                <div>
+                    <div style="font-size: 18px; font-weight: 600; margin-bottom: 16px;">Top 10 Most Efficient Batch Sizes</div>
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <thead style="background: #f9fafb;">
+                                <tr>
+                                    <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e5e7eb;">Rank</th>
+                                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e5e7eb;">Batch Size</th>
+                                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e5e7eb;">Scale Factor</th>
+                                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e5e7eb;">Total Cost</th>
+                                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e5e7eb;">MOQ Slack</th>
+                                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e5e7eb;">MOQ %</th>
+                                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #e5e7eb;">Cost/Gal</th>
+                                    <th style="padding: 12px; text-align: center; border-bottom: 2px solid #e5e7eb;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${top10.map((size, idx) => {
+                                    const isCurrent = current && Math.abs(size.batchSizeGal - currentBatchSizeGal) < 1;
+                                    return `
+                                        <tr style="border-bottom: 1px solid #f3f4f6; ${idx === 0 ? 'background: #d1fae5;' : isCurrent ? 'background: #fef3c7;' : idx % 2 === 0 ? 'background: #fafbfc;' : ''}">
+                                            <td style="padding: 12px;">
+                                                ${idx === 0 ? '🏆' : idx + 1}
+                                                ${isCurrent ? '<span style="margin-left: 8px; font-size: 11px; background: #fcd34d; padding: 2px 6px; border-radius: 3px; font-weight: 600;">CURRENT</span>' : ''}
+                                            </td>
+                                            <td style="padding: 12px; text-align: right; font-weight: 600;">${size.batchSize.toFixed(1)} ${batchSizeUnit}</td>
+                                            <td style="padding: 12px; text-align: right;">${size.scaleFactor.toFixed(2)}x</td>
+                                            <td style="padding: 12px; text-align: right;">$${size.totalCost.toFixed(2)}</td>
+                                            <td style="padding: 12px; text-align: right; ${size.moqSlack > 0 ? 'color: #f59e0b;' : 'color: #059669;'}">$${size.moqSlack.toFixed(2)}</td>
+                                            <td style="padding: 12px; text-align: right; font-weight: 600; ${size.moqSlackPercent < 5 ? 'color: #059669;' : size.moqSlackPercent < 15 ? 'color: #f59e0b;' : 'color: #dc2626;'}">
+                                                ${size.moqSlackPercent.toFixed(2)}%
+                                            </td>
+                                            <td style="padding: 12px; text-align: right;">$${size.costPerGal.toFixed(4)}</td>
+                                            <td style="padding: 12px; text-align: center;">
+                                                ${!isCurrent ? `
+                                                    <button class="btn btn-small btn-primary" onclick="applyOptimalBatchSize(${size.batchSize})">
+                                                        Use This
+                                                    </button>
+                                                ` : '<span style="color: #6b7280;">—</span>'}
+                                            </td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Explanation -->
+                <div style="margin-top: 30px; padding: 20px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px;">
+                    <div style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">How Optimization Works</div>
+                    <div style="font-size: 13px; color: #6b7280; line-height: 1.6;">
+                        The optimizer tests ${testSizes.length} different batch sizes and calculates the MOQ slack for each. 
+                        The "optimal" size minimizes waste from minimum order quantities while considering cost per unit.
+                        <br><br>
+                        <strong>Factors to consider when choosing:</strong>
+                        <ul style="margin-top: 8px; padding-left: 20px;">
+                            <li>Production capacity and run times</li>
+                            <li>Storage space and shelf life</li>
+                            <li>Cash flow and upfront investment</li>
+                            <li>Demand forecasting and order frequency</li>
+                        </ul>
+                    </div>
+                </div>
+            `;
+        }
+
+        function applyOptimalBatchSize(batchSize) {
+            const batchSizeUnit = document.getElementById('batchSizeUnit').value;
+            
+            if (confirm(`Change batch size to ${batchSize.toFixed(1)} ${batchSizeUnit}?\n\nThis will update your formula and recalculate all costs.`)) {
+                document.getElementById('batchSize').value = batchSize.toFixed(1);
+                recalculate();
+                closeAnalytics();
+                alert(`✅ Batch size updated to ${batchSize.toFixed(1)} ${batchSizeUnit}!\n\nAll costs have been recalculated.`);
+            }
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Check for Cmd (Mac) or Ctrl (Windows/Linux)
+            const isMod = e.metaKey || e.ctrlKey;
+            
+            if (!isMod) return;
+            
+            // Cmd/Ctrl + N - New Formula
+            if (e.key === 'n' || e.key === 'N') {
+                e.preventDefault();
+                newFormula();
+            }
+            
+            // Cmd/Ctrl + I - Add from Inventory
+            if (e.key === 'i' || e.key === 'I') {
+                e.preventDefault();
+                addIngredient();
+            }
+            
+            // Cmd/Ctrl + D - Add Draft
+            if (e.key === 'd' || e.key === 'D') {
+                e.preventDefault();
+                addDraftIngredient();
+            }
+            
+            // Cmd/Ctrl + S - Save Formula
+            if (e.key === 's' || e.key === 'S') {
+                e.preventDefault();
+                saveFormula();
+            }
+            
+            // Cmd/Ctrl + O - Load Formula
+            if (e.key === 'o' || e.key === 'O') {
+                e.preventDefault();
+                loadFormula();
+            }
+            
+            // Cmd/Ctrl + E - Export Excel
+            if (e.key === 'e' || e.key === 'E') {
+                e.preventDefault();
+                exportToExcel();
+            }
+            
+            // Cmd/Ctrl + A - Open Analytics (if Shift is also pressed)
+            if ((e.key === 'a' || e.key === 'A') && e.shiftKey) {
+                e.preventDefault();
+                openAnalytics();
+            }
+        });
+
+        // Initialize command palette
+        CommandPalette.init([
+            { name: 'New Formula', description: 'Start a fresh formula', action: newFormula, shortcut: 'Cmd+N' },
+            { name: 'Save Formula', description: 'Save current formula', action: saveFormula, shortcut: 'Cmd+S' },
+            { name: 'Load Formula', description: 'Load saved formula', action: loadFormula, shortcut: 'Cmd+O' },
+            { name: 'Export to Excel', description: 'Download Excel workbook', action: exportToExcel, shortcut: 'Cmd+E' },
+            { name: 'Add from Inventory', description: 'Add ingredient from inventory', action: addIngredient, shortcut: 'Cmd+I' },
+            { name: 'Add Draft Ingredient', description: 'Add ingredient not in inventory', action: addDraftIngredient, shortcut: 'Cmd+D' },
+            { name: 'Open Analytics', description: 'View detailed analytics', action: openAnalytics, shortcut: 'Cmd+Shift+A' },
+            { name: 'Go to Inventory', description: 'Manage inventory items', action: () => window.location.href = 'inventory.html' },
+            { name: 'Go to Co-Packing', description: 'Calculate packaging costs', action: () => window.location.href = 'copacking-calculator.html' },
+            { name: 'Go to Services', description: 'Manage services', action: () => window.location.href = 'services.html' },
+            { name: 'Go to Packaging', description: 'Manage packaging', action: () => window.location.href = 'packaging.html' }
+        ]);
+
+        // Initialize
+        // Load saved batch first (includes ingredients)
+        loadSavedBatch();
+        // Update banner to show batch info
+        updateBatchInfoBanner();
+        // Calculate tank usage
+        calculateTankAllocation();
+        
+        // Auto-calculate cases on page load (with small delay to ensure DOM is ready)
+        setTimeout(() => {
+            updateCasesFromBatch();
+        }, 100);
+    </script>
+    </div>
+</body>
+</html>

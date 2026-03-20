@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { getPackaging, savePackaging, addPackagingItem as addPkgItem, deletePackagingItem, getVendors } from '../data/store';
+import { getProducts, getQuantityTiers, lookupPrice, NEW_ART_PREP_FEE } from '../data/drayhorsePricing';
 
 const categoryColors = {
   cans: { bg: '#dbeafe', color: '#1e40af' },
@@ -9,10 +10,156 @@ const categoryColors = {
   pallets: { bg: '#e0e7ff', color: '#3730a3' },
 };
 
+function DrayhorsePricingGrid() {
+  const products = getProducts();
+  const tiers = getQuantityTiers();
+  const [selectedProduct, setSelectedProduct] = useState(products[0].id);
+  const [cartonQty, setCartonQty] = useState(25000);
+  const [skuCount, setSkuCount] = useState(1);
+
+  const product = products.find((p) => p.id === selectedProduct);
+  const result = lookupPrice(selectedProduct, cartonQty, skuCount);
+
+  const structureGroups = useMemo(() => {
+    const groups = {};
+    products.forEach((p) => {
+      if (!groups[p.structure]) groups[p.structure] = [];
+      groups[p.structure].push(p);
+    });
+    return groups;
+  }, []);
+
+  return (
+    <div style={{ padding: 24 }}>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Drayhorse Carton Pricing</div>
+        <div style={{ fontSize: 13, color: '#6b7280' }}>
+          4-Color Conventional Craft &bull; Prices per 1,000 cartons &bull; Delivered to Athens, PA
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 20 }}>
+        <div className="form-group" style={{ margin: 0 }}>
+          <label className="form-label">Carton Type</label>
+          <select value={selectedProduct} onChange={(e) => setSelectedProduct(e.target.value)}>
+            {Object.entries(structureGroups).map(([structure, prods]) => (
+              <optgroup key={structure} label={`${structure} Can`}>
+                {prods.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </div>
+        <div className="form-group" style={{ margin: 0 }}>
+          <label className="form-label">Carton Quantity</label>
+          <input
+            type="number"
+            value={cartonQty}
+            onChange={(e) => setCartonQty(parseInt(e.target.value) || 0)}
+            min={1000}
+            step={1000}
+          />
+        </div>
+        <div className="form-group" style={{ margin: 0 }}>
+          <label className="form-label"># of SKUs</label>
+          <select value={skuCount} onChange={(e) => setSkuCount(parseInt(e.target.value))}>
+            <option value={1}>1 SKU</option>
+            <option value={2}>2 SKUs</option>
+            <option value={3}>3 SKUs</option>
+            <option value={4}>4 SKUs</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Result Card */}
+      {result && (
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, marginBottom: 20,
+        }}>
+          <div style={{ padding: 16, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, textAlign: 'center' }}>
+            <div style={{ fontSize: 12, color: '#3b82f6', fontWeight: 600, marginBottom: 4 }}>Price / 1,000</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#1e40af' }}>${result.pricePerM.toFixed(2)}</div>
+            <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>at {result.tierQty.toLocaleString()}+ tier</div>
+          </div>
+          <div style={{ padding: 16, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, textAlign: 'center' }}>
+            <div style={{ fontSize: 12, color: '#16a34a', fontWeight: 600, marginBottom: 4 }}>Price / Carton</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#065f46' }}>${result.pricePerCarton.toFixed(4)}</div>
+          </div>
+          <div style={{ padding: 16, background: '#fefce8', border: '1px solid #fef08a', borderRadius: 8, textAlign: 'center' }}>
+            <div style={{ fontSize: 12, color: '#ca8a04', fontWeight: 600, marginBottom: 4 }}>Total Cost</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#92400e' }}>${result.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>{cartonQty.toLocaleString()} cartons</div>
+          </div>
+          <div style={{ padding: 16, background: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: 8, textAlign: 'center' }}>
+            <div style={{ fontSize: 12, color: '#7c3aed', fontWeight: 600, marginBottom: 4 }}>New Art Prep</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#5b21b6' }}>${NEW_ART_PREP_FEE}</div>
+            <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>one-time fee</div>
+          </div>
+        </div>
+      )}
+
+      {/* Product Info */}
+      {product && (
+        <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 16, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          <span>SKU: <strong>{product.sku}</strong></span>
+          <span>Design: <strong>{product.design}</strong></span>
+          {product.die && <span>Die: <strong>{product.die}</strong></span>}
+          <span>Print: <strong>4/C + Aqueous</strong></span>
+          <span>Board: <strong>17.9 Craft</strong></span>
+        </div>
+      )}
+
+      {/* Full Grid Table */}
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ fontSize: 13 }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: 'left' }}>Qty (cartons)</th>
+              <th style={{ textAlign: 'right' }}>1 SKU</th>
+              <th style={{ textAlign: 'right' }}>2 SKUs</th>
+              <th style={{ textAlign: 'right' }}>3 SKUs</th>
+              <th style={{ textAlign: 'right' }}>4 SKUs</th>
+            </tr>
+          </thead>
+          <tbody>
+            {product && tiers.map((tier, rowIdx) => {
+              const isActiveTier = result && result.tierQty === tier;
+              return (
+                <tr key={tier} style={isActiveTier ? { background: '#eff6ff' } : undefined}>
+                  <td style={{ fontWeight: 600 }}>{tier.toLocaleString()}</td>
+                  {product.grid[rowIdx].map((price, colIdx) => {
+                    const isActiveCell = isActiveTier && colIdx === skuCount - 1;
+                    return (
+                      <td
+                        key={colIdx}
+                        style={{
+                          textAlign: 'right',
+                          fontWeight: isActiveCell ? 700 : 400,
+                          color: isActiveCell ? '#1e40af' : undefined,
+                          background: isActiveCell ? '#dbeafe' : undefined,
+                        }}
+                      >
+                        ${price.toFixed(2)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function Packaging() {
   const [packaging, setPackaging] = useState(getPackaging());
   const [selectedId, setSelectedId] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showPricingGrid, setShowPricingGrid] = useState(false);
   const vendors = getVendors();
 
   const refresh = useCallback(() => setPackaging(getPackaging()), []);
@@ -27,7 +174,7 @@ export default function Packaging() {
     ? packaging.filter((item) => item.name.toLowerCase().includes(searchQuery.toLowerCase()))
     : packaging;
 
-  const selectedItem = packaging.find((i) => i.id === selectedId);
+  const selectedItem = showPricingGrid ? null : packaging.find((i) => i.id === selectedId);
 
   function updateField(id, field, value) {
     const updated = packaging.map((item) =>
@@ -90,6 +237,7 @@ export default function Packaging() {
     });
     refresh();
     setSelectedId(newId);
+    setShowPricingGrid(false);
   }
 
   return (
@@ -113,6 +261,18 @@ export default function Packaging() {
               <div className="stat-value">{new Set(packaging.map((p) => p.category)).size}</div>
             </div>
           </div>
+          <button
+            className="btn btn-small"
+            onClick={() => { setShowPricingGrid(!showPricingGrid); setSelectedId(null); }}
+            style={{
+              width: '100%', justifyContent: 'center', marginTop: 8,
+              background: showPricingGrid ? '#1e40af' : '#f3f4f6',
+              color: showPricingGrid ? 'white' : '#374151',
+              borderColor: showPricingGrid ? '#1e40af' : '#d1d5db',
+            }}
+          >
+            {showPricingGrid ? 'Back to Items' : 'Drayhorse Pricing Grid'}
+          </button>
         </div>
 
         <div className="items-list">
@@ -122,7 +282,7 @@ export default function Packaging() {
               <div
                 key={item.id}
                 className={`item-card ${item.id === selectedId ? 'active' : ''}`}
-                onClick={() => setSelectedId(item.id)}
+                onClick={() => { setSelectedId(item.id); setShowPricingGrid(false); }}
               >
                 <div className="item-name">{item.name}</div>
                 <div className="item-meta">
@@ -151,10 +311,19 @@ export default function Packaging() {
       </div>
 
       <div className="detail-panel">
-        {!selectedItem ? (
+        {showPricingGrid ? (
+          <DrayhorsePricingGrid />
+        ) : !selectedItem ? (
           <div className="detail-panel-empty">
             <div className="detail-panel-empty-icon">📦</div>
             <div>Select an item to view details</div>
+            <button
+              className="btn btn-small"
+              onClick={() => setShowPricingGrid(true)}
+              style={{ marginTop: 12 }}
+            >
+              View Drayhorse Pricing Grid
+            </button>
           </div>
         ) : (
           <>
@@ -247,7 +416,7 @@ export default function Packaging() {
                         type="number"
                         className="tier-input"
                         defaultValue={tier.maxQty || ''}
-                        placeholder="\u221e"
+                        placeholder={"\u221e"}
                         style={{ width: 60, display: 'inline-block', marginLeft: 4 }}
                         onBlur={(e) => updatePriceTier(selectedItem.id, index, 'maxQty', e.target.value ? parseInt(e.target.value) : null)}
                         key={`max-${selectedItem.id}-${index}`}
