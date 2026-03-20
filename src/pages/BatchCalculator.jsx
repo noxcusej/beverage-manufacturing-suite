@@ -41,6 +41,8 @@ export default function BatchCalculator() {
   const [showUnitCalc, setShowUnitCalc] = useState(false);
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [loadSearch, setLoadSearch] = useState('');
+  const [showAddIngModal, setShowAddIngModal] = useState(false);
+  const [addIngSearch, setAddIngSearch] = useState('');
   const [toast, setToast] = useState(null);
   const [collapsedFolders, setCollapsedFolders] = useState({});
 
@@ -196,15 +198,7 @@ export default function BatchCalculator() {
     setIngredients((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function addIngredient() {
-    const invItems = getInventory();
-    const used = new Set(ingredients.map((i) => i.inventoryId));
-    const available = invItems.filter((i) => !used.has(i.id));
-    if (available.length === 0) {
-      showToast('All inventory items are already in the formula', 'warning');
-      return;
-    }
-    const item = available[0];
+  function addIngredientFromInventory(item) {
     const tier = item.priceTiers?.[0];
     setIngredients((prev) => [
       ...prev,
@@ -221,6 +215,18 @@ export default function BatchCalculator() {
         inventoryUnit: tier?.buyUnit || item.unit || 'gal',
       },
     ]);
+    showToast(`Added "${item.name}"`);
+  }
+
+  function openAddIngredientModal() {
+    const used = new Set(ingredients.map((i) => i.inventoryId));
+    const available = inventoryArr.filter((i) => !used.has(i.id));
+    if (available.length === 0) {
+      showToast('All inventory items are already in the formula', 'warning');
+      return;
+    }
+    setShowAddIngModal(true);
+    setAddIngSearch('');
   }
 
   function addDraftIngredient() {
@@ -294,7 +300,7 @@ export default function BatchCalculator() {
     { key: 's', ctrl: true, handler: () => handleSaveFormula(), allowInInput: true },
     { key: 'o', ctrl: true, handler: () => setShowLoadModal(true), allowInInput: true },
     { key: 'e', ctrl: true, handler: () => exportToExcel(), allowInInput: true },
-    { key: 'i', ctrl: true, handler: () => addIngredient(), allowInInput: true },
+    { key: 'i', ctrl: true, handler: () => openAddIngredientModal(), allowInInput: true },
     { key: 'd', ctrl: true, handler: () => addDraftIngredient(), allowInInput: true },
   ]);
 
@@ -420,6 +426,35 @@ export default function BatchCalculator() {
   const tableRef = useRef(null);
 
   function handleCellKeyDown(e, row, col) {
+    // Enter on a select: simulate a click to open the dropdown
+    if (e.key === 'Enter' && e.target.tagName === 'SELECT') {
+      e.preventDefault();
+      // showPicker is the modern API to open selects programmatically
+      if (e.target.showPicker) {
+        try { e.target.showPicker(); } catch (_) { /* some browsers restrict this */ }
+      } else {
+        // Fallback: simulate mousedown to open
+        e.target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      }
+      return;
+    }
+
+    // Tab moves to next/prev cell
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const nextCol2 = e.shiftKey ? col - 1 : col + 1;
+      let nextRow2 = row;
+      let nc = nextCol2;
+      if (nc > 9) { nc = 0; nextRow2 = row + 1; }
+      if (nc < 0) { nc = 9; nextRow2 = row - 1; }
+      const next = tableRef.current?.querySelector(`[data-row="${nextRow2}"][data-col="${nc}"]`);
+      if (next) {
+        next.focus();
+        if (next.tagName === 'INPUT') next.select();
+      }
+      return;
+    }
+
     const arrows = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
     const dir = arrows[e.key];
     if (!dir) return;
@@ -429,7 +464,7 @@ export default function BatchCalculator() {
     const next = tableRef.current?.querySelector(`[data-row="${nextRow}"][data-col="${nextCol}"]`);
     if (next) {
       next.focus();
-      if (next.tagName === 'INPUT' && next.type === 'number') next.select();
+      if (next.tagName === 'INPUT') next.select();
     }
   }
 
@@ -760,7 +795,7 @@ export default function BatchCalculator() {
                   <tr>
                     <td colSpan={12} style={{ padding: 12, background: '#f9fafb', borderTop: '2px solid #e5e7eb' }}>
                       <div style={{ display: 'flex', gap: 8 }}>
-                        <button className="btn btn-primary" onClick={addIngredient} style={{ flex: 1, justifyContent: 'center' }}>
+                        <button className="btn btn-primary" onClick={openAddIngredientModal} style={{ flex: 1, justifyContent: 'center' }}>
                           + Add from Inventory
                         </button>
                         <button className="btn" onClick={addDraftIngredient} style={{ flex: 1, justifyContent: 'center' }}>
@@ -1100,6 +1135,68 @@ export default function BatchCalculator() {
           </div>
         </div>
       )}
+
+      {/* Add Ingredient Modal */}
+      {showAddIngModal && (() => {
+        const used = new Set(ingredients.map((i) => i.inventoryId));
+        const available = inventoryArr.filter((i) => !used.has(i.id));
+        const filtered = addIngSearch
+          ? available.filter((i) => i.name.toLowerCase().includes(addIngSearch.toLowerCase()) || (i.sku || '').toLowerCase().includes(addIngSearch.toLowerCase()))
+          : available;
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => { setShowAddIngModal(false); setAddIngSearch(''); }}>
+            <div style={{ background: 'white', borderRadius: 12, width: 480, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid #e5e7eb' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Add from Inventory</h3>
+                  <button onClick={() => { setShowAddIngModal(false); setAddIngSearch(''); }} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#9ca3af', padding: '4px 8px' }}>&times;</button>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Search ingredients..."
+                  value={addIngSearch}
+                  onChange={(e) => setAddIngSearch(e.target.value)}
+                  autoFocus
+                  style={{ width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14 }}
+                />
+              </div>
+              <div style={{ overflowY: 'auto', padding: '8px 12px', flex: 1 }}>
+                {filtered.length === 0 ? (
+                  <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>
+                    {available.length === 0 ? 'All inventory items are in the formula' : 'No matches found'}
+                  </div>
+                ) : (
+                  filtered.map((item) => {
+                    const tier = item.priceTiers?.[0];
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => addIngredientFromInventory(item)}
+                        style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'background 0.15s' }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#f0f4ff'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: '#1f2937' }}>{item.name}</div>
+                          <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
+                            {item.sku || 'No SKU'} · {item.type || 'liquid'} · {item.currentStock || 0} {item.unit} on hand
+                            {tier ? ` · $${tier.price}/${tier.buyUnit}` : ''}
+                          </div>
+                        </div>
+                        <span style={{ fontSize: 13, color: '#7062E0', fontWeight: 600 }}>+ Add</span>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              <div style={{ padding: '12px 24px', borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 12, color: '#9ca3af' }}>{available.length} available · {used.size} in formula</span>
+                <button className="btn btn-small" onClick={() => { setShowAddIngModal(false); setAddIngSearch(''); }}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Toast Notification */}
       {toast && (
