@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { getInventory, saveInventory, addInventoryItem, getVendors, getTankConfig, getCurrentBatch, saveBatch, getFormulas, saveFormula as saveFormulaToStore } from '../data/store';
+import { getInventory, saveInventory, addInventoryItem, getVendors, getTankConfig, getCurrentBatch, saveBatch, getFormulas, saveFormula as saveFormulaToStore, getClients } from '../data/store';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import * as XLSX from 'xlsx';
 
@@ -36,6 +36,7 @@ export default function BatchCalculator() {
   }, [inventoryArr]);
 
   const [formulaName, setFormulaName] = useState('');
+  const [formulaClient, setFormulaClient] = useState('Uncategorized');
   const [baseYield, setBaseYield] = useState(100);
   const [baseYieldUnit, setBaseYieldUnit] = useState('gal');
   const [batchSize, setBatchSize] = useState(500);
@@ -375,11 +376,12 @@ export default function BatchCalculator() {
   function handleSaveFormula() {
     saveFormulaToStore({
       name: formulaName,
+      client: formulaClient || 'Uncategorized',
       baseYield, baseYieldUnit,
       batchSize, batchSizeUnit,
       ingredients,
     });
-    showToast('Formula saved!');
+    showToast(`Formula saved to ${formulaClient || 'Uncategorized'}`);
   }
 
   function handleSaveBatch() {
@@ -409,11 +411,13 @@ export default function BatchCalculator() {
     const formula = formulas.find((f) => f.name === name);
     if (!formula) return;
     setFormulaName(formula.name);
+    setFormulaClient(formula.client || 'Uncategorized');
     if (formula.baseYield) setBaseYield(formula.baseYield);
     if (formula.baseYieldUnit) setBaseYieldUnit(formula.baseYieldUnit);
     if (formula.batchSize) setBatchSize(formula.batchSize);
     if (formula.batchSizeUnit) setBatchSizeUnit(formula.batchSizeUnit);
     if (formula.ingredients) setIngredients(formula.ingredients);
+    setSizeMode('batch');
     setShowLoadModal(false);
     setLoadSearch('');
     showToast(`Loaded "${formula.name}"`);
@@ -421,6 +425,7 @@ export default function BatchCalculator() {
 
   function handleNewFormula() {
     setFormulaName('New Formula');
+    setFormulaClient('Uncategorized');
     setBaseYield(100);
     setBaseYieldUnit('gal');
     setBatchSize(500);
@@ -853,6 +858,21 @@ export default function BatchCalculator() {
                 <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label">Formula Name</label>
                   <input type="text" value={formulaName} onChange={(e) => setFormulaName(e.target.value)} />
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label">Client</label>
+                  <select value={formulaClient} onChange={(e) => setFormulaClient(e.target.value)}>
+                    <option value="Uncategorized">Uncategorized</option>
+                    {(() => {
+                      // Combine clients from store + any unique clients already on formulas
+                      const clientSet = new Set();
+                      getClients().forEach((c) => clientSet.add(c.name));
+                      formulas.forEach((f) => { if (f.client && f.client !== 'Uncategorized') clientSet.add(f.client); });
+                      return [...clientSet].sort().map((name) => (
+                        <option key={name} value={name}>{name}</option>
+                      ));
+                    })()}
+                  </select>
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label">Base Yield</label>
