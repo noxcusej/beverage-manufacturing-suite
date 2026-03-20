@@ -605,15 +605,34 @@ export default function BatchCalculator() {
     }
   }
 
+  // Attach paste listener on table in capture phase so it fires before input's default
+  useEffect(() => {
+    const table = tableRef.current;
+    if (!table) return;
+    const handler = (e) => handleTablePaste(e);
+    table.addEventListener('paste', handler, true); // capture phase
+    return () => table.removeEventListener('paste', handler, true);
+  });
+
   // Paste from spreadsheet: parse TSV and populate ingredient rows
   function handleTablePaste(e) {
     const text = e.clipboardData?.getData('text/plain');
-    if (!text || !text.includes('\t')) return; // Not a spreadsheet paste
+    if (!text || !text.includes('\t')) return; // Not a spreadsheet paste — let default happen
 
     e.preventDefault();
+    e.stopPropagation();
 
-    // Parse TSV rows
-    const pastedRows = text.trim().split('\n').map((line) => line.split('\t').map((c) => c.trim()));
+    // Undo any partial paste that may have landed in the input
+    if (e.target.tagName === 'INPUT') {
+      const row = e.target.dataset.row;
+      const col = e.target.dataset.col;
+      if (row !== undefined && col !== undefined) {
+        // Will be overwritten by our logic below
+      }
+    }
+
+    // Parse TSV rows (handle Windows \r\n and Mac \n)
+    const pastedRows = text.trim().replace(/\r\n/g, '\n').split('\n').map((line) => line.split('\t').map((c) => c.trim()));
     if (pastedRows.length === 0) return;
 
     // Figure out starting column from the focused cell
@@ -891,7 +910,7 @@ export default function BatchCalculator() {
               <div className="section-title">Ingredients</div>
             </div>
             <div>
-              <table ref={tableRef} onPaste={handleTablePaste}>
+              <table ref={tableRef}>
                 <thead>
                   <tr>
                     <th>Inventory Item</th>
