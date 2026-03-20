@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { getInventory, saveInventory, addInventoryItem, getVendors, getTankConfig, getCurrentBatch, saveBatch, getFormulas, saveFormula as saveFormulaToStore } from '../data/store';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import * as XLSX from 'xlsx';
@@ -42,6 +42,7 @@ export default function BatchCalculator() {
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [loadSearch, setLoadSearch] = useState('');
   const [toast, setToast] = useState(null);
+  const [collapsedFolders, setCollapsedFolders] = useState({});
 
   const [formulas, setFormulas] = useState(() => getFormulas());
 
@@ -416,6 +417,28 @@ export default function BatchCalculator() {
     XLSX.writeFile(wb, `${formulaName.replace(/\s+/g, '_')}_${batchSize}${batchSizeUnit}_${new Date().toISOString().split('T')[0]}.xlsx`);
   }
 
+  const tableRef = useRef(null);
+
+  function handleCellKeyDown(e, row, col) {
+    const arrows = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+    const dir = arrows[e.key];
+    if (!dir) return;
+    e.preventDefault();
+    const nextRow = row + dir[0];
+    const nextCol = col + dir[1];
+    const next = tableRef.current?.querySelector(`[data-row="${nextRow}"][data-col="${nextCol}"]`);
+    if (next) {
+      next.focus();
+      if (next.tagName === 'INPUT' && next.type === 'number') next.select();
+    }
+  }
+
+  function handleCellFocus(e) {
+    if (e.target.tagName === 'INPUT' && (e.target.type === 'number' || e.target.type === 'text')) {
+      e.target.select();
+    }
+  }
+
   function exportCSV() {
     const header = ['Item', 'SKU', 'Required', 'Buy Unit Amt', 'Price/Unit', 'MOQ', 'Order Qty', 'Line Cost'];
     const rows = scaledData.rows.map((r) => [
@@ -548,7 +571,7 @@ export default function BatchCalculator() {
               <div className="section-title">Ingredients</div>
             </div>
             <div>
-              <table>
+              <table ref={tableRef}>
                 <thead>
                   <tr>
                     <th>Inventory Item</th>
@@ -573,7 +596,9 @@ export default function BatchCalculator() {
                         <td>
                           {ing.inventoryId ? (
                             <select
+                              data-row={idx} data-col={0}
                               value={ing.inventoryId}
+                              onKeyDown={(e) => handleCellKeyDown(e, idx, 0)}
                               onChange={(e) => {
                                 const newItem = inventory[e.target.value];
                                 if (newItem) {
@@ -607,76 +632,94 @@ export default function BatchCalculator() {
                             </select>
                           ) : (
                             <input
+                              data-row={idx} data-col={0}
                               type="text"
                               value={ing.draftName || ''}
                               onChange={(e) => updateIngredient(idx, 'draftName', e.target.value)}
+                              onFocus={handleCellFocus}
+                              onKeyDown={(e) => handleCellKeyDown(e, idx, 0)}
                               placeholder="Draft ingredient"
                               style={{ minWidth: 160 }}
                             />
                           )}
                         </td>
                         <td>
-                          <select value={ing.type} onChange={(e) => updateIngredient(idx, 'type', e.target.value)}>
+                          <select data-row={idx} data-col={1} value={ing.type} onChange={(e) => updateIngredient(idx, 'type', e.target.value)} onKeyDown={(e) => handleCellKeyDown(e, idx, 1)}>
                             <option value="liquid">Liquid</option>
                             <option value="dry">Dry</option>
                           </select>
                         </td>
                         <td>
                           <input
+                            data-row={idx} data-col={2}
                             type="number"
                             value={ing.recipeAmount}
                             onChange={(e) => updateIngredient(idx, 'recipeAmount', parseFloat(e.target.value) || 0)}
+                            onFocus={handleCellFocus}
+                            onKeyDown={(e) => handleCellKeyDown(e, idx, 2)}
                             style={{ width: 80 }}
                           />
                         </td>
                         <td>
-                          <select value={ing.recipeUnit} onChange={(e) => updateIngredient(idx, 'recipeUnit', e.target.value)}>
+                          <select data-row={idx} data-col={3} value={ing.recipeUnit} onChange={(e) => updateIngredient(idx, 'recipeUnit', e.target.value)} onKeyDown={(e) => handleCellKeyDown(e, idx, 3)}>
                             <option value="gal">gal</option><option value="L">L</option><option value="oz">oz</option>
                             <option value="ml">mL</option><option value="lbs">lbs</option><option value="kg">kg</option><option value="g">g</option>
                           </select>
                         </td>
                         <td>
                           <input
+                            data-row={idx} data-col={4}
                             type="number"
                             value={ing.specificGravity}
                             onChange={(e) => updateIngredient(idx, 'specificGravity', parseFloat(e.target.value) || 1.0)}
+                            onFocus={handleCellFocus}
+                            onKeyDown={(e) => handleCellKeyDown(e, idx, 4)}
                             step="0.01"
                             style={{ width: 60 }}
                           />
                         </td>
                         <td>
-                          <select value={ing.buyUnit} onChange={(e) => updateIngredient(idx, 'buyUnit', e.target.value)}>
+                          <select data-row={idx} data-col={5} value={ing.buyUnit} onChange={(e) => updateIngredient(idx, 'buyUnit', e.target.value)} onKeyDown={(e) => handleCellKeyDown(e, idx, 5)}>
                             <option value="gal">gal</option><option value="L">L</option><option value="lbs">lbs</option>
                             <option value="kg">kg</option><option value="oz">oz</option><option value="g">g</option>
                           </select>
                         </td>
                         <td>
                           <input
+                            data-row={idx} data-col={6}
                             type="number"
                             value={ing.pricePerBuyUnit}
                             onChange={(e) => updateIngredient(idx, 'pricePerBuyUnit', parseFloat(e.target.value) || 0)}
+                            onFocus={handleCellFocus}
+                            onKeyDown={(e) => handleCellKeyDown(e, idx, 6)}
                             step="0.0001"
                             style={{ width: 90 }}
                           />
                         </td>
                         <td>
                           <input
+                            data-row={idx} data-col={7}
                             type="number"
                             value={ing.moq}
                             onChange={(e) => updateIngredient(idx, 'moq', parseFloat(e.target.value) || 1)}
+                            onFocus={handleCellFocus}
+                            onKeyDown={(e) => handleCellKeyDown(e, idx, 7)}
                             style={{ width: 70 }}
                           />
                         </td>
                         <td>
                           <input
+                            data-row={idx} data-col={8}
                             type="number"
                             value={ing.currentInventory || 0}
                             onChange={(e) => updateIngredient(idx, 'currentInventory', parseFloat(e.target.value) || 0)}
+                            onFocus={handleCellFocus}
+                            onKeyDown={(e) => handleCellKeyDown(e, idx, 8)}
                             style={{ width: 80 }}
                           />
                         </td>
                         <td>
-                          <select value={ing.inventoryUnit || 'gal'} onChange={(e) => updateIngredient(idx, 'inventoryUnit', e.target.value)}>
+                          <select data-row={idx} data-col={9} value={ing.inventoryUnit || 'gal'} onChange={(e) => updateIngredient(idx, 'inventoryUnit', e.target.value)} onKeyDown={(e) => handleCellKeyDown(e, idx, 9)}>
                             <option value="gal">gal</option><option value="L">L</option><option value="lbs">lbs</option>
                             <option value="kg">kg</option><option value="oz">oz</option><option value="g">g</option>
                           </select>
@@ -1012,33 +1055,42 @@ export default function BatchCalculator() {
                 if (entries.length === 0) {
                   return <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No formulas found</div>;
                 }
-                return entries.map(([client, fms]) => (
-                  <div key={client} style={{ marginBottom: 8 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, padding: '8px 12px 4px', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span>📁</span> {client}
-                      <span style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>({fms.length})</span>
-                    </div>
-                    {fms.map((f) => (
+                return entries.map(([client, fms]) => {
+                  const isCollapsed = collapsedFolders[client] && !loadSearch;
+                  return (
+                    <div key={client} style={{ marginBottom: 4 }}>
                       <div
-                        key={f.name}
-                        onClick={() => handleLoadFormula(f.name)}
-                        style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'background 0.15s' }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = '#f0f4ff'}
+                        onClick={() => setCollapsedFolders((prev) => ({ ...prev, [client]: !prev[client] }))}
+                        style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, padding: '8px 12px 4px', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', borderRadius: 6, transition: 'background 0.15s' }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#f3f4f6'}
                         onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                       >
-                        <div>
-                          <div style={{ fontSize: 14, fontWeight: 600, color: '#1f2937' }}>{f.name}</div>
-                          <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
-                            {f.ingredients?.length || 0} ingredients
-                            {f.baseYield ? ` · ${f.baseYield} ${f.baseYieldUnit || 'gal'} base` : ''}
-                            {f.updatedAt ? ` · ${new Date(f.updatedAt).toLocaleDateString()}` : ''}
-                          </div>
-                        </div>
-                        <span style={{ fontSize: 18, color: '#d1d5db' }}>&rsaquo;</span>
+                        <span style={{ fontSize: 10, transition: 'transform 0.2s', display: 'inline-block', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
+                        <span>📁</span> {client}
+                        <span style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>({fms.length})</span>
                       </div>
-                    ))}
-                  </div>
-                ));
+                      {!isCollapsed && fms.map((f) => (
+                        <div
+                          key={f.name}
+                          onClick={() => handleLoadFormula(f.name)}
+                          style={{ padding: '10px 12px 10px 32px', borderRadius: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'background 0.15s' }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = '#f0f4ff'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                          <div>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: '#1f2937' }}>{f.name}</div>
+                            <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
+                              {f.ingredients?.length || 0} ingredients
+                              {f.baseYield ? ` · ${f.baseYield} ${f.baseYieldUnit || 'gal'} base` : ''}
+                              {f.updatedAt ? ` · ${new Date(f.updatedAt).toLocaleDateString()}` : ''}
+                            </div>
+                          </div>
+                          <span style={{ fontSize: 18, color: '#d1d5db' }}>&rsaquo;</span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                });
               })()}
             </div>
             <div style={{ padding: '12px 24px', borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
