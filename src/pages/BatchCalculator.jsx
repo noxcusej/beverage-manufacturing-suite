@@ -48,6 +48,7 @@ export default function BatchCalculator() {
   const [loadHighlight, setLoadHighlight] = useState(0);
   const [addIngHighlight, setAddIngHighlight] = useState(0);
   const [alertsExpanded, setAlertsExpanded] = useState(false);
+  const [showOptimizeModal, setShowOptimizeModal] = useState(false);
 
   const [formulas, setFormulas] = useState(() => getFormulas());
 
@@ -184,6 +185,98 @@ export default function BatchCalculator() {
     const inventorySavings = scaledData.totalCost - scaledData.totalCostWithInventory;
     return { totalUnits, totalCases, costPerUnit, costPerCase, netCostPerUnit, netCostPerCase, inventorySavings };
   }, [batchSize, batchSizeUnit, unitSizeVal, unitSizeUnit, unitsPerCase, scaledData.totalCost, scaledData.totalCostWithInventory]);
+
+  // Optimization: find batch sizes that minimize slack
+  const optimizationData = useMemo(() => {
+    if (ingredients.length === 0 || baseYield <= 0) return { options: [], ingredientAnalysis: [] };
+
+    // Helper: compute cost/slack for a given batch size
+    function computeForBatch(bs) {
+      const sf = bs / baseYield;
+      let totalCost = 0;
+      let totalSlackCost = 0;
+      let totalNeeded = 0;
+      let totalOrdered = 0;
+      const perIng = ingredients.map((ing) => {
+        const scaledRecipe = ing.recipeAmount * sf;
+        let buyAmt = scaledRecipe;
+        if (ing.recipeUnit !== ing.buyUnit) buyAmt = convert(scaledRecipe, ing.recipeUnit, ing.buyUnit);
+        const moq = ing.moq || 1;
+        const orderQty = Math.ceil(buyAmt / moq) * moq;
+        const slack = orderQty - buyAmt;
+        const slackCost = slack * (ing.pricePerBuyUnit || 0);
+        const lineCost = orderQty * (ing.pricePerBuyUnit || 0);
+        totalCost += lineCost;
+        totalSlackCost += slackCost;
+        totalNeeded += buyAmt;
+        totalOrdered += orderQty;
+        return { name: ing.item?.name || inventory[ing.inventoryId]?.name || ing.draftName || 'Unknown', buyAmt, orderQty, slack, slackCost, lineCost, moq, unit: ing.buyUnit, slackPct: orderQty > 0 ? (slack / orderQty) * 100 : 0 };
+      });
+      // Unit economics for this batch size
+      let bsGal = bs;
+      if (batchSizeUnit === 'L') bsGal = bs / 3.78541;
+      const bsOz = bsGal * 128;
+      let uOz = unitSizeVal;
+      if (unitSizeUnit === 'ml') uOz = unitSizeVal / 29.5735;
+      if (unitSizeUnit === 'L') uOz = unitSizeVal * 33.814;
+      const units = uOz > 0 ? Math.floor(bsOz / uOz) : 0;
+      const cases = unitsPerCase > 0 ? Math.ceil(units / unitsPerCase) : 0;
+      const costPerUnit = units > 0 ? totalCost / units : 0;
+      const costPerCase = costPerUnit * unitsPerCase;
+      const efficiency = totalOrdered > 0 ? ((totalNeeded / totalOrdered) * 100) : 100;
+      return { batchSize: bs, scaleFactor: sf, totalCost, totalSlackCost, efficiency, units, cases, costPerUnit, costPerCase, perIng };
+    }
+
+    // Scan a range: 80%-120% of current in fine increments, plus MOQ-aligned batch sizes
+    const candidates = new Set();
+    const lo = Math.max(baseYield * 0.5, batchSize * 0.8);
+    const hi = batchSize * 1.2;
+    const step = Math.max(1, Math.round((hi - lo) / 200));
+    for (let bs = lo; bs <= hi; bs += step) candidates.add(Math.round(bs));
+    candidates.add(batchSize); // always include current
+
+    // Also add MOQ-aligned batch sizes for each ingredient
+    ingredients.forEach((ing) => {
+      const moq = ing.moq || 1;
+      if (moq <= 1 || ing.recipeAmount <= 0) return;
+      // Find batch sizes where this ingredient's order lands exactly on MOQ multiple
+      let buyPerBase = ing.recipeAmount;
+      if (ing.recipeUnit !== ing.buyUnit) buyPerBase = convert(ing.recipeAmount, ing.recipeUnit, ing.buyUnit);
+      const buyPerGal = buyPerBase / baseYield;
+      if (buyPerGal <= 0) return;
+      for (let m = 1; m <= 50; m++) {
+        const perfectBs = (moq * m) / buyPerGal;
+        if (perfectBs >= lo && perfectBs <= hi) candidates.add(Math.round(perfectBs));
+      }
+    });
+
+    const results = [...candidates].map(computeForBatch).sort((a, b) => a.totalSlackCost - b.totalSlackCost);
+
+    // Pick top options: best, current, and a few interesting alternatives
+    const current = results.find((r) => r.batchSize === batchSize) || computeForBatch(batchSize);
+    const best = results[0];
+    // Find options at different batch sizes for variety
+    const seen = new Set([best.batchSize, current.batchSize]);
+    const others = results.filter((r) => {
+      if (seen.has(r.batchSize)) return false;
+      // Only include if meaningfully different
+      if (Math.abs(r.batchSize - best.batchSize) < step * 3 && r.batchSize !== current.batchSize) return false;
+      seen.add(r.batchSize);
+      return true;
+    }).slice(0, 4);
+
+    const options = [
+      { ...best, label: 'Optimal', isBest: true },
+      { ...current, label: 'Current', isCurrent: true },
+      ...others.map((o) => ({ ...o, label: `${o.batchSize} ${batchSizeUnit}` })),
+    ].filter((o, i, arr) => arr.findIndex((x) => x.batchSize === o.batchSize) === i)
+      .sort((a, b) => a.batchSize - b.batchSize);
+
+    // Ingredient analysis for current batch
+    const ingredientAnalysis = current.perIng;
+
+    return { options, ingredientAnalysis, current, best };
+  }, [ingredients, inventory, baseYield, batchSize, batchSizeUnit, unitSizeVal, unitSizeUnit, unitsPerCase]);
 
   function updateIngredient(index, field, value) {
     setIngredients((prev) => prev.map((ing, i) => {
@@ -522,6 +615,7 @@ export default function BatchCalculator() {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button className="btn" onClick={handleNewFormula}>New Formula</button>
+          <button className="btn" onClick={() => setShowOptimizeModal(true)} style={{ background: '#fef3c7', borderColor: '#fbbf24', color: '#92400e' }}>⚡ Optimize</button>
           <button className="btn" onClick={exportToExcel}>Export Excel</button>
           <button className="btn btn-primary" onClick={handleSaveFormula}>Save Recipe</button>
         </div>
@@ -1149,6 +1243,192 @@ export default function BatchCalculator() {
             <div style={{ padding: '12px 24px', borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 12, color: '#9ca3af' }}>{formulas.length} formula{formulas.length !== 1 ? 's' : ''} saved</span>
               <button className="btn btn-small" onClick={() => { setShowLoadModal(false); setLoadSearch(''); }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Optimization Analytics Modal */}
+      {showOptimizeModal && optimizationData.options.length > 0 && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => setShowOptimizeModal(false)}>
+          <div style={{ background: 'white', borderRadius: 12, width: 820, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }} onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid #e5e7eb' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>⚡ Run Size Optimization</h3>
+                  <p style={{ fontSize: 13, color: '#6b7280', margin: '4px 0 0' }}>Minimize ingredient slack by adjusting batch size to align with MOQ boundaries</p>
+                </div>
+                <button onClick={() => setShowOptimizeModal(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#9ca3af', padding: '4px 8px' }}>&times;</button>
+              </div>
+              {/* Savings callout */}
+              {optimizationData.best && optimizationData.current && optimizationData.best.batchSize !== batchSize && (
+                <div style={{ marginTop: 12, padding: '10px 14px', background: '#d1fae5', border: '1px solid #86efac', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#065f46' }}>
+                      Save ${(optimizationData.current.totalSlackCost - optimizationData.best.totalSlackCost).toFixed(2)} in slack waste
+                    </div>
+                    <div style={{ fontSize: 12, color: '#047857' }}>
+                      Adjust from {batchSize} → {optimizationData.best.batchSize} {batchSizeUnit} ({optimizationData.best.efficiency.toFixed(1)}% efficiency)
+                    </div>
+                  </div>
+                  <button
+                    className="btn btn-small btn-primary"
+                    onClick={() => { setBatchSize(optimizationData.best.batchSize); setShowOptimizeModal(false); showToast(`Batch size set to ${optimizationData.best.batchSize} ${batchSizeUnit}`); }}
+                  >Apply Optimal</button>
+                </div>
+              )}
+            </div>
+
+            <div style={{ overflowY: 'auto', flex: 1, padding: '16px 24px' }}>
+              {/* Options comparison table */}
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: '#374151' }}>Batch Size Options</div>
+                <table style={{ width: '100%', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: '#f9fafb' }}>
+                      <th style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, fontSize: 11, color: '#6b7280', textTransform: 'uppercase' }}>Batch Size</th>
+                      <th style={{ textAlign: 'right', padding: '8px 10px', fontWeight: 600, fontSize: 11, color: '#6b7280', textTransform: 'uppercase' }}>Scale</th>
+                      <th style={{ textAlign: 'right', padding: '8px 10px', fontWeight: 600, fontSize: 11, color: '#6b7280', textTransform: 'uppercase' }}>Cases</th>
+                      <th style={{ textAlign: 'right', padding: '8px 10px', fontWeight: 600, fontSize: 11, color: '#6b7280', textTransform: 'uppercase' }}>Total Cost</th>
+                      <th style={{ textAlign: 'right', padding: '8px 10px', fontWeight: 600, fontSize: 11, color: '#6b7280', textTransform: 'uppercase' }}>Slack Cost</th>
+                      <th style={{ textAlign: 'right', padding: '8px 10px', fontWeight: 600, fontSize: 11, color: '#6b7280', textTransform: 'uppercase' }}>Efficiency</th>
+                      <th style={{ textAlign: 'right', padding: '8px 10px', fontWeight: 600, fontSize: 11, color: '#6b7280', textTransform: 'uppercase' }}>Cost/Case</th>
+                      <th style={{ padding: '8px 10px' }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {optimizationData.options.map((opt) => (
+                      <tr key={opt.batchSize} style={{ borderBottom: '1px solid #f1f5f9', background: opt.isBest ? '#f0fdf4' : opt.isCurrent ? '#eff6ff' : 'transparent' }}>
+                        <td style={{ padding: '10px', fontWeight: 600 }}>
+                          {opt.batchSize} {batchSizeUnit}
+                          {opt.isBest && <span style={{ marginLeft: 6, fontSize: 10, background: '#10b981', color: 'white', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>BEST</span>}
+                          {opt.isCurrent && <span style={{ marginLeft: 6, fontSize: 10, background: '#3b82f6', color: 'white', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>CURRENT</span>}
+                        </td>
+                        <td style={{ textAlign: 'right', padding: '10px' }}>{opt.scaleFactor.toFixed(2)}x</td>
+                        <td style={{ textAlign: 'right', padding: '10px' }}>{opt.cases.toLocaleString()}</td>
+                        <td style={{ textAlign: 'right', padding: '10px', fontWeight: 600 }}>${opt.totalCost.toFixed(2)}</td>
+                        <td style={{ textAlign: 'right', padding: '10px', color: opt.totalSlackCost < (optimizationData.current?.totalSlackCost || 0) ? '#10b981' : '#ef4444', fontWeight: 600 }}>
+                          ${opt.totalSlackCost.toFixed(2)}
+                        </td>
+                        <td style={{ textAlign: 'right', padding: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+                            <div style={{ width: 50, height: 6, background: '#e5e7eb', borderRadius: 3, overflow: 'hidden' }}>
+                              <div style={{ height: '100%', background: opt.efficiency > 95 ? '#10b981' : opt.efficiency > 85 ? '#f59e0b' : '#ef4444', width: `${opt.efficiency}%` }} />
+                            </div>
+                            <span style={{ fontSize: 12 }}>{opt.efficiency.toFixed(1)}%</span>
+                          </div>
+                        </td>
+                        <td style={{ textAlign: 'right', padding: '10px', fontWeight: 600 }}>${opt.costPerCase.toFixed(2)}</td>
+                        <td style={{ padding: '10px' }}>
+                          {!opt.isCurrent && (
+                            <button
+                              className="btn btn-small"
+                              onClick={() => { setBatchSize(opt.batchSize); setShowOptimizeModal(false); showToast(`Batch size set to ${opt.batchSize} ${batchSizeUnit}`); }}
+                              style={{ fontSize: 11, padding: '3px 8px' }}
+                            >Apply</button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Per-ingredient analysis */}
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: '#374151' }}>Ingredient Slack Analysis (Current: {batchSize} {batchSizeUnit})</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {optimizationData.ingredientAnalysis.map((ing, idx) => (
+                    <div key={idx} style={{ padding: '12px 14px', background: '#f9fafb', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <div>
+                          <span style={{ fontWeight: 600, fontSize: 14 }}>{ing.name}</span>
+                          <span style={{ fontSize: 12, color: '#9ca3af', marginLeft: 8 }}>MOQ: {ing.moq} {ing.unit}</span>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ fontWeight: 700, color: ing.slackCost > 0 ? '#ef4444' : '#10b981', fontSize: 14 }}>
+                            {ing.slackCost > 0 ? `$${ing.slackCost.toFixed(2)} waste` : 'No waste'}
+                          </span>
+                        </div>
+                      </div>
+                      {/* Visual bars */}
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 6 }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#6b7280', marginBottom: 3 }}>
+                            <span>Needed: {ing.buyAmt.toFixed(2)} {ing.unit}</span>
+                            <span>Ordered: {ing.orderQty.toFixed(2)} {ing.unit}</span>
+                          </div>
+                          <div style={{ height: 20, background: '#e5e7eb', borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
+                            {/* Needed portion */}
+                            <div style={{
+                              position: 'absolute', left: 0, top: 0, bottom: 0,
+                              width: `${ing.orderQty > 0 ? (ing.buyAmt / ing.orderQty) * 100 : 100}%`,
+                              background: '#7062E0', borderRadius: '4px 0 0 4px',
+                              transition: 'width 0.3s',
+                            }} />
+                            {/* Slack portion */}
+                            {ing.slack > 0 && (
+                              <div style={{
+                                position: 'absolute', top: 0, bottom: 0,
+                                left: `${(ing.buyAmt / ing.orderQty) * 100}%`,
+                                right: 0,
+                                background: 'repeating-linear-gradient(45deg, #fca5a5, #fca5a5 4px, #fecaca 4px, #fecaca 8px)',
+                                borderRadius: '0 4px 4px 0',
+                              }} />
+                            )}
+                            {/* MOQ tick marks */}
+                            {ing.orderQty > 0 && Array.from({ length: Math.floor(ing.orderQty / ing.moq) }, (_, i) => {
+                              const pos = ((i + 1) * ing.moq / ing.orderQty) * 100;
+                              return pos < 100 ? (
+                                <div key={i} style={{ position: 'absolute', left: `${pos}%`, top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,0.5)' }} />
+                              ) : null;
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 16, fontSize: 11, color: '#6b7280' }}>
+                        <span>Slack: <strong style={{ color: ing.slack > 0 ? '#ef4444' : '#10b981' }}>{ing.slack.toFixed(2)} {ing.unit} ({ing.slackPct.toFixed(1)}%)</strong></span>
+                        <span>Line cost: <strong>${ing.lineCost.toFixed(2)}</strong></span>
+                        <span>Efficiency: <strong style={{ color: (100 - ing.slackPct) > 90 ? '#10b981' : '#f59e0b' }}>{(100 - ing.slackPct).toFixed(1)}%</strong></span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Summary stats */}
+              {optimizationData.current && (
+                <div style={{ marginTop: 20, padding: '14px 16px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e5e7eb', display: 'flex', gap: 24 }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.3 }}>Total Slack Cost</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: '#ef4444' }}>${optimizationData.current.totalSlackCost.toFixed(2)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.3 }}>Buying Efficiency</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: optimizationData.current.efficiency > 90 ? '#10b981' : '#f59e0b' }}>{optimizationData.current.efficiency.toFixed(1)}%</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.3 }}>Potential Savings</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: '#10b981' }}>
+                      ${(optimizationData.current.totalSlackCost - (optimizationData.best?.totalSlackCost || 0)).toFixed(2)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.3 }}>Worst Offender</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#1f2937' }}>
+                      {optimizationData.ingredientAnalysis.length > 0
+                        ? optimizationData.ingredientAnalysis.sort((a, b) => b.slackCost - a.slackCost)[0]?.name
+                        : '—'}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: '12px 24px', borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button className="btn btn-small" onClick={() => setShowOptimizeModal(false)}>Close</button>
             </div>
           </div>
         </div>
