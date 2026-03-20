@@ -369,7 +369,7 @@ export default function BatchCalculator() {
     formulas.forEach((f) => { collapsed[f.client || 'Uncategorized'] = true; });
     setCollapsedFolders(collapsed);
     setLoadSearch('');
-    openLoadModal();
+    setShowLoadModal(true);
   }
 
   function showToast(message, type = 'success') {
