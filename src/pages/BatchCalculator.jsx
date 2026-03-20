@@ -45,6 +45,9 @@ export default function BatchCalculator() {
   const [addIngSearch, setAddIngSearch] = useState('');
   const [toast, setToast] = useState(null);
   const [collapsedFolders, setCollapsedFolders] = useState({});
+  const [loadHighlight, setLoadHighlight] = useState(0);
+  const [addIngHighlight, setAddIngHighlight] = useState(0);
+  const [alertsExpanded, setAlertsExpanded] = useState(false);
 
   const [formulas, setFormulas] = useState(() => getFormulas());
 
@@ -267,6 +270,15 @@ export default function BatchCalculator() {
     showToast('Batch saved! Context will persist across all calculator pages.');
   }
 
+  function openLoadModal() {
+    // Default all folders to collapsed
+    const collapsed = {};
+    formulas.forEach((f) => { collapsed[f.client || 'Uncategorized'] = true; });
+    setCollapsedFolders(collapsed);
+    setLoadSearch('');
+    openLoadModal();
+  }
+
   function showToast(message, type = 'success') {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
@@ -298,7 +310,7 @@ export default function BatchCalculator() {
   useKeyboardShortcuts([
     { key: 'n', ctrl: true, handler: () => handleNewFormula(), allowInInput: true },
     { key: 's', ctrl: true, handler: () => handleSaveFormula(), allowInInput: true },
-    { key: 'o', ctrl: true, handler: () => setShowLoadModal(true), allowInInput: true },
+    { key: 'o', ctrl: true, handler: () => openLoadModal(), allowInInput: true },
     { key: 'e', ctrl: true, handler: () => exportToExcel(), allowInInput: true },
     { key: 'i', ctrl: true, handler: () => openAddIngredientModal(), allowInInput: true },
     { key: 'd', ctrl: true, handler: () => addDraftIngredient(), allowInInput: true },
@@ -455,6 +467,9 @@ export default function BatchCalculator() {
       return;
     }
 
+    // Don't capture arrows when a modal is open
+    if (showLoadModal || showAddIngModal) return;
+
     const arrows = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
     const dir = arrows[e.key];
     if (!dir) return;
@@ -544,7 +559,7 @@ export default function BatchCalculator() {
             <div className="section-header">
               <div className="section-title">Formula Architecture</div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button className="btn btn-small" onClick={() => setShowLoadModal(true)}>💥 Load Formula</button>
+                <button className="btn btn-small" onClick={() => openLoadModal()}>💥 Load Formula</button>
                 <button className="btn btn-small" onClick={handleSaveBatch}>Push to Production</button>
               </div>
             </div>
@@ -596,6 +611,13 @@ export default function BatchCalculator() {
                     <button className={unitSystem === 'metric' ? 'active' : ''} onClick={() => setUnitSystem('metric')}>Metric</button>
                   </div>
                 </div>
+              </div>
+              {/* Calculated output row */}
+              <div style={{ display: 'flex', gap: 16, marginTop: 12, padding: '10px 14px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+                <div style={{ fontSize: 12, color: '#6b7280' }}>Total Units: <span style={{ fontWeight: 700, color: '#1f2937' }}>{unitEcon.totalUnits.toLocaleString()}</span></div>
+                <div style={{ fontSize: 12, color: '#6b7280' }}>Total Cases: <span style={{ fontWeight: 700, color: '#1f2937' }}>{unitEcon.totalCases.toLocaleString()}</span></div>
+                <div style={{ fontSize: 12, color: '#6b7280' }}>Scale: <span style={{ fontWeight: 700, color: '#1f2937' }}>{scaleFactor.toFixed(2)}x</span></div>
+                <div style={{ fontSize: 12, color: '#6b7280' }}>Cost/Case: <span style={{ fontWeight: 700, color: '#10b981' }}>${unitEcon.netCostPerCase.toFixed(2)}</span></div>
               </div>
             </div>
           </div>
@@ -955,78 +977,53 @@ export default function BatchCalculator() {
             </div>
           </div>
 
-          {/* Tank Allocation */}
-          <div className="section" style={{ marginBottom: 20 }}>
-            <div className="section-header">
-              <div className="section-title">Tank Allocation</div>
-            </div>
-            <div className="section-body">
-              {tankAllocation.batchGal === 0 ? (
-                <div style={{ color: '#9ca3af', textAlign: 'center', padding: 20 }}>
-                  Enter batch size to see tank allocation
-                </div>
-              ) : (
-                <>
-                  <div
-                    style={{
-                      marginBottom: 16, padding: 12,
-                      background: tankAllocation.canFit ? '#d1fae5' : '#fee2e2',
-                      border: `1px solid ${tankAllocation.canFit ? '#86efac' : '#fca5a5'}`,
-                      borderRadius: 6,
-                    }}
-                  >
-                    <div style={{ fontWeight: 600, color: tankAllocation.canFit ? '#065f46' : '#991b1b', marginBottom: 4 }}>
-                      {tankAllocation.canFit ? 'Batch fits in available tanks' : 'Batch exceeds tank capacity'}
-                    </div>
-                    <div style={{ fontSize: 12, color: tankAllocation.canFit ? '#047857' : '#dc2626' }}>
-                      {tankAllocation.batchGal.toFixed(1)} gal batch &bull; {tankAllocation.alloc.length} tank{tankAllocation.alloc.length !== 1 ? 's' : ''} needed
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {tankAllocation.alloc.map((tank) => (
-                      <div key={tank.id} style={{ padding: 10, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 6 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                          <span style={{ fontWeight: 600 }}>{tank.name}</span>
-                          <span style={{ fontSize: 12, color: '#6b7280' }}>{tank.allocated.toFixed(1)} / {tank.capacity} {tank.unit}</span>
-                        </div>
-                        <div style={{ height: 6, background: '#e5e7eb', borderRadius: 3, overflow: 'hidden' }}>
-                          <div style={{ height: '100%', background: '#3b82f6', width: `${tank.utilization}%` }} />
-                        </div>
-                        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>{tank.utilization}% full</div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-
           {/* Inventory Alerts */}
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius)', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
-            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', background: 'var(--surface-alt)' }}>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>Inventory Alerts</div>
-            </div>
-            <div style={{ padding: 14 }}>
-              {scaledData.rows.filter((r) => !r.stockOk).length === 0 ? (
-                <div style={{ fontSize: 13, color: '#10b981', padding: '8px 0' }}>✓ All ingredients covered by current inventory</div>
-              ) : (
-                scaledData.rows
-                  .filter((r) => !r.stockOk)
-                  .map((r, idx) => (
-                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #F1F5F9', fontSize: 13 }}>
-                      <span style={{ color: r.stockPartial ? '#F59E0B' : '#EF4444', fontSize: 16 }}>{r.stockPartial ? '⚠' : '✕'}</span>
-                      <div>
-                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{r.item?.name || r.draftName}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                          Need {r.buyUnitAmount.toFixed(2)} {r.buyUnit} — have {r.onHandBuyUnits.toFixed(2)} — order {r.netNeeded.toFixed(2)} {r.buyUnit}
+          {(() => {
+            const needsOrder = scaledData.rows.filter((r) => !r.stockOk);
+            const partialCount = needsOrder.filter((r) => r.stockPartial).length;
+            const orderCount = needsOrder.length - partialCount;
+            return (
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius)', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+                <div
+                  onClick={() => setAlertsExpanded((prev) => !prev)}
+                  style={{ padding: '10px 14px', borderBottom: alertsExpanded ? '1px solid var(--border)' : 'none', background: 'var(--surface-alt)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', userSelect: 'none' }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>Inventory Alerts</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {needsOrder.length === 0 ? (
+                      <span style={{ fontSize: 11, color: '#10b981', fontWeight: 600 }}>✓ All covered</span>
+                    ) : (
+                      <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 600 }}>
+                        {needsOrder.length} alert{needsOrder.length !== 1 ? 's' : ''}
+                        {partialCount > 0 && ` · ${partialCount} partial`}
+                      </span>
+                    )}
+                    <span style={{ fontSize: 10, transition: 'transform 0.2s', display: 'inline-block', transform: alertsExpanded ? 'rotate(0deg)' : 'rotate(-90deg)', color: '#9ca3af' }}>▼</span>
+                  </div>
+                </div>
+                {alertsExpanded && (
+                  <div style={{ padding: 14 }}>
+                    {needsOrder.length === 0 ? (
+                      <div style={{ fontSize: 13, color: '#10b981', padding: '8px 0' }}>✓ All ingredients covered by current inventory</div>
+                    ) : (
+                      needsOrder.map((r, idx) => (
+                        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #F1F5F9', fontSize: 13 }}>
+                          <span style={{ color: r.stockPartial ? '#F59E0B' : '#EF4444', fontSize: 16 }}>{r.stockPartial ? '⚠' : '✕'}</span>
+                          <div>
+                            <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{r.item?.name || r.draftName}</div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                              Need {r.buyUnitAmount.toFixed(2)} {r.buyUnit} — have {r.onHandBuyUnits.toFixed(2)} — order {r.netNeeded.toFixed(2)} {r.buyUnit}
+                            </div>
+                            <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 600 }}>Est. ${r.netLineCost.toFixed(2)}</div>
+                          </div>
                         </div>
-                        <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 600 }}>Est. ${r.netLineCost.toFixed(2)}</div>
-                      </div>
-                    </div>
-                  ))
-              )}
-            </div>
-          </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -1071,7 +1068,22 @@ export default function BatchCalculator() {
                 type="text"
                 placeholder="Search formulas..."
                 value={loadSearch}
-                onChange={(e) => setLoadSearch(e.target.value)}
+                onChange={(e) => { setLoadSearch(e.target.value); setLoadHighlight(0); }}
+                onKeyDown={(e) => {
+                  // Build flat list of visible formulas for keyboard nav
+                  const grouped = {};
+                  formulas
+                    .filter((f) => !loadSearch || f.name.toLowerCase().includes(loadSearch.toLowerCase()) || (f.client || '').toLowerCase().includes(loadSearch.toLowerCase()))
+                    .forEach((f) => { const c = f.client || 'Uncategorized'; if (!grouped[c]) grouped[c] = []; grouped[c].push(f); });
+                  const visible = [];
+                  Object.entries(grouped).forEach(([client, fms]) => {
+                    if (!collapsedFolders[client] || loadSearch) fms.forEach((f) => visible.push(f));
+                  });
+                  if (e.key === 'ArrowDown') { e.preventDefault(); setLoadHighlight((h) => Math.min(h + 1, visible.length - 1)); }
+                  else if (e.key === 'ArrowUp') { e.preventDefault(); setLoadHighlight((h) => Math.max(h - 1, 0)); }
+                  else if (e.key === 'Enter' && visible[loadHighlight]) { e.preventDefault(); handleLoadFormula(visible[loadHighlight].name); }
+                  else if (e.key === 'Escape') { setShowLoadModal(false); setLoadSearch(''); }
+                }}
                 autoFocus
                 style={{ width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14 }}
               />
@@ -1090,8 +1102,11 @@ export default function BatchCalculator() {
                 if (entries.length === 0) {
                   return <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No formulas found</div>;
                 }
+                let flatIdx = 0;
                 return entries.map(([client, fms]) => {
                   const isCollapsed = collapsedFolders[client] && !loadSearch;
+                  const startIdx = flatIdx;
+                  if (!isCollapsed) flatIdx += fms.length;
                   return (
                     <div key={client} style={{ marginBottom: 4 }}>
                       <div
@@ -1104,25 +1119,28 @@ export default function BatchCalculator() {
                         <span>📁</span> {client}
                         <span style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>({fms.length})</span>
                       </div>
-                      {!isCollapsed && fms.map((f) => (
-                        <div
-                          key={f.name}
-                          onClick={() => handleLoadFormula(f.name)}
-                          style={{ padding: '10px 12px 10px 32px', borderRadius: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'background 0.15s' }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = '#f0f4ff'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                        >
-                          <div>
-                            <div style={{ fontSize: 14, fontWeight: 600, color: '#1f2937' }}>{f.name}</div>
-                            <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
-                              {f.ingredients?.length || 0} ingredients
-                              {f.baseYield ? ` · ${f.baseYield} ${f.baseYieldUnit || 'gal'} base` : ''}
-                              {f.updatedAt ? ` · ${new Date(f.updatedAt).toLocaleDateString()}` : ''}
+                      {!isCollapsed && fms.map((f, fi) => {
+                        const thisIdx = startIdx + fi;
+                        const isHighlighted = thisIdx === loadHighlight;
+                        return (
+                          <div
+                            key={f.name}
+                            onClick={() => handleLoadFormula(f.name)}
+                            onMouseEnter={() => setLoadHighlight(thisIdx)}
+                            style={{ padding: '10px 12px 10px 32px', borderRadius: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'background 0.15s', background: isHighlighted ? '#f0f4ff' : 'transparent' }}
+                          >
+                            <div>
+                              <div style={{ fontSize: 14, fontWeight: 600, color: '#1f2937' }}>{f.name}</div>
+                              <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
+                                {f.ingredients?.length || 0} ingredients
+                                {f.baseYield ? ` · ${f.baseYield} ${f.baseYieldUnit || 'gal'} base` : ''}
+                                {f.updatedAt ? ` · ${new Date(f.updatedAt).toLocaleDateString()}` : ''}
+                              </div>
                             </div>
+                            <span style={{ fontSize: 18, color: isHighlighted ? '#7062E0' : '#d1d5db' }}>&rsaquo;</span>
                           </div>
-                          <span style={{ fontSize: 18, color: '#d1d5db' }}>&rsaquo;</span>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   );
                 });
@@ -1155,7 +1173,13 @@ export default function BatchCalculator() {
                   type="text"
                   placeholder="Search ingredients..."
                   value={addIngSearch}
-                  onChange={(e) => setAddIngSearch(e.target.value)}
+                  onChange={(e) => { setAddIngSearch(e.target.value); setAddIngHighlight(0); }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowDown') { e.preventDefault(); setAddIngHighlight((h) => Math.min(h + 1, filtered.length - 1)); }
+                    else if (e.key === 'ArrowUp') { e.preventDefault(); setAddIngHighlight((h) => Math.max(h - 1, 0)); }
+                    else if (e.key === 'Enter' && filtered[addIngHighlight]) { e.preventDefault(); addIngredientFromInventory(filtered[addIngHighlight]); }
+                    else if (e.key === 'Escape') { setShowAddIngModal(false); setAddIngSearch(''); }
+                  }}
                   autoFocus
                   style={{ width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14 }}
                 />
@@ -1166,15 +1190,15 @@ export default function BatchCalculator() {
                     {available.length === 0 ? 'All inventory items are in the formula' : 'No matches found'}
                   </div>
                 ) : (
-                  filtered.map((item) => {
+                  filtered.map((item, fi) => {
                     const tier = item.priceTiers?.[0];
+                    const isHighlighted = fi === addIngHighlight;
                     return (
                       <div
                         key={item.id}
                         onClick={() => addIngredientFromInventory(item)}
-                        style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'background 0.15s' }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = '#f0f4ff'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        onMouseEnter={() => setAddIngHighlight(fi)}
+                        style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'background 0.15s', background: isHighlighted ? '#f0f4ff' : 'transparent' }}
                       >
                         <div>
                           <div style={{ fontSize: 14, fontWeight: 600, color: '#1f2937' }}>{item.name}</div>
@@ -1183,7 +1207,7 @@ export default function BatchCalculator() {
                             {tier ? ` · $${tier.price}/${tier.buyUnit}` : ''}
                           </div>
                         </div>
-                        <span style={{ fontSize: 13, color: '#7062E0', fontWeight: 600 }}>+ Add</span>
+                        <span style={{ fontSize: 13, color: isHighlighted ? '#7062E0' : '#d1d5db', fontWeight: 600 }}>+ Add</span>
                       </div>
                     );
                   })
