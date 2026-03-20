@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { getInventory, saveInventory, addInventoryItem, getVendors, getTankConfig, getCurrentBatch, saveBatch, getFormulas, saveFormula as saveFormulaToStore } from '../data/store';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import * as XLSX from 'xlsx';
@@ -39,6 +39,9 @@ export default function BatchCalculator() {
   const [unitsPerCase, setUnitsPerCase] = useState(24);
   const [ingredients, setIngredients] = useState([]);
   const [showUnitCalc, setShowUnitCalc] = useState(false);
+  const [showLoadModal, setShowLoadModal] = useState(false);
+  const [loadSearch, setLoadSearch] = useState('');
+  const [toast, setToast] = useState(null);
 
   const [formulas, setFormulas] = useState(() => getFormulas());
 
@@ -197,7 +200,7 @@ export default function BatchCalculator() {
     const used = new Set(ingredients.map((i) => i.inventoryId));
     const available = invItems.filter((i) => !used.has(i.id));
     if (available.length === 0) {
-      alert('All inventory items are already in the formula');
+      showToast('All inventory items are already in the formula', 'warning');
       return;
     }
     const item = available[0];
@@ -245,7 +248,7 @@ export default function BatchCalculator() {
       batchSize, batchSizeUnit,
       ingredients,
     });
-    alert('Formula saved!');
+    showToast('Formula saved!');
   }
 
   function handleSaveBatch() {
@@ -254,7 +257,12 @@ export default function BatchCalculator() {
       totalUnits: unitEcon.totalUnits,
       ingredients: JSON.parse(JSON.stringify(ingredients)),
     });
-    alert('Batch saved! This batch context will persist across all calculator pages.');
+    showToast('Batch saved! Context will persist across all calculator pages.');
+  }
+
+  function showToast(message, type = 'success') {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
   }
 
   function handleLoadFormula(name) {
@@ -266,6 +274,9 @@ export default function BatchCalculator() {
     if (formula.batchSize) setBatchSize(formula.batchSize);
     if (formula.batchSizeUnit) setBatchSizeUnit(formula.batchSizeUnit);
     if (formula.ingredients) setIngredients(formula.ingredients);
+    setShowLoadModal(false);
+    setLoadSearch('');
+    showToast(`Loaded "${formula.name}"`);
   }
 
   function handleNewFormula() {
@@ -277,12 +288,10 @@ export default function BatchCalculator() {
     setIngredients([]);
   }
 
-  const formulaSelectRef = useRef(null);
-
   useKeyboardShortcuts([
     { key: 'n', ctrl: true, handler: () => handleNewFormula(), allowInInput: true },
     { key: 's', ctrl: true, handler: () => handleSaveFormula(), allowInInput: true },
-    { key: 'o', ctrl: true, handler: () => { if (formulaSelectRef.current) formulaSelectRef.current.focus(); }, allowInInput: true },
+    { key: 'o', ctrl: true, handler: () => setShowLoadModal(true), allowInInput: true },
     { key: 'e', ctrl: true, handler: () => exportToExcel(), allowInInput: true },
     { key: 'i', ctrl: true, handler: () => addIngredient(), allowInInput: true },
     { key: 'd', ctrl: true, handler: () => addDraftIngredient(), allowInInput: true },
@@ -477,33 +486,7 @@ export default function BatchCalculator() {
             <div className="section-header">
               <div className="section-title">Formula Architecture</div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {formulas.length > 0 && (
-                  <select
-                    ref={formulaSelectRef}
-                    value=""
-                    onChange={(e) => {
-                      if (e.target.value) handleLoadFormula(e.target.value);
-                    }}
-                    style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)' }}
-                  >
-                    <option value="">💥 Load Formula...</option>
-                    {(() => {
-                      const grouped = {};
-                      formulas.forEach((f) => {
-                        const client = f.client || 'Uncategorized';
-                        if (!grouped[client]) grouped[client] = [];
-                        grouped[client].push(f);
-                      });
-                      return Object.entries(grouped).map(([client, fms]) => (
-                        <optgroup key={client} label={`📁 ${client}`}>
-                          {fms.map((f) => (
-                            <option key={f.name} value={f.name}>{f.name}</option>
-                          ))}
-                        </optgroup>
-                      ));
-                    })()}
-                  </select>
-                )}
+                <button className="btn btn-small" onClick={() => setShowLoadModal(true)}>💥 Load Formula</button>
                 <button className="btn btn-small" onClick={handleSaveBatch}>Push to Production</button>
               </div>
             </div>
@@ -996,6 +979,90 @@ export default function BatchCalculator() {
           </p>
         </div>
       </div>
+
+      {/* Load Formula Modal */}
+      {showLoadModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => { setShowLoadModal(false); setLoadSearch(''); }}>
+          <div style={{ background: 'white', borderRadius: 12, width: 480, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid #e5e7eb' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>💥 Load Formula</h3>
+                <button onClick={() => { setShowLoadModal(false); setLoadSearch(''); }} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#9ca3af', padding: '4px 8px' }}>&times;</button>
+              </div>
+              <input
+                type="text"
+                placeholder="Search formulas..."
+                value={loadSearch}
+                onChange={(e) => setLoadSearch(e.target.value)}
+                autoFocus
+                style={{ width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 14 }}
+              />
+            </div>
+            <div style={{ overflowY: 'auto', padding: '8px 12px', flex: 1 }}>
+              {(() => {
+                const grouped = {};
+                formulas
+                  .filter((f) => !loadSearch || f.name.toLowerCase().includes(loadSearch.toLowerCase()) || (f.client || '').toLowerCase().includes(loadSearch.toLowerCase()))
+                  .forEach((f) => {
+                    const client = f.client || 'Uncategorized';
+                    if (!grouped[client]) grouped[client] = [];
+                    grouped[client].push(f);
+                  });
+                const entries = Object.entries(grouped);
+                if (entries.length === 0) {
+                  return <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>No formulas found</div>;
+                }
+                return entries.map(([client, fms]) => (
+                  <div key={client} style={{ marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, padding: '8px 12px 4px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>📁</span> {client}
+                      <span style={{ fontSize: 10, color: '#9ca3af', fontWeight: 500 }}>({fms.length})</span>
+                    </div>
+                    {fms.map((f) => (
+                      <div
+                        key={f.name}
+                        onClick={() => handleLoadFormula(f.name)}
+                        style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'background 0.15s' }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#f0f4ff'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: '#1f2937' }}>{f.name}</div>
+                          <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
+                            {f.ingredients?.length || 0} ingredients
+                            {f.baseYield ? ` · ${f.baseYield} ${f.baseYieldUnit || 'gal'} base` : ''}
+                            {f.updatedAt ? ` · ${new Date(f.updatedAt).toLocaleDateString()}` : ''}
+                          </div>
+                        </div>
+                        <span style={{ fontSize: 18, color: '#d1d5db' }}>&rsaquo;</span>
+                      </div>
+                    ))}
+                  </div>
+                ));
+              })()}
+            </div>
+            <div style={{ padding: '12px 24px', borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 12, color: '#9ca3af' }}>{formulas.length} formula{formulas.length !== 1 ? 's' : ''} saved</span>
+              <button className="btn btn-small" onClick={() => { setShowLoadModal(false); setLoadSearch(''); }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toast && (
+        <div style={{
+          position: 'fixed', bottom: 24, right: 24, zIndex: 1100,
+          padding: '12px 20px', borderRadius: 10,
+          background: toast.type === 'warning' ? '#fef3c7' : toast.type === 'error' ? '#fee2e2' : '#d1fae5',
+          color: toast.type === 'warning' ? '#92400e' : toast.type === 'error' ? '#991b1b' : '#065f46',
+          fontWeight: 600, fontSize: 14,
+          boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+          animation: 'fadeInUp 0.3s ease',
+        }}>
+          {toast.type === 'warning' ? '⚠️ ' : toast.type === 'error' ? '❌ ' : '✅ '}{toast.message}
+        </div>
+      )}
     </div>
   );
 }
