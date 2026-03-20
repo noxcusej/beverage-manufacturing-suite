@@ -605,6 +605,144 @@ export default function BatchCalculator() {
     }
   }
 
+  // Paste from spreadsheet: parse TSV and populate ingredient rows
+  function handleTablePaste(e) {
+    const text = e.clipboardData?.getData('text/plain');
+    if (!text || !text.includes('\t')) return; // Not a spreadsheet paste
+
+    e.preventDefault();
+
+    // Parse TSV rows
+    const pastedRows = text.trim().split('\n').map((line) => line.split('\t').map((c) => c.trim()));
+    if (pastedRows.length === 0) return;
+
+    // Figure out starting column from the focused cell
+    const startCol = parseInt(e.target?.dataset?.col ?? '0');
+    const startRow = parseInt(e.target?.dataset?.row ?? ingredients.length);
+
+    // Column mapping: col index → field
+    // 0: name, 1: type, 2: recipeAmount, 3: recipeUnit, 4: SG, 5: buyUnit, 6: price, 7: moq, 8: onHand, 9: invUnit
+    const colFields = ['name', 'type', 'recipeAmount', 'recipeUnit', 'specificGravity', 'buyUnit', 'pricePerBuyUnit', 'moq', 'currentInventory', 'inventoryUnit'];
+    const validUnits = new Set(['gal', 'L', 'oz', 'ml', 'lbs', 'kg', 'g']);
+    const validTypes = new Set(['liquid', 'dry']);
+
+    // Try to match a name to an inventory item (fuzzy)
+    function matchInventory(name) {
+      if (!name) return null;
+      const lower = name.toLowerCase();
+      return inventoryArr.find((inv) =>
+        inv.name.toLowerCase() === lower ||
+        inv.name.toLowerCase().includes(lower) ||
+        lower.includes(inv.name.toLowerCase()) ||
+        (inv.sku && inv.sku.toLowerCase() === lower)
+      );
+    }
+
+    // Detect if first row is a header
+    const firstRowLower = pastedRows[0].map((c) => c.toLowerCase());
+    const headerKeywords = ['name', 'item', 'ingredient', 'type', 'amount', 'amt', 'recipe', 'unit', 'sg', 'gravity', 'price', 'moq', 'cost', 'buy'];
+    const isHeader = firstRowLower.some((c) => headerKeywords.some((kw) => c.includes(kw)));
+    const dataRows = isHeader ? pastedRows.slice(1) : pastedRows;
+
+    // If header present, remap columns based on header names
+    let colMap = colFields.slice(); // default positional
+    if (isHeader) {
+      colMap = firstRowLower.map((h) => {
+        if (h.includes('name') || h.includes('item') || h.includes('ingredient')) return 'name';
+        if (h.includes('type')) return 'type';
+        if (h.includes('recipe') && h.includes('amt') || h.includes('amount') || h === 'qty' || h === 'quantity') return 'recipeAmount';
+        if (h.includes('recipe') && h.includes('unit') || h === 'unit') return 'recipeUnit';
+        if (h.includes('sg') || h.includes('gravity') || h.includes('specific')) return 'specificGravity';
+        if (h.includes('buy') && h.includes('unit')) return 'buyUnit';
+        if (h.includes('price') || h.includes('cost') || h.includes('$/')) return 'pricePerBuyUnit';
+        if (h.includes('moq') || h.includes('minimum')) return 'moq';
+        if (h.includes('on hand') || h.includes('inventory') || h.includes('stock') || h.includes('on_hand')) return 'currentInventory';
+        if (h.includes('inv') && h.includes('unit')) return 'inventoryUnit';
+        return null;
+      });
+    }
+
+    const newIngredients = [...ingredients];
+    let added = 0;
+
+    dataRows.forEach((cells, ri) => {
+      const targetIdx = startRow + ri;
+      // Build ingredient object from pasted cells
+      const parsed = {};
+      cells.forEach((val, ci) => {
+        const fieldIdx = isHeader ? ci : startCol + ci;
+        const field = isHeader ? colMap[ci] : colFields[fieldIdx];
+        if (!field || !val) return;
+
+        if (field === 'name') parsed.name = val;
+        else if (field === 'type') parsed.type = validTypes.has(val.toLowerCase()) ? val.toLowerCase() : undefined;
+        else if (field === 'recipeAmount') parsed.recipeAmount = parseFloat(val.replace(/[,$]/g, '')) || 0;
+        else if (field === 'recipeUnit') parsed.recipeUnit = validUnits.has(val) ? val : (validUnits.has(val.toLowerCase()) ? val.toLowerCase() : undefined);
+        else if (field === 'specificGravity') parsed.specificGravity = parseFloat(val) || undefined;
+        else if (field === 'buyUnit') parsed.buyUnit = validUnits.has(val) ? val : (validUnits.has(val.toLowerCase()) ? val.toLowerCase() : undefined);
+        else if (field === 'pricePerBuyUnit') parsed.pricePerBuyUnit = parseFloat(val.replace(/[,$]/g, '')) || 0;
+        else if (field === 'moq') parsed.moq = parseFloat(val.replace(/[,$]/g, '')) || undefined;
+        else if (field === 'currentInventory') parsed.currentInventory = parseFloat(val.replace(/[,$]/g, '')) || 0;
+        else if (field === 'inventoryUnit') parsed.inventoryUnit = validUnits.has(val) ? val : undefined;
+      });
+
+      // Try to match inventory
+      const invMatch = matchInventory(parsed.name);
+
+      if (targetIdx < newIngredients.length) {
+        // Update existing row
+        const existing = { ...newIngredients[targetIdx] };
+        if (parsed.name && !existing.inventoryId && invMatch) {
+          const tier = invMatch.priceTiers?.[0];
+          existing.inventoryId = invMatch.id;
+          existing.type = invMatch.type || existing.type;
+          existing.specificGravity = invMatch.specificGravity || existing.specificGravity;
+          existing.buyUnit = tier?.buyUnit || invMatch.unit || existing.buyUnit;
+          existing.pricePerBuyUnit = tier?.price || existing.pricePerBuyUnit;
+          existing.moq = tier?.moq || existing.moq;
+          existing.currentInventory = invMatch.currentStock || 0;
+          existing.inventoryUnit = tier?.buyUnit || invMatch.unit || existing.inventoryUnit;
+        } else if (parsed.name && !invMatch) {
+          existing.draftName = parsed.name;
+        }
+        if (parsed.type) existing.type = parsed.type;
+        if (parsed.recipeAmount !== undefined) existing.recipeAmount = parsed.recipeAmount;
+        if (parsed.recipeUnit) existing.recipeUnit = parsed.recipeUnit;
+        if (parsed.specificGravity) existing.specificGravity = parsed.specificGravity;
+        if (parsed.buyUnit) existing.buyUnit = parsed.buyUnit;
+        if (parsed.pricePerBuyUnit !== undefined) existing.pricePerBuyUnit = parsed.pricePerBuyUnit;
+        if (parsed.moq) existing.moq = parsed.moq;
+        if (parsed.currentInventory !== undefined) existing.currentInventory = parsed.currentInventory;
+        if (parsed.inventoryUnit) existing.inventoryUnit = parsed.inventoryUnit;
+        newIngredients[targetIdx] = existing;
+      } else {
+        // Create new row
+        const tier = invMatch?.priceTiers?.[0];
+        newIngredients.push({
+          inventoryId: invMatch?.id || '',
+          draftName: invMatch ? undefined : (parsed.name || 'Pasted Ingredient'),
+          type: parsed.type || invMatch?.type || 'liquid',
+          recipeAmount: parsed.recipeAmount || 0,
+          recipeUnit: parsed.recipeUnit || invMatch?.unit || 'gal',
+          specificGravity: parsed.specificGravity || invMatch?.specificGravity || 1.0,
+          buyUnit: parsed.buyUnit || tier?.buyUnit || invMatch?.unit || 'gal',
+          pricePerBuyUnit: parsed.pricePerBuyUnit ?? tier?.price ?? 0,
+          moq: parsed.moq || tier?.moq || 1,
+          currentInventory: parsed.currentInventory ?? invMatch?.currentStock ?? 0,
+          inventoryUnit: parsed.inventoryUnit || tier?.buyUnit || invMatch?.unit || 'gal',
+        });
+        added++;
+      }
+    });
+
+    setIngredients(newIngredients);
+    const matched = dataRows.filter((cells) => {
+      const name = cells[isHeader ? colMap.indexOf('name') : 0 - startCol];
+      return name && matchInventory(name);
+    }).length;
+    showToast(`Pasted ${dataRows.length} row${dataRows.length !== 1 ? 's' : ''}${matched > 0 ? ` (${matched} matched to inventory)` : ''}${added > 0 ? ` · ${added} new` : ''}`);
+  }
+
   function exportCSV() {
     const header = ['Item', 'SKU', 'Required', 'Buy Unit Amt', 'Price/Unit', 'MOQ', 'Order Qty', 'Line Cost'];
     const rows = scaledData.rows.map((r) => [
@@ -753,7 +891,7 @@ export default function BatchCalculator() {
               <div className="section-title">Ingredients</div>
             </div>
             <div>
-              <table ref={tableRef}>
+              <table ref={tableRef} onPaste={handleTablePaste}>
                 <thead>
                   <tr>
                     <th>Inventory Item</th>
