@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { getInventory, saveInventory, addInventoryItem, getVendors, getTankConfig, getCurrentBatch, saveBatch, getFormulas, saveFormula as saveFormulaToStore } from '../data/store';
-import { exportBatchToExcel } from '../utils/exportExcel';
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
+import * as XLSX from 'xlsx';
 
 const conversions = {
   gal_L: 3.78541, L_gal: 0.264172, gal_ml: 3785.41, ml_gal: 0.000264172,
@@ -39,8 +40,13 @@ export default function BatchCalculator() {
   const [ingredients, setIngredients] = useState([]);
   const [showUnitCalc, setShowUnitCalc] = useState(false);
 
+  const [formulas, setFormulas] = useState(() => getFormulas());
+
   useEffect(() => {
-    const handler = () => setInventoryArr(getInventory());
+    const handler = () => {
+      setInventoryArr(getInventory());
+      setFormulas(getFormulas());
+    };
     window.addEventListener('comanufacturing:datachange', handler);
     return () => window.removeEventListener('comanufacturing:datachange', handler);
   }, []);
@@ -251,6 +257,156 @@ export default function BatchCalculator() {
     alert('Batch saved! This batch context will persist across all calculator pages.');
   }
 
+  function handleLoadFormula(name) {
+    const formula = formulas.find((f) => f.name === name);
+    if (!formula) return;
+    setFormulaName(formula.name);
+    if (formula.baseYield) setBaseYield(formula.baseYield);
+    if (formula.baseYieldUnit) setBaseYieldUnit(formula.baseYieldUnit);
+    if (formula.batchSize) setBatchSize(formula.batchSize);
+    if (formula.batchSizeUnit) setBatchSizeUnit(formula.batchSizeUnit);
+    if (formula.ingredients) setIngredients(formula.ingredients);
+  }
+
+  function handleNewFormula() {
+    setFormulaName('New Formula');
+    setBaseYield(100);
+    setBaseYieldUnit('gal');
+    setBatchSize(500);
+    setBatchSizeUnit('gal');
+    setIngredients([]);
+  }
+
+  const formulaSelectRef = useRef(null);
+
+  useKeyboardShortcuts([
+    { key: 'n', ctrl: true, handler: () => handleNewFormula(), allowInInput: true },
+    { key: 's', ctrl: true, handler: () => handleSaveFormula(), allowInInput: true },
+    { key: 'o', ctrl: true, handler: () => { if (formulaSelectRef.current) formulaSelectRef.current.focus(); }, allowInInput: true },
+    { key: 'e', ctrl: true, handler: () => exportToExcel(), allowInInput: true },
+    { key: 'i', ctrl: true, handler: () => addIngredient(), allowInInput: true },
+    { key: 'd', ctrl: true, handler: () => addDraftIngredient(), allowInInput: true },
+  ]);
+
+  function exportToExcel() {
+    const batchSizeGal = batchSizeUnit === 'L' ? batchSize / 3.78541 : batchSize;
+    const wb = XLSX.utils.book_new();
+
+    // SHEET 1: Overview
+    const overviewData = [
+      ['BEVERAGE BATCH CALCULATOR'],
+      ['Formula Export - ' + new Date().toLocaleString()],
+      [],
+      ['FORMULA DETAILS', '', 'VALUE', 'UNIT'],
+      ['Formula Name', formulaName],
+      ['Base Yield', '', baseYield, baseYieldUnit],
+      ['Target Batch Size', '', batchSize, batchSizeUnit],
+      ['Scale Factor', '', scaleFactor.toFixed(4) + 'x'],
+      ['Unit Size', '', unitSizeVal, unitSizeUnit],
+      ['Units per Case', '', unitsPerCase],
+      [],
+      ['UNIT ECONOMICS'],
+      ['Total Units', '', unitEcon.totalUnits],
+      ['Total Cases', '', unitEcon.totalCases],
+      ['Total Ingredient Cost', '', '$' + scaledData.totalCost.toFixed(2)],
+      ['Net Purchase Cost', '', '$' + scaledData.totalCostWithInventory.toFixed(2)],
+      ['Inventory Savings', '', '$' + unitEcon.inventorySavings.toFixed(2)],
+      ['Cost per Unit (Full)', '', '$' + unitEcon.costPerUnit.toFixed(4)],
+      ['Cost per Unit (Net)', '', '$' + unitEcon.netCostPerUnit.toFixed(4)],
+      ['Cost per Case (Full)', '', '$' + unitEcon.costPerCase.toFixed(2)],
+      ['Cost per Case (Net)', '', '$' + unitEcon.netCostPerCase.toFixed(2)],
+    ];
+    const wsOverview = XLSX.utils.aoa_to_sheet(overviewData);
+    wsOverview['!cols'] = [{ wch: 25 }, { wch: 20 }, { wch: 15 }, { wch: 10 }];
+    XLSX.utils.book_append_sheet(wb, wsOverview, 'Overview');
+
+    // SHEET 2: Base Recipe
+    const recipeData = [
+      ['BASE RECIPE (per ' + baseYield + ' ' + baseYieldUnit + ')'],
+      [],
+      ['Item', 'SKU', 'Type', 'Recipe Amt', 'Recipe Unit', 'SG', 'Buy Unit', 'Price/Buy Unit', 'MOQ', 'On Hand', 'Inv Unit'],
+      ...ingredients.map((ing) => {
+        const item = inventory[ing.inventoryId];
+        return [
+          item?.name || ing.draftName || 'Unknown',
+          item?.sku || '',
+          ing.type,
+          ing.recipeAmount,
+          ing.recipeUnit,
+          ing.specificGravity,
+          ing.buyUnit,
+          ing.pricePerBuyUnit,
+          ing.moq,
+          ing.currentInventory || 0,
+          ing.inventoryUnit || ing.buyUnit,
+        ];
+      }),
+    ];
+    const wsRecipe = XLSX.utils.aoa_to_sheet(recipeData);
+    wsRecipe['!cols'] = [
+      { wch: 25 }, { wch: 12 }, { wch: 8 }, { wch: 12 }, { wch: 10 },
+      { wch: 8 }, { wch: 10 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+    ];
+    XLSX.utils.book_append_sheet(wb, wsRecipe, 'Base Recipe');
+
+    // SHEET 3: Scaled Requirements
+    const scaledSheetData = [
+      ['SCALED BATCH REQUIREMENTS (' + batchSize + ' ' + batchSizeUnit + ')'],
+      [],
+      ['Item', 'SKU', 'Required', 'Unit', 'On Hand', 'Net to Order', 'Price/Unit', 'MOQ', 'Order Qty', 'Full Cost', 'Net Cost', 'Status'],
+      ...scaledData.rows.map((r) => [
+        r.item?.name || r.draftName || 'Unknown',
+        r.item?.sku || '',
+        r.buyUnitAmount.toFixed(2),
+        r.buyUnit,
+        r.onHandBuyUnits.toFixed(2),
+        r.netNeeded.toFixed(2),
+        r.pricePerBuyUnit?.toFixed(4) || '0',
+        r.moq,
+        r.netOrderQty.toFixed(2),
+        r.lineCost.toFixed(2),
+        r.netLineCost.toFixed(2),
+        r.stockOk ? 'In Stock' : r.stockPartial ? 'Partial' : 'Order',
+      ]),
+      [],
+      ['', '', '', '', '', '', '', '', 'TOTALS:', scaledData.totalCost.toFixed(2), scaledData.totalCostWithInventory.toFixed(2)],
+      ['', '', '', '', '', '', '', '', 'SAVINGS:', '', unitEcon.inventorySavings.toFixed(2)],
+    ];
+    const wsScaled = XLSX.utils.aoa_to_sheet(scaledSheetData);
+    wsScaled['!cols'] = [
+      { wch: 25 }, { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 12 },
+      { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 },
+    ];
+    XLSX.utils.book_append_sheet(wb, wsScaled, 'Scaled Recipe');
+
+    // SHEET 4: Purchase Order
+    const poRows = scaledData.rows.filter((r) => r.netOrderQty > 0);
+    const poData = [
+      ['PURCHASE ORDER'],
+      ['Generated: ' + new Date().toLocaleString()],
+      ['Formula: ' + formulaName],
+      ['Batch Size: ' + batchSize + ' ' + batchSizeUnit],
+      [],
+      ['Item', 'SKU', 'Qty to Order', 'Unit', 'Price/Unit', 'Line Total', 'Vendor'],
+      ...poRows.map((r) => [
+        r.item?.name || r.draftName || 'Unknown',
+        r.item?.sku || '',
+        r.netOrderQty.toFixed(2),
+        r.buyUnit,
+        (r.pricePerBuyUnit || 0).toFixed(4),
+        r.netLineCost.toFixed(2),
+        r.item?.vendor || '',
+      ]),
+      [],
+      ['', '', '', '', 'TOTAL:', scaledData.totalCostWithInventory.toFixed(2)],
+    ];
+    const wsPO = XLSX.utils.aoa_to_sheet(poData);
+    wsPO['!cols'] = [{ wch: 25 }, { wch: 12 }, { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 20 }];
+    XLSX.utils.book_append_sheet(wb, wsPO, 'Purchase Order');
+
+    XLSX.writeFile(wb, `${formulaName.replace(/\s+/g, '_')}_${batchSize}${batchSizeUnit}_${new Date().toISOString().split('T')[0]}.xlsx`);
+  }
+
   function exportCSV() {
     const header = ['Item', 'SKU', 'Required', 'Buy Unit Amt', 'Price/Unit', 'MOQ', 'Order Qty', 'Line Cost'];
     const rows = scaledData.rows.map((r) => [
@@ -282,13 +438,9 @@ export default function BatchCalculator() {
           <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', margin: 0, lineHeight: 1.2 }}>Formula Calculator</h1>
           <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 4 }}>Configure batch scaling and ingredient costs for production runs.</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn" onClick={() => exportBatchToExcel({
-            formulaName, baseYield, baseYieldUnit, batchSize, batchSizeUnit,
-            unitSizeVal, unitSizeUnit, unitsPerCase,
-            ingredients, scaledRows: scaledData.rows,
-            totalCost: scaledData.totalCost, unitEcon,
-          })}>Export Excel</button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button className="btn" onClick={handleNewFormula}>New Formula</button>
+          <button className="btn" onClick={exportToExcel}>Export Excel</button>
           <button className="btn btn-primary" onClick={handleSaveFormula}>Save Recipe</button>
         </div>
       </div>
@@ -324,7 +476,34 @@ export default function BatchCalculator() {
           <div className="section" style={{ marginBottom: 20 }}>
             <div className="section-header">
               <div className="section-title">Formula Architecture</div>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {formulas.length > 0 && (
+                  <select
+                    ref={formulaSelectRef}
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) handleLoadFormula(e.target.value);
+                    }}
+                    style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)' }}
+                  >
+                    <option value="">💥 Load Formula...</option>
+                    {(() => {
+                      const grouped = {};
+                      formulas.forEach((f) => {
+                        const client = f.client || 'Uncategorized';
+                        if (!grouped[client]) grouped[client] = [];
+                        grouped[client].push(f);
+                      });
+                      return Object.entries(grouped).map(([client, fms]) => (
+                        <optgroup key={client} label={`📁 ${client}`}>
+                          {fms.map((f) => (
+                            <option key={f.name} value={f.name}>{f.name}</option>
+                          ))}
+                        </optgroup>
+                      ));
+                    })()}
+                  </select>
+                )}
                 <button className="btn btn-small" onClick={handleSaveBatch}>Push to Production</button>
               </div>
             </div>

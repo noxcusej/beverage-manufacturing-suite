@@ -1158,6 +1158,31 @@ td input:focus, td select:focus {
   .cost-card.hero .cost-card-value { color: white !important; }
 }
 
+/* ── TypeAhead ─────────────────────────────── */
+.typeahead-wrapper { position: relative; }
+.typeahead-wrapper input { width: 100%; }
+.typeahead-dropdown {
+  position: absolute; top: 100%; left: 0; right: 0;
+  background: white; border: 1px solid #d1d5db; border-top: none;
+  border-radius: 0 0 6px 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  max-height: 220px; overflow-y: auto; z-index: 50;
+}
+.typeahead-item {
+  padding: 8px 12px; cursor: pointer; display: flex;
+  flex-direction: column; gap: 1px;
+}
+.typeahead-item:hover, .typeahead-item.highlighted {
+  background: #eff6ff;
+}
+.typeahead-item.selected {
+  background: #dbeafe;
+}
+.typeahead-item-primary { font-size: 13px; font-weight: 500; color: #1f2937; }
+.typeahead-item-secondary { font-size: 11px; color: #6b7280; }
+.typeahead-empty {
+  padding: 12px; text-align: center; color: #9ca3af; font-size: 13px;
+}
+
 @media (max-width: 768px) {
   .app-sidebar { display: none; }
   .app-main { margin-left: 0; }
