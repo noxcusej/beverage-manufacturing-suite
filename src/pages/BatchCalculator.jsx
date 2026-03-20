@@ -605,47 +605,48 @@ export default function BatchCalculator() {
     }
   }
 
-  // Attach paste listener on table in capture phase so it fires before input's default
-  useEffect(() => {
-    const table = tableRef.current;
-    if (!table) return;
-    const handler = (e) => handleTablePaste(e);
-    table.addEventListener('paste', handler, true); // capture phase
-    return () => table.removeEventListener('paste', handler, true);
-  });
-
-  // Paste from spreadsheet: parse TSV and populate ingredient rows
-  function handleTablePaste(e) {
+  // Stable ref for paste handler so the effect listener always calls latest version
+  const pasteHandlerRef = useRef(null);
+  pasteHandlerRef.current = useCallback((e) => {
+    // Try HTML first (Google Sheets always provides a clean <table>)
+    const html = e.clipboardData?.getData('text/html');
     const text = e.clipboardData?.getData('text/plain');
-    if (!text || !text.includes('\t')) return; // Not a spreadsheet paste — let default happen
 
-    e.preventDefault();
-    e.stopPropagation();
+    let pastedRows = [];
 
-    // Undo any partial paste that may have landed in the input
-    if (e.target.tagName === 'INPUT') {
-      const row = e.target.dataset.row;
-      const col = e.target.dataset.col;
-      if (row !== undefined && col !== undefined) {
-        // Will be overwritten by our logic below
-      }
+    if (html && html.includes('<table')) {
+      // Parse HTML table from Google Sheets / Excel
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      const trs = doc.querySelectorAll('table tr');
+      if (trs.length === 0) return;
+      trs.forEach((tr) => {
+        const cells = [];
+        tr.querySelectorAll('td, th').forEach((td) => cells.push(td.textContent.trim()));
+        if (cells.length > 0 && cells.some((c) => c !== '')) pastedRows.push(cells);
+      });
+    } else if (text) {
+      // Fallback: TSV from plain text
+      const hasTab = text.includes('\t');
+      const lines = text.trim().replace(/\r\n/g, '\n').split('\n').filter((l) => l.trim());
+      if (!hasTab && lines.length <= 1) return; // Single value — let default handle
+      pastedRows = lines.map((line) => line.split('\t').map((c) => c.trim()));
     }
 
-    // Parse TSV rows (handle Windows \r\n and Mac \n)
-    const pastedRows = text.trim().replace(/\r\n/g, '\n').split('\n').map((line) => line.split('\t').map((c) => c.trim()));
     if (pastedRows.length === 0) return;
 
-    // Figure out starting column from the focused cell
-    const startCol = parseInt(e.target?.dataset?.col ?? '0');
-    const startRow = parseInt(e.target?.dataset?.row ?? ingredients.length);
+    e.preventDefault();
+    e.stopImmediatePropagation();
 
-    // Column mapping: col index → field
-    // 0: name, 1: type, 2: recipeAmount, 3: recipeUnit, 4: SG, 5: buyUnit, 6: price, 7: moq, 8: onHand, 9: invUnit
+    // Starting position from focused cell
+    const startCol = parseInt(e.target?.dataset?.col ?? '0');
+    const startRow = parseInt(e.target?.dataset?.row ?? String(ingredients.length));
+
+    // Column mapping
     const colFields = ['name', 'type', 'recipeAmount', 'recipeUnit', 'specificGravity', 'buyUnit', 'pricePerBuyUnit', 'moq', 'currentInventory', 'inventoryUnit'];
     const validUnits = new Set(['gal', 'L', 'oz', 'ml', 'lbs', 'kg', 'g']);
     const validTypes = new Set(['liquid', 'dry']);
 
-    // Try to match a name to an inventory item (fuzzy)
     function matchInventory(name) {
       if (!name) return null;
       const lower = name.toLowerCase();
@@ -657,20 +658,19 @@ export default function BatchCalculator() {
       );
     }
 
-    // Detect if first row is a header
+    // Detect header row
     const firstRowLower = pastedRows[0].map((c) => c.toLowerCase());
     const headerKeywords = ['name', 'item', 'ingredient', 'type', 'amount', 'amt', 'recipe', 'unit', 'sg', 'gravity', 'price', 'moq', 'cost', 'buy'];
     const isHeader = firstRowLower.some((c) => headerKeywords.some((kw) => c.includes(kw)));
     const dataRows = isHeader ? pastedRows.slice(1) : pastedRows;
 
-    // If header present, remap columns based on header names
-    let colMap = colFields.slice(); // default positional
+    let colMap = colFields.slice();
     if (isHeader) {
       colMap = firstRowLower.map((h) => {
         if (h.includes('name') || h.includes('item') || h.includes('ingredient')) return 'name';
         if (h.includes('type')) return 'type';
-        if (h.includes('recipe') && h.includes('amt') || h.includes('amount') || h === 'qty' || h === 'quantity') return 'recipeAmount';
-        if (h.includes('recipe') && h.includes('unit') || h === 'unit') return 'recipeUnit';
+        if ((h.includes('recipe') && h.includes('amt')) || h.includes('amount') || h === 'qty' || h === 'quantity') return 'recipeAmount';
+        if ((h.includes('recipe') && h.includes('unit')) || h === 'unit') return 'recipeUnit';
         if (h.includes('sg') || h.includes('gravity') || h.includes('specific')) return 'specificGravity';
         if (h.includes('buy') && h.includes('unit')) return 'buyUnit';
         if (h.includes('price') || h.includes('cost') || h.includes('$/')) return 'pricePerBuyUnit';
@@ -686,30 +686,26 @@ export default function BatchCalculator() {
 
     dataRows.forEach((cells, ri) => {
       const targetIdx = startRow + ri;
-      // Build ingredient object from pasted cells
       const parsed = {};
       cells.forEach((val, ci) => {
         const fieldIdx = isHeader ? ci : startCol + ci;
         const field = isHeader ? colMap[ci] : colFields[fieldIdx];
         if (!field || !val) return;
-
         if (field === 'name') parsed.name = val;
         else if (field === 'type') parsed.type = validTypes.has(val.toLowerCase()) ? val.toLowerCase() : undefined;
         else if (field === 'recipeAmount') parsed.recipeAmount = parseFloat(val.replace(/[,$]/g, '')) || 0;
-        else if (field === 'recipeUnit') parsed.recipeUnit = validUnits.has(val) ? val : (validUnits.has(val.toLowerCase()) ? val.toLowerCase() : undefined);
+        else if (field === 'recipeUnit') { const v = val.toLowerCase(); parsed.recipeUnit = validUnits.has(val) ? val : (validUnits.has(v) ? v : undefined); }
         else if (field === 'specificGravity') parsed.specificGravity = parseFloat(val) || undefined;
-        else if (field === 'buyUnit') parsed.buyUnit = validUnits.has(val) ? val : (validUnits.has(val.toLowerCase()) ? val.toLowerCase() : undefined);
+        else if (field === 'buyUnit') { const v = val.toLowerCase(); parsed.buyUnit = validUnits.has(val) ? val : (validUnits.has(v) ? v : undefined); }
         else if (field === 'pricePerBuyUnit') parsed.pricePerBuyUnit = parseFloat(val.replace(/[,$]/g, '')) || 0;
         else if (field === 'moq') parsed.moq = parseFloat(val.replace(/[,$]/g, '')) || undefined;
         else if (field === 'currentInventory') parsed.currentInventory = parseFloat(val.replace(/[,$]/g, '')) || 0;
         else if (field === 'inventoryUnit') parsed.inventoryUnit = validUnits.has(val) ? val : undefined;
       });
 
-      // Try to match inventory
       const invMatch = matchInventory(parsed.name);
 
       if (targetIdx < newIngredients.length) {
-        // Update existing row
         const existing = { ...newIngredients[targetIdx] };
         if (parsed.name && !existing.inventoryId && invMatch) {
           const tier = invMatch.priceTiers?.[0];
@@ -723,6 +719,7 @@ export default function BatchCalculator() {
           existing.inventoryUnit = tier?.buyUnit || invMatch.unit || existing.inventoryUnit;
         } else if (parsed.name && !invMatch) {
           existing.draftName = parsed.name;
+          existing.inventoryId = '';
         }
         if (parsed.type) existing.type = parsed.type;
         if (parsed.recipeAmount !== undefined) existing.recipeAmount = parsed.recipeAmount;
@@ -735,7 +732,6 @@ export default function BatchCalculator() {
         if (parsed.inventoryUnit) existing.inventoryUnit = parsed.inventoryUnit;
         newIngredients[targetIdx] = existing;
       } else {
-        // Create new row
         const tier = invMatch?.priceTiers?.[0];
         newIngredients.push({
           inventoryId: invMatch?.id || '',
@@ -755,12 +751,20 @@ export default function BatchCalculator() {
     });
 
     setIngredients(newIngredients);
-    const matched = dataRows.filter((cells) => {
-      const name = cells[isHeader ? colMap.indexOf('name') : 0 - startCol];
-      return name && matchInventory(name);
-    }).length;
-    showToast(`Pasted ${dataRows.length} row${dataRows.length !== 1 ? 's' : ''}${matched > 0 ? ` (${matched} matched to inventory)` : ''}${added > 0 ? ` · ${added} new` : ''}`);
-  }
+    showToast(`Pasted ${dataRows.length} row${dataRows.length !== 1 ? 's' : ''}${added > 0 ? ` · ${added} new` : ''}`);
+  }, [ingredients, inventoryArr]);
+
+  // Register paste listener in capture phase on the entire container, not just the table
+  useEffect(() => {
+    function onPaste(e) {
+      // Only handle if focus is inside the ingredients table
+      if (tableRef.current && tableRef.current.contains(e.target)) {
+        pasteHandlerRef.current?.(e);
+      }
+    }
+    document.addEventListener('paste', onPaste, true);
+    return () => document.removeEventListener('paste', onPaste, true);
+  }, []);
 
   function exportCSV() {
     const header = ['Item', 'SKU', 'Required', 'Buy Unit Amt', 'Price/Unit', 'MOQ', 'Order Qty', 'Line Cost'];
