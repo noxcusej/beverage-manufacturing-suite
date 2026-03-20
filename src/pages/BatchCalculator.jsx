@@ -11,6 +11,13 @@ const conversions = {
   oz_g: 28.3495, g_oz: 0.035274,
 };
 
+function fmtNum(n) {
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+  if (n >= 100) return Math.round(n).toString();
+  if (n >= 10) return n.toFixed(1).replace(/\.0$/, '');
+  return n.toFixed(1).replace(/\.0$/, '');
+}
+
 function convert(value, from, to) {
   if (from === to) return value;
   const key = `${from}_${to}`;
@@ -1084,9 +1091,9 @@ export default function BatchCalculator() {
                                   <div style={{ height: '100%', background: color, width: `${pct}%`, transition: 'width 0.3s' }} />
                                 </div>
                                 {net > 0 ? (
-                                  <span style={{ color, fontWeight: 600 }}>Need {net.toFixed(1)} {ing.buyUnit}</span>
+                                  <span style={{ color, fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>{fmtNum(net)} {ing.buyUnit}</span>
                                 ) : (
-                                  <span style={{ color: '#10b981', fontWeight: 600 }}>Covered ✓</span>
+                                  <span style={{ color: '#10b981', fontWeight: 600, fontSize: 11 }}>✓</span>
                                 )}
                               </div>
                             );
