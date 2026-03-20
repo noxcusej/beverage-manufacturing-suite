@@ -28,12 +28,13 @@ export default function BatchCalculator() {
     return obj;
   }, [inventoryArr]);
 
-  const [unitSystem, setUnitSystem] = useState('imperial');
   const [formulaName, setFormulaName] = useState('');
   const [baseYield, setBaseYield] = useState(100);
   const [baseYieldUnit, setBaseYieldUnit] = useState('gal');
   const [batchSize, setBatchSize] = useState(500);
   const [batchSizeUnit, setBatchSizeUnit] = useState('gal');
+  const [sizeMode, setSizeMode] = useState('batch'); // 'batch' or 'cases'
+  const [targetCases, setTargetCases] = useState(0);
   const [unitSizeVal, setUnitSizeVal] = useState(12);
   const [unitSizeUnit, setUnitSizeUnitState] = useState('oz');
   const [unitsPerCase, setUnitsPerCase] = useState(24);
@@ -72,6 +73,26 @@ export default function BatchCalculator() {
       if (batch.ingredients) setIngredients(batch.ingredients);
     }
   }, []);
+
+  // Bidirectional: cases → batch size
+  function handleCasesChange(cases) {
+    setTargetCases(cases);
+    setSizeMode('cases');
+    // cases → units → oz → gal
+    const units = cases * unitsPerCase;
+    let unitOz = unitSizeVal;
+    if (unitSizeUnit === 'ml') unitOz = unitSizeVal / 29.5735;
+    if (unitSizeUnit === 'L') unitOz = unitSizeVal * 33.814;
+    const totalOz = units * unitOz;
+    const totalGal = totalOz / 128;
+    const newBatch = batchSizeUnit === 'L' ? totalGal * 3.78541 : totalGal;
+    setBatchSize(Math.round(newBatch * 100) / 100);
+  }
+
+  function handleBatchSizeChange(val) {
+    setBatchSize(val);
+    setSizeMode('batch');
+  }
 
   const scaleFactor = baseYield > 0 ? batchSize / baseYield : 1;
 
@@ -398,6 +419,8 @@ export default function BatchCalculator() {
     setBatchSize(500);
     setBatchSizeUnit('gal');
     setIngredients([]);
+    setSizeMode('batch');
+    setTargetCases(0);
   }
 
   useKeyboardShortcuts([
@@ -674,9 +697,14 @@ export default function BatchCalculator() {
                   </div>
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label">Target Batch Size</label>
+                  <label className="form-label">Target Batch Size {sizeMode === 'cases' && <span style={{ fontSize: 10, color: '#9ca3af', fontWeight: 400 }}>(from cases)</span>}</label>
                   <div className="input-with-unit">
-                    <input type="number" value={batchSize} onChange={(e) => setBatchSize(parseFloat(e.target.value) || 0)} />
+                    <input
+                      type="number"
+                      value={batchSize}
+                      onChange={(e) => handleBatchSizeChange(parseFloat(e.target.value) || 0)}
+                      style={sizeMode === 'cases' ? { background: '#f3f4f6', color: '#9ca3af' } : {}}
+                    />
                     <select value={batchSizeUnit} onChange={(e) => setBatchSizeUnit(e.target.value)}>
                       <option value="gal">gal</option>
                       <option value="L">L</option>
@@ -699,11 +727,14 @@ export default function BatchCalculator() {
                   <input type="number" value={unitsPerCase} onChange={(e) => setUnitsPerCase(parseInt(e.target.value) || 1)} />
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label">Unit System</label>
-                  <div className="unit-toggle">
-                    <button className={unitSystem === 'imperial' ? 'active' : ''} onClick={() => setUnitSystem('imperial')}>Imperial</button>
-                    <button className={unitSystem === 'metric' ? 'active' : ''} onClick={() => setUnitSystem('metric')}>Metric</button>
-                  </div>
+                  <label className="form-label">Order Cases {sizeMode === 'cases' && <span style={{ fontSize: 10, color: '#7062E0', fontWeight: 600 }}>DRIVING</span>}</label>
+                  <input
+                    type="number"
+                    value={sizeMode === 'cases' ? targetCases : unitEcon.totalCases}
+                    onChange={(e) => handleCasesChange(parseInt(e.target.value) || 0)}
+                    onFocus={handleCellFocus}
+                    style={sizeMode === 'cases' ? { borderColor: '#7062E0', boxShadow: '0 0 0 2px rgba(112,98,224,0.15)' } : {}}
+                  />
                 </div>
               </div>
               {/* Calculated output row */}
