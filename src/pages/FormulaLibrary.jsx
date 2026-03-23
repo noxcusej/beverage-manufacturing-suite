@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { getFormulas, getInventory, saveAllFormulas, saveFormula, deleteFormula, hydrateFormulasFromSupabase, getClients } from '../data/store';
+import { getFormulas, getInventory, saveAllFormulas, saveFormula, deleteFormula, hydrateFormulasFromSupabase, getClients, saveBatch } from '../data/store';
 
 function generateFormulaId() {
   return 'FRM-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
@@ -273,8 +273,7 @@ export default function FormulaLibrary() {
       ingredients: formula.ingredients,
       timestamp: new Date().toISOString(),
     };
-    localStorage.setItem('comanufacturing_current_batch', JSON.stringify(batch));
-    window.dispatchEvent(new CustomEvent('comanufacturing:datachange'));
+    saveBatch(batch);
     window.location.href = '/batch-calculator';
   }
 

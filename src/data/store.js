@@ -6,61 +6,129 @@ import {
   defaultTankConfig,
 } from './defaults';
 import {
+  loadAppData,
+  saveAppData,
   loadFormulasFromSupabase,
   saveFormulaToSupabase,
   syncAllFormulasToSupabase,
   deleteFormulaFromSupabase,
 } from './supabase';
 
-const STORAGE_KEYS = {
-  inventory: 'comanufacturing_inventory',
-  packaging: 'comanufacturing_packaging',
-  services: 'comanufacturing_services',
-  vendors: 'comanufacturing_vendors',
-  formulas: 'comanufacturing_formulas',
-  currentBatch: 'comanufacturing_current_batch',
-  tankConfig: 'comanufacturing_tank_config',
-  runs: 'comanufacturing_runs',
-  clients: 'comanufacturing_clients',
-  missionControl: 'openclaw_mission_control',
+// ── In-memory cache (replaces localStorage) ──
+
+const _cache = {
+  inventory: null,
+  packaging: null,
+  services: null,
+  vendors: null,
+  formulas: null,
+  currentBatch: null,
+  tankConfig: null,
+  runs: null,
+  clients: null,
+  missionControl: null,
 };
 
-function load(key, fallback) {
-  const data = localStorage.getItem(key);
-  return data ? JSON.parse(data) : fallback;
-}
+const _defaults = {
+  inventory: defaultInventory,
+  packaging: defaultPackaging,
+  services: defaultServices,
+  vendors: defaultVendors,
+  formulas: [],
+  currentBatch: null,
+  tankConfig: defaultTankConfig,
+  runs: [],
+  clients: [],
+  missionControl: { tasks: [], cronJobs: [], team: [], officeStatus: [] },
+};
 
-function save(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
+let _hydrated = false;
+
+// Map camelCase domain names to snake_case Supabase keys
+const _keyMap = {
+  inventory: 'inventory',
+  packaging: 'packaging',
+  services: 'services',
+  vendors: 'vendors',
+  runs: 'runs',
+  clients: 'clients',
+  tankConfig: 'tank_config',
+  currentBatch: 'current_batch',
+  missionControl: 'mission_control',
+};
+
+function notify(dataType) {
   window.dispatchEvent(
-    new CustomEvent('comanufacturing:datachange', { detail: { dataType: key } })
+    new CustomEvent('comanufacturing:datachange', { detail: { dataType } })
   );
 }
 
-// Initialize defaults if not present
+function get(domain) {
+  return _cache[domain] ?? _defaults[domain];
+}
+
+function set(domain, value) {
+  _cache[domain] = value;
+  notify(domain);
+  // Write-through to Supabase (async, non-blocking)
+  if (domain !== 'formulas') {
+    const dbKey = _keyMap[domain] || domain;
+    saveAppData(dbKey, value).catch(err =>
+      console.error(`[Store] Supabase write-through failed for ${domain}:`, err)
+    );
+  }
+}
+
+// ── Initialization ──
+
 export function initStore() {
-  if (!localStorage.getItem(STORAGE_KEYS.inventory)) {
-    save(STORAGE_KEYS.inventory, defaultInventory);
-  }
-  if (!localStorage.getItem(STORAGE_KEYS.packaging)) {
-    save(STORAGE_KEYS.packaging, defaultPackaging);
-  }
-  if (!localStorage.getItem(STORAGE_KEYS.services)) {
-    save(STORAGE_KEYS.services, defaultServices);
-  }
-  if (!localStorage.getItem(STORAGE_KEYS.vendors)) {
-    save(STORAGE_KEYS.vendors, defaultVendors);
-  }
+  // Seed cache with defaults (will be overwritten by hydrate)
+  Object.keys(_defaults).forEach(key => {
+    if (_cache[key] === null) _cache[key] = _defaults[key];
+  });
+}
+
+/**
+ * Hydrate all data from Supabase. Call once on app init.
+ * Returns when all domains have been loaded.
+ */
+export async function hydrateAll() {
+  if (_hydrated) return;
+
+  const domains = Object.keys(_keyMap);
+
+  const results = await Promise.allSettled(
+    domains.map(async (domain) => {
+      const remote = await loadAppData(_keyMap[domain]);
+      if (remote !== null && remote !== undefined) {
+        // For arrays, only use remote if it has data (or is explicitly empty)
+        _cache[domain] = remote;
+        notify(domain);
+      } else {
+        // Supabase returned null — push defaults up
+        const current = get(domain);
+        if (current && (Array.isArray(current) ? current.length > 0 : true)) {
+          saveAppData(_keyMap[domain], current).catch(() => {});
+        }
+      }
+    })
+  );
+
+  // Hydrate formulas separately (uses dedicated table)
+  await hydrateFormulasFromSupabase();
+
+  _hydrated = true;
+  console.log('[Store] Hydration complete');
 }
 
 // ── Inventory ──
 
 export function getInventory() {
-  return load(STORAGE_KEYS.inventory, defaultInventory);
+  return get('inventory');
 }
 
 export function saveInventory(inventory) {
-  save(STORAGE_KEYS.inventory, inventory);
+  set('inventory', inventory);
 }
 
 export function getInventoryItem(id) {
@@ -68,7 +136,7 @@ export function getInventoryItem(id) {
 }
 
 export function updateInventoryItem(id, updates) {
-  const inventory = getInventory();
+  const inventory = [...getInventory()];
   const index = inventory.findIndex((item) => item.id === id);
   if (index !== -1) {
     inventory[index] = { ...inventory[index], ...updates };
@@ -77,7 +145,7 @@ export function updateInventoryItem(id, updates) {
 }
 
 export function addInventoryItem(item) {
-  const inventory = getInventory();
+  const inventory = [...getInventory()];
   const newId = 'INV-' + String(inventory.length + 1).padStart(3, '0');
   inventory.push({ ...item, id: newId });
   saveInventory(inventory);
@@ -105,15 +173,15 @@ export function getInventoryPrice(id, quantity) {
 // ── Packaging ──
 
 export function getPackaging() {
-  return load(STORAGE_KEYS.packaging, defaultPackaging);
+  return get('packaging');
 }
 
 export function savePackaging(packaging) {
-  save(STORAGE_KEYS.packaging, packaging);
+  set('packaging', packaging);
 }
 
 export function addPackagingItem(item) {
-  const packaging = getPackaging();
+  const packaging = [...getPackaging()];
   const newId = 'PKG-' + String(packaging.length + 1).padStart(3, '0');
   packaging.push({ ...item, id: newId });
   savePackaging(packaging);
@@ -142,15 +210,15 @@ export function getPackagingPrice(id, quantity) {
 // ── Services ──
 
 export function getServices() {
-  return load(STORAGE_KEYS.services, defaultServices);
+  return get('services');
 }
 
 export function saveServices(services) {
-  save(STORAGE_KEYS.services, services);
+  set('services', services);
 }
 
 export function addService(service) {
-  const services = getServices();
+  const services = [...getServices()];
   const newId = 'SVC-' + String(services.length + 1).padStart(3, '0');
   services.push({ ...service, id: newId });
   saveServices(services);
@@ -164,72 +232,48 @@ export function deleteService(id) {
 // ── Vendors ──
 
 export function getVendors() {
-  return load(STORAGE_KEYS.vendors, defaultVendors);
+  return get('vendors');
 }
 
 export function saveVendors(vendors) {
-  save(STORAGE_KEYS.vendors, vendors);
+  set('vendors', vendors);
 }
 
 export function getVendor(id) {
   return getVendors().find((v) => v.id === id);
 }
 
-// ── Formulas ──
+// ── Formulas (dedicated Supabase table) ──
 
 function generateFormulaId() {
   return 'FRM-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
 }
 
-// Track whether we've loaded from Supabase this session
-let _supabaseLoaded = false;
+let _formulasLoaded = false;
 
 export function getFormulas() {
-  const formulas = load(STORAGE_KEYS.formulas, []);
-  // Backfill IDs for any formulas that don't have one
+  const formulas = get('formulas');
   let changed = false;
   formulas.forEach(f => {
     if (!f.id) { f.id = generateFormulaId(); changed = true; }
   });
   if (changed) {
-    localStorage.setItem(STORAGE_KEYS.formulas, JSON.stringify(formulas));
+    _cache.formulas = formulas;
   }
   return formulas;
 }
 
-/**
- * Load formulas from Supabase and merge into localStorage.
- * Call this once on app init to hydrate from the database.
- */
 export async function hydrateFormulasFromSupabase() {
-  if (_supabaseLoaded) return getFormulas();
+  if (_formulasLoaded) return getFormulas();
   try {
     const remote = await loadFormulasFromSupabase();
     if (remote && remote.length > 0) {
-      const local = getFormulas();
-      // Merge: remote wins on conflict (by ID), keep local-only formulas
-      const remoteIds = new Set(remote.map(f => f.id));
-      const localOnly = local.filter(f => !remoteIds.has(f.id));
-      const merged = [...remote, ...localOnly];
-      localStorage.setItem(STORAGE_KEYS.formulas, JSON.stringify(merged));
-      _supabaseLoaded = true;
-
-      // Push any local-only formulas up to Supabase
-      if (localOnly.length > 0) {
-        syncAllFormulasToSupabase(localOnly).catch(() => {});
-      }
-
-      window.dispatchEvent(
-        new CustomEvent('comanufacturing:datachange', { detail: { dataType: 'formulas' } })
-      );
-      return merged;
+      _cache.formulas = remote;
+      _formulasLoaded = true;
+      notify('formulas');
+      return remote;
     } else if (remote !== null) {
-      // Supabase returned empty — push local formulas up
-      const local = getFormulas();
-      if (local.length > 0) {
-        syncAllFormulasToSupabase(local).catch(() => {});
-      }
-      _supabaseLoaded = true;
+      _formulasLoaded = true;
     }
   } catch (err) {
     console.error('[Store] hydrateFormulas error:', err);
@@ -238,10 +282,9 @@ export async function hydrateFormulasFromSupabase() {
 }
 
 export function saveFormula(formula) {
-  const formulas = getFormulas();
+  const formulas = [...getFormulas()];
   const now = new Date().toISOString();
 
-  // Match by ID first, then fallback to name
   let existingIdx = -1;
   if (formula.id) {
     existingIdx = formulas.findIndex((f) => f.id === formula.id);
@@ -255,8 +298,6 @@ export function saveFormula(formula) {
     const old = formulas[existingIdx];
     const versions = old.versions || [];
 
-    // Only create a version if data actually changed
-    // (skip if last save was within 2 seconds — dedup rapid double-calls)
     const lastVer = versions[versions.length - 1];
     const skipVersion = lastVer && (new Date(now) - new Date(lastVer.versionDate)) < 2000;
 
@@ -277,7 +318,6 @@ export function saveFormula(formula) {
     };
     savedFormula = formulas[existingIdx];
   } else {
-    // New formula
     savedFormula = {
       ...formula,
       id: formula.id || generateFormulaId(),
@@ -288,42 +328,26 @@ export function saveFormula(formula) {
     formulas.push(savedFormula);
   }
 
-  // Write to localStorage
-  localStorage.setItem(STORAGE_KEYS.formulas, JSON.stringify(formulas));
-  window.dispatchEvent(
-    new CustomEvent('comanufacturing:datachange', { detail: { dataType: 'formulas' } })
-  );
+  _cache.formulas = formulas;
+  notify('formulas');
 
-  // Write-through to Supabase (async, non-blocking)
+  // Write-through to Supabase
   saveFormulaToSupabase(savedFormula).catch(err =>
     console.error('[Store] Supabase write-through failed:', err)
   );
 }
 
-/**
- * Save all formulas (used by FormulaLibrary for bulk ops like rename, delete, reorder).
- * Also syncs to Supabase.
- */
 export function saveAllFormulas(formulas) {
-  localStorage.setItem(STORAGE_KEYS.formulas, JSON.stringify(formulas));
-  window.dispatchEvent(
-    new CustomEvent('comanufacturing:datachange', { detail: { dataType: 'formulas' } })
-  );
-  // Sync full set to Supabase
+  _cache.formulas = formulas;
+  notify('formulas');
   syncAllFormulasToSupabase(formulas).catch(err =>
     console.error('[Store] Supabase bulk sync failed:', err)
   );
 }
 
-/**
- * Delete a formula by ID from both localStorage and Supabase.
- */
 export function deleteFormula(formulaId) {
-  const formulas = getFormulas().filter(f => f.id !== formulaId);
-  localStorage.setItem(STORAGE_KEYS.formulas, JSON.stringify(formulas));
-  window.dispatchEvent(
-    new CustomEvent('comanufacturing:datachange', { detail: { dataType: 'formulas' } })
-  );
+  _cache.formulas = getFormulas().filter(f => f.id !== formulaId);
+  notify('formulas');
   deleteFormulaFromSupabase(formulaId).catch(err =>
     console.error('[Store] Supabase delete failed:', err)
   );
@@ -332,37 +356,37 @@ export function deleteFormula(formulaId) {
 // ── Batch ──
 
 export function getCurrentBatch() {
-  return load(STORAGE_KEYS.currentBatch, null);
+  return get('currentBatch');
 }
 
 export function saveBatch(batchData) {
   const batch = { ...batchData, timestamp: new Date().toISOString() };
-  save(STORAGE_KEYS.currentBatch, batch);
+  set('currentBatch', batch);
   return batch;
 }
 
 export function clearBatch() {
-  localStorage.removeItem(STORAGE_KEYS.currentBatch);
+  set('currentBatch', null);
 }
 
 // ── Tank Config ──
 
 export function getTankConfig() {
-  return load(STORAGE_KEYS.tankConfig, defaultTankConfig);
+  return get('tankConfig');
 }
 
 export function saveTankConfig(tanks) {
-  save(STORAGE_KEYS.tankConfig, tanks);
+  set('tankConfig', tanks);
 }
 
 // ── Runs ──
 
 export function getRuns() {
-  return load(STORAGE_KEYS.runs, []);
+  return get('runs');
 }
 
 export function saveRun(run) {
-  const runs = getRuns();
+  const runs = [...getRuns()];
   const now = new Date().toISOString();
   const existing = runs.findIndex((r) => r.id === run.id);
   if (existing !== -1) {
@@ -370,22 +394,22 @@ export function saveRun(run) {
   } else {
     runs.push({ ...run, id: run.id || 'RUN-' + Date.now(), createdAt: now, updatedAt: now });
   }
-  save(STORAGE_KEYS.runs, runs);
+  set('runs', runs);
   return runs[existing !== -1 ? existing : runs.length - 1];
 }
 
 export function deleteRun(runId) {
-  save(STORAGE_KEYS.runs, getRuns().filter((r) => r.id !== runId));
+  set('runs', getRuns().filter((r) => r.id !== runId));
 }
 
 // ── Clients ──
 
 export function getClients() {
-  return load(STORAGE_KEYS.clients, []);
+  return get('clients');
 }
 
 export function saveClient(client) {
-  const clients = getClients();
+  const clients = [...getClients()];
   const now = new Date().toISOString();
   const existing = clients.findIndex((c) => c.id === client.id);
   if (existing !== -1) {
@@ -393,12 +417,12 @@ export function saveClient(client) {
   } else {
     clients.push({ ...client, id: client.id || 'CLT-' + Date.now(), createdAt: now, updatedAt: now });
   }
-  save(STORAGE_KEYS.clients, clients);
+  set('clients', clients);
   return clients[existing !== -1 ? existing : clients.length - 1];
 }
 
 export function deleteClient(clientId) {
-  save(STORAGE_KEYS.clients, getClients().filter((c) => c.id !== clientId));
+  set('clients', getClients().filter((c) => c.id !== clientId));
 }
 
 export function getFormulasForClient(clientName) {
@@ -412,11 +436,11 @@ export function getRunsForClient(clientName) {
 // ── Mission Control ──
 
 export function getMissionControlState() {
-  return load(STORAGE_KEYS.missionControl, { tasks: [], cronJobs: [], team: [], officeStatus: [] });
+  return get('missionControl');
 }
 
 export function saveMissionControlState(state) {
-  save(STORAGE_KEYS.missionControl, {
+  set('missionControl', {
     tasks: state.tasks,
     cronJobs: state.cronJobs,
     team: state.team,

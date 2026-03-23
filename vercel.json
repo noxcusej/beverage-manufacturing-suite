@@ -4,7 +4,11 @@
   "framework": "vite",
   "rewrites": [
     {
-      "source": "/((?!batch-calculator-v4\\.html|assets/).*)",
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/((?!api/|batch-calculator-v4\\.html|assets/).*)",
       "destination": "/index.html"
     }
   ]

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { getInventory, saveInventory, addInventoryItem, getVendors, getTankConfig, getCurrentBatch, saveBatch, getFormulas, saveFormula as saveFormulaToStore, getClients } from '../data/store';
+import { getInventory, saveInventory, addInventoryItem, getVendors, getTankConfig, getCurrentBatch, saveBatch, getFormulas, saveFormula as saveFormulaToStore } from '../data/store';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import * as XLSX from 'xlsx';
 
@@ -10,13 +10,6 @@ const conversions = {
   lbs_kg: 0.453592, kg_lbs: 2.20462, lbs_g: 453.592, g_lbs: 0.00220462,
   oz_g: 28.3495, g_oz: 0.035274,
 };
-
-function fmtNum(n) {
-  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
-  if (n >= 100) return Math.round(n).toString();
-  if (n >= 10) return n.toFixed(1).replace(/\.0$/, '');
-  return n.toFixed(1).replace(/\.0$/, '');
-}
 
 function convert(value, from, to) {
   if (from === to) return value;
@@ -36,7 +29,6 @@ export default function BatchCalculator() {
   }, [inventoryArr]);
 
   const [formulaName, setFormulaName] = useState('');
-  const [formulaClient, setFormulaClient] = useState('Uncategorized');
   const [baseYield, setBaseYield] = useState(100);
   const [baseYieldUnit, setBaseYieldUnit] = useState('gal');
   const [batchSize, setBatchSize] = useState(500);
@@ -376,12 +368,11 @@ export default function BatchCalculator() {
   function handleSaveFormula() {
     saveFormulaToStore({
       name: formulaName,
-      client: formulaClient || 'Uncategorized',
       baseYield, baseYieldUnit,
       batchSize, batchSizeUnit,
       ingredients,
     });
-    showToast(`Formula saved to ${formulaClient || 'Uncategorized'}`);
+    showToast('Formula saved!');
   }
 
   function handleSaveBatch() {
@@ -411,13 +402,11 @@ export default function BatchCalculator() {
     const formula = formulas.find((f) => f.name === name);
     if (!formula) return;
     setFormulaName(formula.name);
-    setFormulaClient(formula.client || 'Uncategorized');
     if (formula.baseYield) setBaseYield(formula.baseYield);
     if (formula.baseYieldUnit) setBaseYieldUnit(formula.baseYieldUnit);
     if (formula.batchSize) setBatchSize(formula.batchSize);
     if (formula.batchSizeUnit) setBatchSizeUnit(formula.batchSizeUnit);
     if (formula.ingredients) setIngredients(formula.ingredients);
-    setSizeMode('batch');
     setShowLoadModal(false);
     setLoadSearch('');
     showToast(`Loaded "${formula.name}"`);
@@ -425,7 +414,6 @@ export default function BatchCalculator() {
 
   function handleNewFormula() {
     setFormulaName('New Formula');
-    setFormulaClient('Uncategorized');
     setBaseYield(100);
     setBaseYieldUnit('gal');
     setBatchSize(500);
@@ -661,12 +649,10 @@ export default function BatchCalculator() {
 
     function matchInventory(name) {
       if (!name) return null;
-      const lower = name.toLowerCase();
+      const lower = name.toLowerCase().trim();
       return inventoryArr.find((inv) =>
-        inv.name.toLowerCase() === lower ||
-        inv.name.toLowerCase().includes(lower) ||
-        lower.includes(inv.name.toLowerCase()) ||
-        (inv.sku && inv.sku.toLowerCase() === lower)
+        inv.name.toLowerCase().trim() === lower ||
+        (inv.sku && inv.sku.toLowerCase().trim() === lower)
       );
     }
 
@@ -860,21 +846,6 @@ export default function BatchCalculator() {
                   <input type="text" value={formulaName} onChange={(e) => setFormulaName(e.target.value)} />
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label">Client</label>
-                  <select value={formulaClient} onChange={(e) => setFormulaClient(e.target.value)}>
-                    <option value="Uncategorized">Uncategorized</option>
-                    {(() => {
-                      // Combine clients from store + any unique clients already on formulas
-                      const clientSet = new Set();
-                      getClients().forEach((c) => clientSet.add(c.name));
-                      formulas.forEach((f) => { if (f.client && f.client !== 'Uncategorized') clientSet.add(f.client); });
-                      return [...clientSet].sort().map((name) => (
-                        <option key={name} value={name}>{name}</option>
-                      ));
-                    })()}
-                  </select>
-                </div>
-                <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label">Base Yield</label>
                   <div className="input-with-unit">
                     <input type="number" value={baseYield} onChange={(e) => setBaseYield(parseFloat(e.target.value) || 0)} />
@@ -940,11 +911,11 @@ export default function BatchCalculator() {
             <div className="section-header">
               <div className="section-title">Ingredients</div>
             </div>
-            <div>
+            <div style={{ overflowX: 'auto' }}>
               <table ref={tableRef}>
                 <thead>
                   <tr>
-                    <th>Inventory Item</th>
+                    <th style={{ maxWidth: 180 }}>Ingredient</th>
                     <th>Type</th>
                     <th>Recipe Amt</th>
                     <th>Recipe Unit</th>
@@ -964,7 +935,7 @@ export default function BatchCalculator() {
                     return (
                       <tr key={idx}>
                         <td>
-                          {ing.inventoryId ? (
+                          {ing.inventoryId && !ing.inventoryId.startsWith('DRAFT-') ? (
                             <select
                               data-row={idx} data-col={0}
                               value={ing.inventoryId}
@@ -993,7 +964,7 @@ export default function BatchCalculator() {
                                   );
                                 }
                               }}
-                              style={{ minWidth: 160 }}
+                              style={{ width: 160 }}
                             >
                               <option value="">-- Select --</option>
                               {inventoryArr.map((inv) => (
@@ -1009,7 +980,7 @@ export default function BatchCalculator() {
                               onFocus={handleCellFocus}
                               onKeyDown={(e) => handleCellKeyDown(e, idx, 0)}
                               placeholder="Draft ingredient"
-                              style={{ minWidth: 160 }}
+                              style={{ width: 160 }}
                             />
                           )}
                         </td>
@@ -1111,9 +1082,9 @@ export default function BatchCalculator() {
                                   <div style={{ height: '100%', background: color, width: `${pct}%`, transition: 'width 0.3s' }} />
                                 </div>
                                 {net > 0 ? (
-                                  <span style={{ color, fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>{fmtNum(net)} {ing.buyUnit}</span>
+                                  <span style={{ color, fontWeight: 600 }}>Need {net.toFixed(1)} {ing.buyUnit}</span>
                                 ) : (
-                                  <span style={{ color: '#10b981', fontWeight: 600, fontSize: 11 }}>✓</span>
+                                  <span style={{ color: '#10b981', fontWeight: 600 }}>Covered ✓</span>
                                 )}
                               </div>
                             );
