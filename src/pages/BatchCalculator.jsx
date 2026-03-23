@@ -144,9 +144,7 @@ export default function BatchCalculator() {
         liquidGal = convert(scaledRecipe, ing.recipeUnit, 'gal');
       } else {
         const weightLbs = convert(scaledRecipe, ing.recipeUnit, 'lbs');
-        const weightKg = weightLbs * 0.453592;
-        const volumeL = weightKg / (ing.specificGravity || 1);
-        liquidGal = volumeL * 0.264172;
+        liquidGal = weightLbs / 8.345 * (ing.specificGravity || 1);
       }
 
       return {
