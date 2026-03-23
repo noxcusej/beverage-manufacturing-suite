@@ -273,7 +273,6 @@ const CoManufacturing = {
         if (typeof window.supabase !== 'undefined' && window.supabase.createClient) {
             this._supabase = window.supabase.createClient(url, key);
             this._supabaseReady = true;
-            console.log('[CoManufacturing] Supabase connected');
         } else {
             console.warn('[CoManufacturing] Supabase library not loaded');
         }

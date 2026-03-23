@@ -9,6 +9,8 @@ import BatchCalculator from './pages/BatchCalculator';
 import FormulaLibrary from './pages/FormulaLibrary';
 import Summary from './pages/Summary';
 import ClientProfile from './pages/ClientProfile';
+import Services from './pages/Services';
+import MissionControl from './pages/MissionControl';
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -42,6 +44,8 @@ export default function App() {
           <Route path="/summary" element={<Summary />} />
           <Route path="/clients" element={<ClientProfile />} />
           <Route path="/clients/:clientName" element={<ClientProfile />} />
+          <Route path="/services" element={<Services />} />
+          <Route path="/mission-control" element={<MissionControl />} />
         </Route>
       </Routes>
     </BrowserRouter>

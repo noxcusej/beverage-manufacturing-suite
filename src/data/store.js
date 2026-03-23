@@ -118,7 +118,6 @@ export async function hydrateAll() {
   await hydrateFormulasFromSupabase();
 
   _hydrated = true;
-  console.log('[Store] Hydration complete');
 }
 
 // ── Inventory ──

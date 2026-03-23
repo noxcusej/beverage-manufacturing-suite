@@ -31,7 +31,7 @@ export default function Inventory() {
 
   useEffect(() => {
     const handler = (e) => {
-      if (e.detail.dataType === 'comanufacturing_inventory') refresh();
+      if (e.detail.dataType === 'inventory') refresh();
     };
     window.addEventListener('comanufacturing:datachange', handler);
     return () => window.removeEventListener('comanufacturing:datachange', handler);
