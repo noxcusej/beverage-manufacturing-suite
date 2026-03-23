@@ -110,9 +110,29 @@ export default function BatchCalculator() {
       const scaledRecipe = ing.recipeAmount * scaleFactor;
 
       // Convert recipe amount to buy unit amount
+      // If converting weight → volume or vice versa, use specific gravity
       let buyUnitAmount = scaledRecipe;
       if (ing.recipeUnit !== ing.buyUnit) {
-        buyUnitAmount = convert(scaledRecipe, ing.recipeUnit, ing.buyUnit);
+        const weightUnitsSet = new Set(['lbs', 'lb', 'kg', 'g']);
+        const volumeUnitsSet = new Set(['gal', 'L', 'ml', 'fl oz']);
+        const fromIsWeight = weightUnitsSet.has(ing.recipeUnit);
+        const toIsVolume = volumeUnitsSet.has(ing.buyUnit);
+        const fromIsVolume = volumeUnitsSet.has(ing.recipeUnit);
+        const toIsWeight = weightUnitsSet.has(ing.buyUnit);
+
+        if (fromIsWeight && toIsVolume) {
+          // weight → volume: LB/8.345*SG, then convert to target volume unit
+          const weightLbs = convert(scaledRecipe, ing.recipeUnit, 'lbs');
+          const gallons = weightLbs / 8.345 * (ing.specificGravity || 1);
+          buyUnitAmount = convert(gallons, 'gal', ing.buyUnit);
+        } else if (fromIsVolume && toIsWeight) {
+          // volume → weight: gal*8.345/SG, then convert to target weight unit
+          const gallons = convert(scaledRecipe, ing.recipeUnit, 'gal');
+          const lbs = gallons * 8.345 / (ing.specificGravity || 1);
+          buyUnitAmount = convert(lbs, 'lbs', ing.buyUnit);
+        } else {
+          buyUnitAmount = convert(scaledRecipe, ing.recipeUnit, ing.buyUnit);
+        }
       }
 
       const orderQty = Math.ceil(buyUnitAmount / (ing.moq || 1)) * (ing.moq || 1);
