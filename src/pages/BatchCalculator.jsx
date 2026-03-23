@@ -1136,7 +1136,7 @@ export default function BatchCalculator() {
                             data-row={idx} data-col={6}
                             type="number"
                             value={ing.pricePerBuyUnit}
-                            onChange={(e) => { updateIngredient(idx, 'pricePerBuyUnit', parseFloat(e.target.value) || 0); setMissingPriceIds((prev) => { const next = new Set(prev); next.delete(idx); return next; }); }}
+                            onChange={(e) => { const val = parseFloat(e.target.value) || 0; updateIngredient(idx, 'pricePerBuyUnit', val); if (val > 0) setMissingPriceIds((prev) => { const next = new Set(prev); next.delete(idx); return next; }); }}
                             onFocus={handleCellFocus}
                             onKeyDown={(e) => handleCellKeyDown(e, idx, 6)}
                             step="0.0001"
