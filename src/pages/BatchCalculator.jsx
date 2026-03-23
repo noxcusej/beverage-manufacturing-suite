@@ -46,6 +46,7 @@ export default function BatchCalculator() {
   const [unitSizeVal, setUnitSizeVal] = useState(12);
   const [unitSizeUnit, setUnitSizeUnitState] = useState('oz');
   const [unitsPerCase, setUnitsPerCase] = useState(24);
+  const [lossPercent, setLossPercent] = useState(5); // % production loss adjustment
   const [ingredients, setIngredients] = useState([]);
   const [showUnitCalc, setShowUnitCalc] = useState(false);
   const [showLoadModal, setShowLoadModal] = useState(false);
@@ -86,8 +87,9 @@ export default function BatchCalculator() {
   function handleCasesChange(cases) {
     setTargetCases(cases);
     setSizeMode('cases');
-    // cases → units → oz → gal
-    const units = cases * unitsPerCase;
+    // cases → units → oz → gal, with loss adjustment
+    const lossMultiplier = 1 + (lossPercent || 0) / 100;
+    const units = cases * unitsPerCase * lossMultiplier;
     let unitOz = unitSizeVal;
     if (unitSizeUnit === 'ml') unitOz = unitSizeVal / 29.5735;
     if (unitSizeUnit === 'L') unitOz = unitSizeVal * 33.814;
@@ -379,6 +381,9 @@ export default function BatchCalculator() {
       client: formulaClient || 'Uncategorized',
       baseYield, baseYieldUnit,
       batchSize, batchSizeUnit,
+      unitSizeVal, unitSizeUnit,
+      unitsPerCase,
+      lossPercent,
       ingredients,
     });
     showToast(`Formula saved to ${formulaClient || 'Uncategorized'}`);
@@ -416,6 +421,10 @@ export default function BatchCalculator() {
     if (formula.baseYieldUnit) setBaseYieldUnit(formula.baseYieldUnit);
     if (formula.batchSize) setBatchSize(formula.batchSize);
     if (formula.batchSizeUnit) setBatchSizeUnit(formula.batchSizeUnit);
+    if (formula.unitSizeVal) setUnitSizeVal(formula.unitSizeVal);
+    if (formula.unitSizeUnit) setUnitSizeUnitState(formula.unitSizeUnit);
+    if (formula.unitsPerCase) setUnitsPerCase(formula.unitsPerCase);
+    if (formula.lossPercent !== undefined) setLossPercent(formula.lossPercent);
     if (formula.ingredients) setIngredients(formula.ingredients);
     setSizeMode('batch');
     setShowLoadModal(false);
@@ -913,6 +922,10 @@ export default function BatchCalculator() {
                 <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label">Units per Case</label>
                   <input type="number" value={unitsPerCase} onChange={(e) => setUnitsPerCase(parseInt(e.target.value) || 1)} />
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label">Loss Adjustment %</label>
+                  <input type="number" value={lossPercent} min={0} max={50} step={0.5} onChange={(e) => setLossPercent(parseFloat(e.target.value) || 0)} />
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label">Order Cases {sizeMode === 'cases' && <span style={{ fontSize: 10, color: '#7062E0', fontWeight: 600 }}>DRIVING</span>}</label>
