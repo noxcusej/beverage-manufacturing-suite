@@ -409,6 +409,7 @@ export default function BatchCalculator() {
       batchSize, batchSizeUnit,
       unitSizeVal, unitSizeUnit,
       unitsPerCase, lossPercent,
+      targetCases,
       ingredients,
     });
 
@@ -448,18 +449,47 @@ export default function BatchCalculator() {
     setFormulaName(formula.name);
     setFormulaClient(formula.client || 'Uncategorized');
     setMissingPriceIds(new Set());
-    if (formula.baseYield) setBaseYield(formula.baseYield);
-    if (formula.baseYieldUnit) setBaseYieldUnit(formula.baseYieldUnit);
-    if (formula.batchSize) setBatchSize(formula.batchSize);
-    if (formula.batchSizeUnit) setBatchSizeUnit(formula.batchSizeUnit);
-    if (formula.unitSizeVal) setUnitSizeVal(formula.unitSizeVal);
-    if (formula.unitSizeUnit) setUnitSizeUnitState(formula.unitSizeUnit);
-    if (formula.unitsPerCase) setUnitsPerCase(formula.unitsPerCase);
-    if (formula.lossPercent !== undefined) setLossPercent(formula.lossPercent);
+    const newBaseYield = formula.baseYield || 100;
+    const newBaseYieldUnit = formula.baseYieldUnit || 'gal';
+    const newBatchSizeUnit = formula.batchSizeUnit || 'gal';
+    const newUnitSizeVal = formula.unitSizeVal || 12;
+    const newUnitSizeUnit = formula.unitSizeUnit || 'oz';
+    const newUnitsPerCase = formula.unitsPerCase || 24;
+    const newLossPercent = formula.lossPercent !== undefined ? formula.lossPercent : 0;
+
+    setBaseYield(newBaseYield);
+    setBaseYieldUnit(newBaseYieldUnit);
+    setBatchSizeUnit(newBatchSizeUnit);
+    setUnitSizeVal(newUnitSizeVal);
+    setUnitSizeUnitState(newUnitSizeUnit);
+    setUnitsPerCase(newUnitsPerCase);
+    setLossPercent(newLossPercent);
     if (formula.ingredients) setIngredients(formula.ingredients);
+
+    // Recalculate batchSize from saved targetCases if available, else reset to base yield
+    const savedCases = formula.targetCases || 0;
+    if (savedCases > 0) {
+      const lossMultiplier = 1 + newLossPercent / 100;
+      const units = savedCases * newUnitsPerCase * lossMultiplier;
+      let unitOz = newUnitSizeVal;
+      if (newUnitSizeUnit === 'ml') unitOz = newUnitSizeVal / 29.5703;
+      if (newUnitSizeUnit === 'L') unitOz = newUnitSizeVal * 33.814;
+      const totalOz = units * unitOz;
+      const totalGal = totalOz / 128;
+      const newBatch = newBatchSizeUnit === 'L' ? totalGal * 3.78541 : totalGal;
+      setBatchSize(Math.round(newBatch * 100) / 100);
+      setTargetCases(savedCases);
+      setSizeMode('cases');
+    } else {
+      // No cases saved — just load the spec batch size (base yield)
+      setBatchSize(newBaseYield);
+      setTargetCases(0);
+      setSizeMode('batch');
+    }
+
     setShowLoadModal(false);
     setLoadSearch('');
-    showToast(`Loaded "${formula.name}"`);
+    showToast(`Loaded "${formula.name}" — enter Order Cases to scale`);
   }
 
   function handleNewFormula() {
