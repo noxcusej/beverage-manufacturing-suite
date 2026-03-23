@@ -139,10 +139,15 @@ export default function BatchCalculator() {
       totalCostWithInventory += netLineCost;
 
       // Liquid volume in gallons for volume tracking
+      // Always derive from weight using SG: GAL = LB / 8.345 × SG
+      // If recipe is already in a volume unit, convert directly to gal
       let liquidGal = 0;
-      if (ing.type === 'liquid') {
+      const weightUnits = ['lbs', 'lb', 'kg', 'g', 'oz'];
+      const volumeUnits = ['gal', 'L', 'ml', 'fl oz'];
+      if (volumeUnits.includes(ing.recipeUnit)) {
         liquidGal = convert(scaledRecipe, ing.recipeUnit, 'gal');
       } else {
+        // Weight-based: convert to lbs first, then apply SG
         const weightLbs = convert(scaledRecipe, ing.recipeUnit, 'lbs');
         liquidGal = weightLbs / 8.345 * (ing.specificGravity || 1);
       }
