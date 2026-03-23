@@ -5,6 +5,7 @@ import CommandPalette from './CommandPalette';
 
 export default function Layout() {
   const [batch, setBatch] = useState(getCurrentBatch());
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     const handler = () => setBatch(getCurrentBatch());
@@ -23,7 +24,7 @@ export default function Layout() {
 
       <div className="app-shell">
         {/* Sidebar */}
-        <aside className="app-sidebar">
+        <aside className={`app-sidebar${collapsed ? ' app-sidebar--collapsed' : ''}`}>
           <div className="sidebar-brand">
             <div className="sidebar-logo">
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
@@ -31,50 +32,59 @@ export default function Layout() {
                 <path d="M5 15L9 11L13 15L17 11" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
-            <div>
-              <div className="sidebar-title">BeverageOS</div>
-              <div className="sidebar-subtitle">Precision Manufacturing</div>
-            </div>
+            {!collapsed && (
+              <div>
+                <div className="sidebar-title">BeverageOS</div>
+                <div className="sidebar-subtitle">Precision Manufacturing</div>
+              </div>
+            )}
           </div>
 
           <nav className="sidebar-nav">
-            <NavLink to="/batch-calculator" className={({ isActive }) => isActive ? 'active' : ''}>
+            <NavLink to="/batch-calculator" className={({ isActive }) => isActive ? 'active' : ''} title="Formula Calculator">
               <span className="nav-icon">&#x2211;</span>
-              Formula Calculator
+              {!collapsed && 'Formula Calculator'}
             </NavLink>
-            <NavLink to="/copacking" className={({ isActive }) => isActive ? 'active' : ''}>
+            <NavLink to="/copacking" className={({ isActive }) => isActive ? 'active' : ''} title="Run Quoting">
               <span className="nav-icon">&#x2B1C;</span>
-              Run Quoting
+              {!collapsed && 'Run Quoting'}
             </NavLink>
-            <NavLink to="/clients" className={({ isActive }) => isActive ? 'active' : ''}>
+            <NavLink to="/clients" className={({ isActive }) => isActive ? 'active' : ''} title="Clients">
               <span className="nav-icon">&#x263A;</span>
-              Clients
+              {!collapsed && 'Clients'}
             </NavLink>
-            <NavLink to="/inventory" className={({ isActive }) => isActive ? 'active' : ''}>
+            <NavLink to="/inventory" className={({ isActive }) => isActive ? 'active' : ''} title="Inventory">
               <span className="nav-icon">&#x1F4E6;</span>
-              Inventory
+              {!collapsed && 'Inventory'}
             </NavLink>
-            <NavLink to="/packaging" className={({ isActive }) => isActive ? 'active' : ''}>
+            <NavLink to="/packaging" className={({ isActive }) => isActive ? 'active' : ''} title="Packaging">
               <span className="nav-icon">&#x2750;</span>
-              Packaging
+              {!collapsed && 'Packaging'}
             </NavLink>
-            <NavLink to="/formulas" className={({ isActive }) => isActive ? 'active' : ''}>
+            <NavLink to="/formulas" className={({ isActive }) => isActive ? 'active' : ''} title="Formulas">
               <span className="nav-icon">&#x2697;</span>
-              Formulas
+              {!collapsed && 'Formulas'}
             </NavLink>
-            <NavLink to="/summary" className={({ isActive }) => isActive ? 'active' : ''}>
+            <NavLink to="/summary" className={({ isActive }) => isActive ? 'active' : ''} title="Summary">
               <span className="nav-icon">&#x2211;</span>
-              Summary
+              {!collapsed && 'Summary'}
             </NavLink>
           </nav>
 
           <div className="sidebar-footer">
-            <a href="#settings">
-              <span>&#x2699;</span> Settings
-            </a>
-            <a href="#support">
-              <span>&#x2709;</span> Support
-            </a>
+            {!collapsed && (
+              <>
+                <a href="#settings"><span>&#x2699;</span> Settings</a>
+                <a href="#support"><span>&#x2709;</span> Support</a>
+              </>
+            )}
+            <button
+              className="sidebar-collapse-btn"
+              onClick={() => setCollapsed(c => !c)}
+              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {collapsed ? '›' : '‹'}
+            </button>
           </div>
         </aside>
 

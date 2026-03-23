@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { getInventory, saveInventory, addInventoryItem, getVendors, getTankConfig, getCurrentBatch, saveBatch, getFormulas, saveFormula as saveFormulaToStore } from '../data/store';
+import { getInventory, saveInventory, addInventoryItem, getVendors, getTankConfig, getCurrentBatch, saveBatch, getFormulas, saveFormula as saveFormulaToStore, getClients } from '../data/store';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import * as XLSX from 'xlsx';
 
@@ -29,6 +29,8 @@ export default function BatchCalculator() {
   }, [inventoryArr]);
 
   const [formulaName, setFormulaName] = useState('');
+  const [formulaClient, setFormulaClient] = useState('Uncategorized');
+  const [missingPriceIds, setMissingPriceIds] = useState(new Set());
   const [baseYield, setBaseYield] = useState(100);
   const [baseYieldUnit, setBaseYieldUnit] = useState('gal');
   const [batchSize, setBatchSize] = useState(500);
@@ -53,6 +55,7 @@ export default function BatchCalculator() {
   const [showOptimizeModal, setShowOptimizeModal] = useState(false);
 
   const [formulas, setFormulas] = useState(() => getFormulas());
+  const [clients, setClients] = useState(() => getClients());
 
   useEffect(() => {
     const handler = () => {
@@ -368,15 +371,29 @@ export default function BatchCalculator() {
   }
 
   function handleSaveFormula() {
+    // Highlight ingredients with missing price
+    const missing = new Set(
+      ingredients
+        .map((ing, i) => (!ing.pricePerBuyUnit || ing.pricePerBuyUnit === 0) ? i : null)
+        .filter((i) => i !== null)
+    );
+    setMissingPriceIds(missing);
+
     saveFormulaToStore({
       name: formulaName,
+      client: formulaClient || 'Uncategorized',
       baseYield, baseYieldUnit,
       batchSize, batchSizeUnit,
       unitSizeVal, unitSizeUnit,
       unitsPerCase, lossPercent,
       ingredients,
     });
-    showToast('Formula saved!');
+
+    if (missing.size > 0) {
+      showToast(`Saved — ${missing.size} ingredient${missing.size > 1 ? 's' : ''} missing price`, 'warning');
+    } else {
+      showToast('Formula saved!');
+    }
   }
 
   function handleSaveBatch() {
@@ -406,6 +423,8 @@ export default function BatchCalculator() {
     const formula = formulas.find((f) => f.name === name);
     if (!formula) return;
     setFormulaName(formula.name);
+    setFormulaClient(formula.client || 'Uncategorized');
+    setMissingPriceIds(new Set());
     if (formula.baseYield) setBaseYield(formula.baseYield);
     if (formula.baseYieldUnit) setBaseYieldUnit(formula.baseYieldUnit);
     if (formula.batchSize) setBatchSize(formula.batchSize);
@@ -854,6 +873,15 @@ export default function BatchCalculator() {
                   <input type="text" value={formulaName} onChange={(e) => setFormulaName(e.target.value)} />
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label">Client</label>
+                  <select value={formulaClient} onChange={(e) => setFormulaClient(e.target.value)}>
+                    <option value="Uncategorized">Uncategorized</option>
+                    {clients.map((c) => (
+                      <option key={c.id || c.name} value={c.name}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label">Base Yield</label>
                   <div className="input-with-unit">
                     <input type="number" value={baseYield} onChange={(e) => setBaseYield(parseFloat(e.target.value) || 0)} />
@@ -1042,11 +1070,11 @@ export default function BatchCalculator() {
                             data-row={idx} data-col={6}
                             type="number"
                             value={ing.pricePerBuyUnit}
-                            onChange={(e) => updateIngredient(idx, 'pricePerBuyUnit', parseFloat(e.target.value) || 0)}
+                            onChange={(e) => { updateIngredient(idx, 'pricePerBuyUnit', parseFloat(e.target.value) || 0); setMissingPriceIds((prev) => { const next = new Set(prev); next.delete(idx); return next; }); }}
                             onFocus={handleCellFocus}
                             onKeyDown={(e) => handleCellKeyDown(e, idx, 6)}
                             step="0.0001"
-                            style={{ width: 90 }}
+                            style={{ width: 90, background: missingPriceIds.has(idx) ? '#fef9c3' : undefined, borderColor: missingPriceIds.has(idx) ? '#eab308' : undefined }}
                           />
                         </td>
                         <td>
