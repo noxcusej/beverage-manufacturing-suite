@@ -1062,11 +1062,11 @@ export default function BatchCalculator() {
             <div className="section-header">
               <div className="section-title">Ingredients</div>
             </div>
-            <div style={{ overflowX: 'auto' }}>
-              <table ref={tableRef}>
+            <div style={{ overflowX: 'auto', width: '100%' }}>
+              <table ref={tableRef} style={{ minWidth: 900 }}>
                 <thead>
                   <tr>
-                    <th style={{ maxWidth: 180 }}>Ingredient</th>
+                    <th style={{ maxWidth: 180, position: 'sticky', left: 0, zIndex: 2, background: 'var(--surface-alt)' }}>Ingredient</th>
                     <th>Type</th>
                     <th>Recipe Amt</th>
                     <th>Recipe Unit</th>
@@ -1085,7 +1085,7 @@ export default function BatchCalculator() {
                     const item = inventory[ing.inventoryId];
                     return (
                       <tr key={idx}>
-                        <td>
+                        <td style={{ position: 'sticky', left: 0, zIndex: 1, background: 'var(--surface)', boxShadow: '2px 0 4px rgba(0,0,0,0.06)' }}>
                           {ing.inventoryId && !ing.inventoryId.startsWith('DRAFT-') ? (
                             <select
                               data-row={idx} data-col={0}
