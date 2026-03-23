@@ -15,12 +15,6 @@ function formatDate(isoString) {
   return 'Just now';
 }
 
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
 function initState() {
   const saved = getMissionControlState();
   const team = saved.team?.length ? saved.team : defaultTeam;

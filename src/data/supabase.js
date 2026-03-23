@@ -7,12 +7,52 @@ export const supabase = supabaseUrl && supabaseKey
   ? createClient(supabaseUrl, supabaseKey)
   : null;
 
-// ── Formula sync helpers ──
+// ── Generic app_data CRUD ──
 
-/**
- * Load all formulas from Supabase.
- * Returns the array of formula objects (with versions) or null on error.
- */
+export async function loadAppData(key) {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('app_data')
+      .select('data')
+      .eq('key', key)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') return null; // row not found
+      console.error(`[Supabase] load ${key} error:`, error.message);
+      return null;
+    }
+    return data?.data ?? null;
+  } catch (err) {
+    console.error(`[Supabase] load ${key} exception:`, err);
+    return null;
+  }
+}
+
+export async function saveAppData(key, value) {
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase
+      .from('app_data')
+      .upsert(
+        { key, data: value, updated_at: new Date().toISOString() },
+        { onConflict: 'key' }
+      );
+
+    if (error) {
+      console.error(`[Supabase] save ${key} error:`, error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error(`[Supabase] save ${key} exception:`, err);
+    return false;
+  }
+}
+
+// ── Formula sync helpers (uses dedicated formulas table) ──
+
 export async function loadFormulasFromSupabase() {
   if (!supabase) return null;
   try {
@@ -26,7 +66,6 @@ export async function loadFormulasFromSupabase() {
       return null;
     }
 
-    // Reconstruct formula objects from DB rows
     return data.map(row => ({
       ...row.data,
       id: row.id,
@@ -42,13 +81,9 @@ export async function loadFormulasFromSupabase() {
   }
 }
 
-/**
- * Upsert a single formula to Supabase.
- */
 export async function saveFormulaToSupabase(formula) {
   if (!supabase) return false;
   try {
-    // Separate versions from the data blob
     const { versions, id, name, client, createdAt, updatedAt, ...rest } = formula;
 
     const row = {
@@ -74,9 +109,6 @@ export async function saveFormulaToSupabase(formula) {
   }
 }
 
-/**
- * Sync all formulas from localStorage to Supabase (bulk upsert).
- */
 export async function syncAllFormulasToSupabase(formulas) {
   if (!supabase) return false;
   try {
@@ -106,9 +138,6 @@ export async function syncAllFormulasToSupabase(formulas) {
   }
 }
 
-/**
- * Delete a formula from Supabase by ID.
- */
 export async function deleteFormulaFromSupabase(formulaId) {
   if (!supabase) return false;
   try {
