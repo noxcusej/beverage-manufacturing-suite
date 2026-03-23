@@ -77,6 +77,10 @@ export default function Layout() {
               <span className="nav-icon">&#x1F4E1;</span>
               {!collapsed && 'Mission Control'}
             </NavLink>
+            <NavLink to="/consolidated-po" className={({ isActive }) => isActive ? 'active' : ''} title="Consolidated PO">
+              <span className="nav-icon">&#x1F4CB;</span>
+              {!collapsed && 'Consolidated PO'}
+            </NavLink>
           </nav>
 
           <div className="sidebar-footer">

@@ -11,6 +11,7 @@ import Summary from './pages/Summary';
 import ClientProfile from './pages/ClientProfile';
 import Services from './pages/Services';
 import MissionControl from './pages/MissionControl';
+import ConsolidatedPO from './pages/ConsolidatedPO';
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -46,6 +47,7 @@ export default function App() {
           <Route path="/clients/:clientName" element={<ClientProfile />} />
           <Route path="/services" element={<Services />} />
           <Route path="/mission-control" element={<MissionControl />} />
+          <Route path="/consolidated-po" element={<ConsolidatedPO />} />
         </Route>
       </Routes>
     </BrowserRouter>
