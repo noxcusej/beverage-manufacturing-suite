@@ -250,31 +250,31 @@ export default function ConsolidatedPO() {
 
   if (loading) {
     return (
-      <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>
+      <div style={{ padding: 40, textAlign: 'center', color: '#374151' }}>
         Loading formulas...
       </div>
     );
   }
 
   return (
-    <div style={{ padding: '24px 32px', maxWidth: 1100, margin: '0 auto' }}>
-      <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Consolidated Purchase Order</h1>
-      <p style={{ color: '#888', marginBottom: 24, fontSize: 14 }}>
+    <div style={{ padding: '24px 32px', maxWidth: 1100, margin: '0 auto', color: '#111827' }}>
+      <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4, color: '#111827' }}>Consolidated Purchase Order</h1>
+      <p style={{ color: '#374151', marginBottom: 24, fontSize: 14 }}>
         Select multiple formulas, enter case counts, and generate a single aggregated PO grouped by supplier.
       </p>
 
       {/* Formula Selection */}
-      <div style={{ background: 'var(--card-bg, #1a1a2e)', border: '1px solid var(--border, #2a2a4a)', borderRadius: 10, padding: 20, marginBottom: 20 }}>
-        <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 14, color: 'var(--text-primary, #e8e8f0)' }}>
+      <div style={{ background: '#ffffff', border: '1px solid #d1d5db', borderRadius: 10, padding: 20, marginBottom: 20 }}>
+        <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 14, color: '#111827' }}>
           Select Formulas
         </h2>
 
         {formulas.length === 0 ? (
-          <div style={{ color: '#888', fontSize: 14 }}>No formulas found. Add formulas in the Formula Library.</div>
+          <div style={{ color: '#374151', fontSize: 14 }}>No formulas found. Add formulas in the Formula Library.</div>
         ) : (
           Object.entries(formulaGroups).map(([client, clientFormulas]) => (
             <div key={client} style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
                 {client}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -287,8 +287,8 @@ export default function ConsolidatedPO() {
                       gap: 12,
                       padding: '8px 12px',
                       borderRadius: 6,
-                      background: selected[formula.id] ? 'rgba(100,120,255,0.1)' : 'transparent',
-                      border: selected[formula.id] ? '1px solid rgba(100,120,255,0.3)' : '1px solid transparent',
+                      background: selected[formula.id] ? '#eff6ff' : '#f9fafb',
+                      border: selected[formula.id] ? '1px solid #3b82f6' : '1px solid #e5e7eb',
                       cursor: 'pointer',
                       transition: 'all 0.15s',
                     }}
@@ -299,13 +299,13 @@ export default function ConsolidatedPO() {
                       onChange={() => toggleFormula(formula.id)}
                       style={{ width: 16, height: 16, cursor: 'pointer', flexShrink: 0 }}
                     />
-                    <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>{formula.name}</span>
-                    <span style={{ fontSize: 12, color: '#888', marginRight: 8 }}>
+                    <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: '#111827' }}>{formula.name}</span>
+                    <span style={{ fontSize: 12, color: '#4b5563', marginRight: 8 }}>
                       {(formula.ingredients || []).length} ingredients
                     </span>
                     {selected[formula.id] && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 12, color: '#aaa' }}>Cases:</span>
+                        <span style={{ fontSize: 12, color: '#374151', fontWeight: 500 }}>Cases:</span>
                         <input
                           type="number"
                           min="0"
@@ -318,9 +318,9 @@ export default function ConsolidatedPO() {
                             padding: '4px 8px',
                             fontSize: 14,
                             borderRadius: 5,
-                            border: '1px solid var(--border, #444)',
-                            background: 'var(--input-bg, #111)',
-                            color: 'var(--text-primary, #e8e8f0)',
+                            border: '1px solid #9ca3af',
+                            background: '#ffffff',
+                            color: '#111827',
                             textAlign: 'right',
                           }}
                         />
@@ -343,7 +343,7 @@ export default function ConsolidatedPO() {
             Generate PO
           </button>
           {selectedIds.length > 0 && (
-            <span style={{ fontSize: 13, color: '#888' }}>
+            <span style={{ fontSize: 13, color: '#374151' }}>
               {selectedIds.length} formula{selectedIds.length !== 1 ? 's' : ''} selected
             </span>
           )}
@@ -354,23 +354,23 @@ export default function ConsolidatedPO() {
       {generated && poData && (
         <div>
           {/* Formula summary */}
-          <div style={{ background: 'var(--card-bg, #1a1a2e)', border: '1px solid var(--border, #2a2a4a)', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+          <div style={{ background: '#ffffff', border: '1px solid #d1d5db', borderRadius: 10, padding: 16, marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <h2 style={{ fontSize: 15, fontWeight: 600 }}>PO Summary</h2>
+              <h2 style={{ fontSize: 15, fontWeight: 600, color: '#111827' }}>PO Summary</h2>
               <button className="btn" onClick={exportToExcel} style={{ fontSize: 13 }}>
                 Export Excel
               </button>
             </div>
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 10 }}>
               {poData.formulaSummaries.map((f, i) => (
-                <div key={i} style={{ background: 'rgba(100,120,255,0.08)', borderRadius: 6, padding: '6px 12px', fontSize: 13 }}>
+                <div key={i} style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, padding: '6px 12px', fontSize: 13, color: '#1e40af' }}>
                   <strong>{f.name}</strong>
-                  {f.client && <span style={{ color: '#888' }}> ({f.client})</span>}
-                  <span style={{ marginLeft: 8, color: '#aaa' }}>{f.cases.toLocaleString()} cases</span>
+                  {f.client && <span style={{ color: '#1d4ed8' }}> ({f.client})</span>}
+                  <span style={{ marginLeft: 8, color: '#1e40af' }}>{f.cases.toLocaleString()} cases</span>
                 </div>
               ))}
             </div>
-            <div style={{ fontSize: 14, color: '#aaa' }}>
+            <div style={{ fontSize: 14, color: '#374151' }}>
               {poData.rowCount} unique ingredient{poData.rowCount !== 1 ? 's' : ''} across {Object.keys(poData.byVendor).length} supplier{Object.keys(poData.byVendor).length !== 1 ? 's' : ''}
             </div>
           </div>
@@ -380,8 +380,8 @@ export default function ConsolidatedPO() {
             <div
               key={vendor}
               style={{
-                background: 'var(--card-bg, #1a1a2e)',
-                border: '1px solid var(--border, #2a2a4a)',
+                background: '#ffffff',
+                border: '1px solid #d1d5db',
                 borderRadius: 10,
                 marginBottom: 16,
                 overflow: 'hidden',
@@ -389,29 +389,29 @@ export default function ConsolidatedPO() {
             >
               <div style={{
                 padding: '12px 16px',
-                background: 'rgba(100,120,255,0.08)',
-                borderBottom: '1px solid var(--border, #2a2a4a)',
+                background: '#1f2937',
+                borderBottom: '1px solid #374151',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
               }}>
-                <span style={{ fontWeight: 600, fontSize: 15 }}>{vendor}</span>
-                <span style={{ fontSize: 13, color: '#aaa' }}>
-                  Subtotal: <strong style={{ color: 'var(--text-primary, #e8e8f0)' }}>${group.subtotal.toFixed(2)}</strong>
+                <span style={{ fontWeight: 600, fontSize: 15, color: '#ffffff' }}>{vendor}</span>
+                <span style={{ fontSize: 13, color: '#d1d5db' }}>
+                  Subtotal: <strong style={{ color: '#ffffff' }}>${group.subtotal.toFixed(2)}</strong>
                 </span>
               </div>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border, #333)' }}>
+                    <tr style={{ background: '#f3f4f6', borderBottom: '2px solid #d1d5db' }}>
                       {['Ingredient', 'SKU', 'Total Needed', 'Unit', 'MOQ', 'Order Qty', 'Price/Unit', 'Line Total'].map((h) => (
                         <th
                           key={h}
                           style={{
                             padding: '8px 12px',
                             textAlign: h === 'Ingredient' ? 'left' : 'right',
-                            fontWeight: 600,
-                            color: '#888',
+                            fontWeight: 700,
+                            color: '#111827',
                             whiteSpace: 'nowrap',
                           }}
                         >
@@ -427,29 +427,29 @@ export default function ConsolidatedPO() {
                         <tr
                           key={i}
                           style={{
-                            borderBottom: '1px solid var(--border, #222)',
-                            background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)',
+                            borderBottom: '1px solid #e5e7eb',
+                            background: i % 2 === 0 ? '#ffffff' : '#f9fafb',
                           }}
                         >
-                          <td style={{ padding: '9px 12px', fontWeight: 500 }}>{row.name}</td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right', color: '#888' }}>{row.sku || '—'}</td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>
+                          <td style={{ padding: '9px 12px', fontWeight: 500, color: '#111827' }}>{row.name}</td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', color: '#374151' }}>{row.sku || '—'}</td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: '#111827' }}>
                             {row.totalAmount.toFixed(2)}
                           </td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right', color: '#aaa' }}>{row.buyUnit}</td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right', color: '#aaa' }}>{row.moq}</td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>
-                            <span style={{ color: moqAdjusted ? '#f0a500' : 'inherit' }}>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', color: '#374151' }}>{row.buyUnit}</td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', color: '#374151' }}>{row.moq}</td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: '#111827' }}>
+                            <span style={{ color: moqAdjusted ? '#b45309' : '#111827' }}>
                               {row.orderQty.toFixed(2)}
                             </span>
                             {moqAdjusted && (
-                              <span style={{ fontSize: 10, color: '#f0a500', marginLeft: 4 }} title="MOQ adjusted">MOQ</span>
+                              <span style={{ fontSize: 10, color: '#b45309', marginLeft: 4, fontWeight: 600 }} title="MOQ adjusted">MOQ</span>
                             )}
                           </td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right', color: '#aaa', fontFamily: 'monospace' }}>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', color: '#374151', fontFamily: 'monospace' }}>
                             {row.pricePerBuyUnit > 0 ? '$' + row.pricePerBuyUnit.toFixed(4) : '—'}
                           </td>
-                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: '#111827' }}>
                             {row.lineCost > 0 ? '$' + row.lineCost.toFixed(2) : '—'}
                           </td>
                         </tr>
@@ -463,16 +463,16 @@ export default function ConsolidatedPO() {
 
           {/* Grand total */}
           <div style={{
-            background: 'var(--card-bg, #1a1a2e)',
-            border: '1px solid rgba(100,200,100,0.3)',
+            background: '#ffffff',
+            border: '2px solid #16a34a',
             borderRadius: 10,
             padding: '16px 20px',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
           }}>
-            <span style={{ fontWeight: 600, fontSize: 16 }}>Grand Total</span>
-            <span style={{ fontSize: 22, fontWeight: 700, color: '#5dba5d', fontFamily: 'monospace' }}>
+            <span style={{ fontWeight: 700, fontSize: 16, color: '#111827' }}>Grand Total</span>
+            <span style={{ fontSize: 22, fontWeight: 700, color: '#15803d', fontFamily: 'monospace' }}>
               ${poData.grandTotal.toFixed(2)}
             </span>
           </div>
@@ -480,7 +480,7 @@ export default function ConsolidatedPO() {
       )}
 
       {generated && !poData && (
-        <div style={{ padding: 24, textAlign: 'center', color: '#888', background: 'var(--card-bg, #1a1a2e)', borderRadius: 10, border: '1px solid var(--border, #2a2a4a)' }}>
+        <div style={{ padding: 24, textAlign: 'center', color: '#374151', background: '#f9fafb', borderRadius: 10, border: '1px solid #d1d5db' }}>
           No formulas with valid case counts selected.
         </div>
       )}
