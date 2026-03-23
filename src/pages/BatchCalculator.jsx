@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { getInventory, saveInventory, addInventoryItem, getVendors, getTankConfig, getCurrentBatch, saveBatch, getFormulas, saveFormula as saveFormulaToStore, getClients } from '../data/store';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import * as XLSX from 'xlsx';
@@ -34,6 +35,7 @@ function convertWithSG(value, from, to, sg) {
 }
 
 export default function BatchCalculator() {
+  const location = useLocation();
   const [inventoryArr, setInventoryArr] = useState(getInventory());
   const inventory = useMemo(() => {
     const obj = {};
@@ -90,6 +92,49 @@ export default function BatchCalculator() {
       if (batch.ingredients) setIngredients(batch.ingredients);
     }
   }, []);
+
+  // Load formula by ?formula=<id> query param (e.g. from ClientProfile click)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const formulaId = params.get('formula');
+    if (!formulaId) return;
+    const formula = getFormulas().find((f) => f.id === formulaId);
+    if (!formula) return;
+    setFormulaName(formula.name);
+    setFormulaClient(formula.client || 'Uncategorized');
+    setMissingPriceIds(new Set());
+    const newBaseYield = formula.baseYield || 100;
+    const newBaseYieldUnit = formula.baseYieldUnit || 'gal';
+    const newBatchSizeUnit = formula.batchSizeUnit || 'gal';
+    const newUnitSizeVal = formula.unitSizeVal || 12;
+    const newUnitSizeUnit = formula.unitSizeUnit || 'oz';
+    const newUnitsPerCase = formula.unitsPerCase || 24;
+    const newLossPercent = formula.lossPercent !== undefined ? formula.lossPercent : 0;
+    setBaseYield(newBaseYield);
+    setBaseYieldUnit(newBaseYieldUnit);
+    setBatchSizeUnit(newBatchSizeUnit);
+    setUnitSizeVal(newUnitSizeVal);
+    setUnitSizeUnitState(newUnitSizeUnit);
+    setUnitsPerCase(newUnitsPerCase);
+    setLossPercent(newLossPercent);
+    if (formula.ingredients) setIngredients(formula.ingredients);
+    const savedCases = formula.targetCases || 0;
+    if (savedCases > 0) {
+      const lossMultiplier = 1 + newLossPercent / 100;
+      const units = savedCases * newUnitsPerCase * lossMultiplier;
+      let unitOz = newUnitSizeVal;
+      if (newUnitSizeUnit === 'ml') unitOz = newUnitSizeVal / 29.5703;
+      if (newUnitSizeUnit === 'L') unitOz = newUnitSizeVal * 33.814;
+      const totalGal = (units * unitOz) / 128;
+      setBatchSize(Math.round((newBatchSizeUnit === 'L' ? totalGal * 3.78541 : totalGal) * 100) / 100);
+      setTargetCases(savedCases);
+      setSizeMode('cases');
+    } else {
+      setBatchSize(newBaseYield);
+      setTargetCases(0);
+      setSizeMode('batch');
+    }
+  }, [location.search]);
 
   // Bidirectional: cases → batch size
   function handleCasesChange(cases) {

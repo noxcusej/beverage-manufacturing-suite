@@ -69,6 +69,14 @@ export default function Layout() {
               <span className="nav-icon">&#x2211;</span>
               {!collapsed && 'Summary'}
             </NavLink>
+            <NavLink to="/services" className={({ isActive }) => isActive ? 'active' : ''} title="Services">
+              <span className="nav-icon">&#x2692;</span>
+              {!collapsed && 'Services'}
+            </NavLink>
+            <NavLink to="/mission-control" className={({ isActive }) => isActive ? 'active' : ''} title="Mission Control">
+              <span className="nav-icon">&#x1F4E1;</span>
+              {!collapsed && 'Mission Control'}
+            </NavLink>
           </nav>
 
           <div className="sidebar-footer">

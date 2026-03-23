@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getFormulas, getInventory, saveAllFormulas, saveFormula, deleteFormula, hydrateFormulasFromSupabase, getClients, saveBatch } from '../data/store';
 
 function generateFormulaId() {
@@ -6,6 +7,7 @@ function generateFormulaId() {
 }
 
 export default function FormulaLibrary() {
+  const navigate = useNavigate();
   const [formulas, setFormulas] = useState(getFormulas());
   const [expandedFolders, setExpandedFolders] = useState({});
   const [draggedIdx, setDraggedIdx] = useState(null);
@@ -274,7 +276,7 @@ export default function FormulaLibrary() {
       timestamp: new Date().toISOString(),
     };
     saveBatch(batch);
-    window.location.href = '/batch-calculator';
+    navigate('/batch-calculator');
   }
 
   const selected = selectedFormula;
