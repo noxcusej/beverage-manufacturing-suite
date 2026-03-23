@@ -20,6 +20,19 @@ function convert(value, from, to) {
   return value;
 }
 
+const _weightUnitsSet = new Set(['lbs', 'lb', 'kg', 'g']);
+const _volumeUnitsSet = new Set(['gal', 'L', 'ml', 'fl oz']);
+function convertWithSG(value, from, to, sg) {
+  if (from === to) return value;
+  if (_weightUnitsSet.has(from) && _volumeUnitsSet.has(to)) {
+    return convert(convert(value, from, 'lbs') / 8.345 * (sg || 1), 'gal', to);
+  }
+  if (_volumeUnitsSet.has(from) && _weightUnitsSet.has(to)) {
+    return convert(convert(value, from, 'gal') * 8.345 / (sg || 1), 'lbs', to);
+  }
+  return convert(value, from, to);
+}
+
 export default function BatchCalculator() {
   const [inventoryArr, setInventoryArr] = useState(getInventory());
   const inventory = useMemo(() => {
@@ -249,7 +262,7 @@ export default function BatchCalculator() {
       const perIng = ingredients.map((ing) => {
         const scaledRecipe = ing.recipeAmount * sf;
         let buyAmt = scaledRecipe;
-        if (ing.recipeUnit !== ing.buyUnit) buyAmt = convert(scaledRecipe, ing.recipeUnit, ing.buyUnit);
+        if (ing.recipeUnit !== ing.buyUnit) buyAmt = convertWithSG(scaledRecipe, ing.recipeUnit, ing.buyUnit, ing.specificGravity);
         const moq = ing.moq || 1;
         const orderQty = Math.ceil(buyAmt / moq) * moq;
         const slack = orderQty - buyAmt;
@@ -290,7 +303,7 @@ export default function BatchCalculator() {
       if (moq <= 1 || ing.recipeAmount <= 0) return;
       // Find batch sizes where this ingredient's order lands exactly on MOQ multiple
       let buyPerBase = ing.recipeAmount;
-      if (ing.recipeUnit !== ing.buyUnit) buyPerBase = convert(ing.recipeAmount, ing.recipeUnit, ing.buyUnit);
+      if (ing.recipeUnit !== ing.buyUnit) buyPerBase = convertWithSG(ing.recipeAmount, ing.recipeUnit, ing.buyUnit, ing.specificGravity);
       const buyPerGal = buyPerBase / baseYield;
       if (buyPerGal <= 0) return;
       for (let m = 1; m <= 50; m++) {
@@ -1162,7 +1175,7 @@ export default function BatchCalculator() {
                           {scaleFactor > 0 && ing.recipeAmount > 0 ? (() => {
                             const scaledRecipe = ing.recipeAmount * scaleFactor;
                             let buyNeeded = scaledRecipe;
-                            if (ing.recipeUnit !== ing.buyUnit) buyNeeded = convert(scaledRecipe, ing.recipeUnit, ing.buyUnit);
+                            if (ing.recipeUnit !== ing.buyUnit) buyNeeded = convertWithSG(scaledRecipe, ing.recipeUnit, ing.buyUnit, ing.specificGravity);
                             const invQty = ing.currentInventory || 0;
                             const invUnit = ing.inventoryUnit || ing.buyUnit;
                             let onHand = invUnit === ing.buyUnit ? invQty : convert(invQty, invUnit, ing.buyUnit);
