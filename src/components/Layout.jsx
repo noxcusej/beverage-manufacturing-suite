@@ -50,10 +50,6 @@ export default function Layout() {
               <span className="nav-icon">&#x263A;</span>
               Clients
             </NavLink>
-            <NavLink to="/inventory" className={({ isActive }) => isActive ? 'active' : ''}>
-              <span className="nav-icon">&#x1F4E6;</span>
-              Inventory
-            </NavLink>
             <NavLink to="/packaging" className={({ isActive }) => isActive ? 'active' : ''}>
               <span className="nav-icon">&#x2750;</span>
               Packaging

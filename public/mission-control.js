@@ -85,6 +85,12 @@ function startTask(taskId) {
         saveState();
         renderTasks();
         
+        // Log notification (could be upgraded to actual notifications later)
+        console.log(`🚀 Task started: ${task.title}`);
+        if (task.assignee === 'gilbert') {
+            console.log('📢 Gilbert has been assigned this task!');
+        }
+        
         // Show visual feedback
         showNotification(`Started: ${task.title}`);
     }
@@ -598,6 +604,9 @@ document.addEventListener('DOMContentLoaded', () => {
     renderTeam();
     renderOffice();
     
+    console.log('✅ Mission Control loaded');
+    console.log(`📊 ${state.tasks.length} tasks loaded`);
+    console.log(`👥 ${state.team.length} team members`);
 });
 
 // Add some sample tasks if none exist

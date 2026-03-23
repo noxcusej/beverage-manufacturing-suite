@@ -1064,7 +1064,6 @@ td input:focus, td select:focus {
 }
 
 .erp-status-dot.disconnected { background: var(--text-muted); }
-.erp-status-dot.connected { background: #059669; }
 
 /* ── Command Palette ──────────────────────────── */
 .command-palette-overlay {
