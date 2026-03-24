@@ -143,21 +143,48 @@ export default function ConsolidatedPO() {
     if (selectedFormulas.length === 0) return null;
 
     // Aggregate ingredient needs
-    const aggregated = {}; // key -> { name, sku, vendor, buyUnit, totalAmount, pricePerBuyUnit, moq }
+    // Feature 1: formulaSet tracks which formulas contain each ingredient
+    const aggregated = {}; // key -> { name, sku, vendor, buyUnit, totalAmount, pricePerBuyUnit, moq, formulaSet }
     const formulaSummaries = [];
+    // Feature 2: per-formula cost at independent MOQ
+    const formulaCosts = [];
+    let activeFormulaCount = 0;
 
     selectedFormulas.forEach((formula) => {
       const cases = caseCounts[formula.id] || 0;
       if (cases <= 0) return;
+      activeFormulaCount++;
       const needs = calcIngredientNeeds(formula, cases, inventoryMap);
       formulaSummaries.push({ name: formula.name, client: formula.client, cases });
+
+      // Per-formula cost: MOQ-adjust each ingredient independently
+      const unitsPerCase = formula.unitsPerCase || 24;
+      const totalUnits = cases * unitsPerCase;
+      let formulaMOQCost = 0;
+      needs.forEach((n) => {
+        const moq = n.moq || 1;
+        const oqty = moq > 0 ? Math.ceil(n.buyUnitAmount / moq) * moq : n.buyUnitAmount;
+        formulaMOQCost += oqty * (n.pricePerBuyUnit || 0);
+      });
+      formulaCosts.push({
+        name: formula.name,
+        client: formula.client,
+        cases,
+        unitsPerCase,
+        totalUnits,
+        totalMOQCost: formulaMOQCost,
+        costPerCan: totalUnits > 0 ? formulaMOQCost / totalUnits : 0,
+        costPerCase: totalUnits > 0 ? (formulaMOQCost / totalUnits) * unitsPerCase : 0,
+      });
 
       needs.forEach((n) => {
         const k = ingKey(n);
         if (!aggregated[k]) {
-          aggregated[k] = { ...n, totalAmount: 0 };
+          aggregated[k] = { ...n, totalAmount: 0, formulaSet: new Set() };
         }
         aggregated[k].totalAmount += n.buyUnitAmount;
+        // Feature 1: record this formula contributed this ingredient
+        aggregated[k].formulaSet.add(formula.id);
         // Keep freshest price/moq (same item across formulas should be consistent)
         if (n.pricePerBuyUnit > 0) aggregated[k].pricePerBuyUnit = n.pricePerBuyUnit;
         if (n.moq > 1) aggregated[k].moq = n.moq;
@@ -169,7 +196,7 @@ export default function ConsolidatedPO() {
       const moq = item.moq || 1;
       const orderQty = moq > 0 ? Math.ceil(item.totalAmount / moq) * moq : item.totalAmount;
       const lineCost = orderQty * (item.pricePerBuyUnit || 0);
-      return { ...item, orderQty, lineCost };
+      return { ...item, orderQty, lineCost, formulaCount: item.formulaSet.size };
     });
 
     // Group by vendor
@@ -183,7 +210,22 @@ export default function ConsolidatedPO() {
 
     const grandTotal = rows.reduce((sum, r) => sum + r.lineCost, 0);
 
-    return { byVendor, grandTotal, formulaSummaries, rowCount: rows.length };
+    // Blended cost: grand total (shared MOQ) / total units across all formulas
+    const totalUnitsAll = formulaCosts.reduce((sum, f) => sum + f.totalUnits, 0);
+    const totalCasesAll = formulaCosts.reduce((sum, f) => sum + f.cases, 0);
+    const blendedCostPerCan = totalUnitsAll > 0 ? grandTotal / totalUnitsAll : 0;
+    const blendedCostPerCase = totalCasesAll > 0 ? grandTotal / totalCasesAll : 0;
+
+    return {
+      byVendor,
+      grandTotal,
+      formulaSummaries,
+      rowCount: rows.length,
+      activeFormulaCount,
+      formulaCosts,
+      blendedCostPerCan,
+      blendedCostPerCase,
+    };
   }, [generated, formulas, selected, caseCounts, inventoryMap]);
 
   function handleGenerate() {
@@ -209,6 +251,27 @@ export default function ConsolidatedPO() {
       ...poData.formulaSummaries.map((f) => [f.name, f.client || '', f.cases]),
       [],
       ['GRAND TOTAL', '', '', '', '$' + poData.grandTotal.toFixed(2)],
+      [],
+      ['COST PER CAN / CASE (Purchasing cost at MOQ)'],
+      ['Formula', 'Cases', 'Units/Case', 'Total Units', 'MOQ Cost', 'Cost/Can', 'Cost/Case'],
+      ...poData.formulaCosts.map((fc) => [
+        fc.name + (fc.client ? ` (${fc.client})` : ''),
+        fc.cases,
+        fc.unitsPerCase,
+        fc.totalUnits,
+        fc.totalMOQCost > 0 ? '$' + fc.totalMOQCost.toFixed(2) : '—',
+        fc.costPerCan > 0 ? '$' + fc.costPerCan.toFixed(4) : '—',
+        fc.costPerCase > 0 ? '$' + fc.costPerCase.toFixed(2) : '—',
+      ]),
+      poData.formulaCosts.length > 1 ? [
+        'Blended Total',
+        poData.formulaCosts.reduce((s, f) => s + f.cases, 0),
+        '—',
+        poData.formulaCosts.reduce((s, f) => s + f.totalUnits, 0),
+        '$' + poData.grandTotal.toFixed(2),
+        '$' + poData.blendedCostPerCan.toFixed(4),
+        '$' + poData.blendedCostPerCase.toFixed(2),
+      ] : [],
     ];
     const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
     wsSummary['!cols'] = [{ wch: 35 }, { wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 14 }];
@@ -218,13 +281,14 @@ export default function ConsolidatedPO() {
     const poRows = [
       ['CONSOLIDATED PO — BY SUPPLIER'],
       [],
-      ['Supplier', 'Ingredient', 'SKU', 'Total Needed', 'Unit', 'MOQ', 'Order Qty', 'Price/Unit', 'Line Total'],
+      ['Supplier', 'Ingredient', '# Formulas', 'SKU', 'Total Needed', 'Unit', 'MOQ', 'Order Qty', 'Price/Unit', 'Line Total'],
     ];
     Object.entries(poData.byVendor).forEach(([vendor, group]) => {
       group.rows.forEach((row, i) => {
         poRows.push([
           i === 0 ? vendor : '',
           row.name,
+          `${row.formulaCount}/${poData.activeFormulaCount}`,
           row.sku || '',
           row.totalAmount.toFixed(3),
           row.buyUnit,
@@ -234,13 +298,13 @@ export default function ConsolidatedPO() {
           row.lineCost.toFixed(2),
         ]);
       });
-      poRows.push(['', '', '', '', '', '', '', 'Subtotal:', group.subtotal.toFixed(2)]);
+      poRows.push(['', '', '', '', '', '', '', '', 'Subtotal:', group.subtotal.toFixed(2)]);
       poRows.push([]);
     });
-    poRows.push(['', '', '', '', '', '', '', 'GRAND TOTAL:', poData.grandTotal.toFixed(2)]);
+    poRows.push(['', '', '', '', '', '', '', '', 'GRAND TOTAL:', poData.grandTotal.toFixed(2)]);
     const wsSupplier = XLSX.utils.aoa_to_sheet(poRows);
     wsSupplier['!cols'] = [
-      { wch: 22 }, { wch: 30 }, { wch: 12 }, { wch: 14 }, { wch: 8 },
+      { wch: 22 }, { wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 8 },
       { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 14 },
     ];
     XLSX.utils.book_append_sheet(wb, wsSupplier, 'By Supplier');
@@ -404,7 +468,7 @@ export default function ConsolidatedPO() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: '#f3f4f6', borderBottom: '2px solid #d1d5db' }}>
-                      {['Ingredient', 'SKU', 'Total Needed', 'Unit', 'MOQ', 'Order Qty', 'Price/Unit', 'Line Total'].map((h) => (
+                      {['Ingredient', '# Formulas', 'SKU', 'Total Needed', 'Unit', 'MOQ', 'Order Qty', 'Price/Unit', 'Line Total'].map((h) => (
                         <th
                           key={h}
                           style={{
@@ -432,6 +496,20 @@ export default function ConsolidatedPO() {
                           }}
                         >
                           <td style={{ padding: '9px 12px', fontWeight: 500, color: '#111827' }}>{row.name}</td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', color: '#374151', fontFamily: 'monospace' }}>
+                            <span
+                              style={{
+                                background: row.formulaCount === poData.activeFormulaCount ? '#dcfce7' : '#fef9c3',
+                                color: row.formulaCount === poData.activeFormulaCount ? '#15803d' : '#854d0e',
+                                borderRadius: 4,
+                                padding: '2px 6px',
+                                fontSize: 12,
+                                fontWeight: 600,
+                              }}
+                            >
+                              {row.formulaCount}/{poData.activeFormulaCount}
+                            </span>
+                          </td>
                           <td style={{ padding: '9px 12px', textAlign: 'right', color: '#374151' }}>{row.sku || '—'}</td>
                           <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: '#111827' }}>
                             {row.totalAmount.toFixed(2)}
@@ -460,6 +538,114 @@ export default function ConsolidatedPO() {
               </div>
             </div>
           ))}
+
+          {/* Cost per can / case summary */}
+          {poData.formulaCosts.length > 0 && (
+            <div style={{
+              background: '#ffffff',
+              border: '1px solid #d1d5db',
+              borderRadius: 10,
+              marginBottom: 16,
+              overflow: 'hidden',
+            }}>
+              <div style={{
+                padding: '12px 16px',
+                background: '#064e3b',
+                borderBottom: '1px solid #065f46',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}>
+                <span style={{ fontWeight: 600, fontSize: 15, color: '#ffffff' }}>Cost Per Can / Case</span>
+                <span style={{ fontSize: 12, color: '#6ee7b7', fontStyle: 'italic' }}>
+                  Purchasing cost at MOQ — see Run Quoting for customer pricing
+                </span>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: '#f3f4f6', borderBottom: '2px solid #d1d5db' }}>
+                      {['Formula', 'Cases', 'Units/Case', 'Total Units', 'MOQ Cost', 'Cost/Can', 'Cost/Case'].map((h) => (
+                        <th
+                          key={h}
+                          style={{
+                            padding: '8px 12px',
+                            textAlign: h === 'Formula' ? 'left' : 'right',
+                            fontWeight: 700,
+                            color: '#111827',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {poData.formulaCosts.map((fc, i) => (
+                      <tr
+                        key={i}
+                        style={{
+                          borderBottom: '1px solid #e5e7eb',
+                          background: i % 2 === 0 ? '#ffffff' : '#f9fafb',
+                        }}
+                      >
+                        <td style={{ padding: '9px 12px', fontWeight: 500, color: '#111827' }}>
+                          {fc.name}
+                          {fc.client && <span style={{ color: '#6b7280', fontWeight: 400 }}> ({fc.client})</span>}
+                        </td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', color: '#374151' }}>
+                          {fc.cases.toLocaleString()}
+                        </td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', color: '#374151' }}>
+                          {fc.unitsPerCase}
+                        </td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', color: '#374151' }}>
+                          {fc.totalUnits.toLocaleString()}
+                        </td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: '#374151' }}>
+                          {fc.totalMOQCost > 0 ? '$' + fc.totalMOQCost.toFixed(2) : '—'}
+                        </td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: '#065f46' }}>
+                          {fc.costPerCan > 0 ? '$' + fc.costPerCan.toFixed(4) : '—'}
+                        </td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: '#065f46' }}>
+                          {fc.costPerCase > 0 ? '$' + fc.costPerCase.toFixed(2) : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                    {/* Blended row when multiple formulas */}
+                    {poData.formulaCosts.length > 1 && (
+                      <tr style={{ background: '#f0fdf4', borderTop: '2px solid #16a34a' }}>
+                        <td style={{ padding: '9px 12px', fontWeight: 700, color: '#111827' }}>
+                          Blended Total
+                          <span style={{ fontSize: 11, fontWeight: 400, color: '#6b7280', marginLeft: 6 }}>
+                            (shared MOQ across all formulas)
+                          </span>
+                        </td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 600, color: '#374151' }}>
+                          {poData.formulaCosts.reduce((s, f) => s + f.cases, 0).toLocaleString()}
+                        </td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', color: '#6b7280' }}>—</td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 600, color: '#374151' }}>
+                          {poData.formulaCosts.reduce((s, f) => s + f.totalUnits, 0).toLocaleString()}
+                        </td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: '#374151' }}>
+                          ${poData.grandTotal.toFixed(2)}
+                        </td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#15803d' }}>
+                          {poData.blendedCostPerCan > 0 ? '$' + poData.blendedCostPerCan.toFixed(4) : '—'}
+                        </td>
+                        <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#15803d' }}>
+                          {poData.blendedCostPerCase > 0 ? '$' + poData.blendedCostPerCase.toFixed(2) : '—'}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Grand total */}
           <div style={{

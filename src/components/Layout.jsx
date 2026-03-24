@@ -5,12 +5,18 @@ import CommandPalette from './CommandPalette';
 
 export default function Layout() {
   const [batch, setBatch] = useState(getCurrentBatch());
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(window.innerWidth <= 1280);
 
   useEffect(() => {
     const handler = () => setBatch(getCurrentBatch());
     window.addEventListener('comanufacturing:datachange', handler);
     return () => window.removeEventListener('comanufacturing:datachange', handler);
+  }, []);
+
+  useEffect(() => {
+    const onResize = () => setCollapsed(window.innerWidth <= 1280);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
   }, []);
 
   const handleClearBatch = () => {
@@ -73,11 +79,7 @@ export default function Layout() {
               <span className="nav-icon">&#x2692;</span>
               {!collapsed && 'Services'}
             </NavLink>
-            <NavLink to="/mission-control" className={({ isActive }) => isActive ? 'active' : ''} title="Mission Control">
-              <span className="nav-icon">&#x1F4E1;</span>
-              {!collapsed && 'Mission Control'}
-            </NavLink>
-            <NavLink to="/consolidated-po" className={({ isActive }) => isActive ? 'active' : ''} title="Consolidated PO">
+<NavLink to="/consolidated-po" className={({ isActive }) => isActive ? 'active' : ''} title="Consolidated PO">
               <span className="nav-icon">&#x1F4CB;</span>
               {!collapsed && 'Consolidated PO'}
             </NavLink>
