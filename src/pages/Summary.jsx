@@ -273,7 +273,7 @@ export default function Summary() {
       </div>
 
       {/* Pricing & Margin Calculator */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20, marginBottom: 24 }}>
         <div className="projection-card">
           <h3>Pricing Calculator</h3>
           <div style={{ marginBottom: 16 }}>

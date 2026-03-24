@@ -524,6 +524,7 @@ export default function CoPackingCalculator() {
 
   function renderFeeTable(rows, updateFn, resetFn, removeFn, addFn, addLabel, subtotal, drag) {
     return (
+      <div style={{ overflowX: 'auto' }}>
       <table>
         <thead>
           <tr>
@@ -599,6 +600,7 @@ export default function CoPackingCalculator() {
           </tr>
         </tfoot>
       </table>
+      </div>
     );
   }
 
@@ -736,7 +738,7 @@ export default function CoPackingCalculator() {
             + Add Flavor
           </button>
         </div>
-        <div>
+        <div style={{ overflowX: 'auto' }}>
           <table>
             <thead>
               <tr>
@@ -946,7 +948,7 @@ export default function CoPackingCalculator() {
         <div className="section-header">
           <div className="section-title">Packaging Materials</div>
         </div>
-        <div>
+        <div style={{ overflowX: 'auto' }}>
           <table>
             <thead>
               <tr>
@@ -1088,7 +1090,7 @@ export default function CoPackingCalculator() {
       </div>
 
       {/* Economic Projection + Component Matrix */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 20, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20, marginTop: 20, marginBottom: 20 }}>
         <div className="projection-card">
           <h3>Economic Projection</h3>
           <div className="projection-total">${costs.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
@@ -1105,7 +1107,7 @@ export default function CoPackingCalculator() {
           <div className="section-header">
             <div className="section-title">Component Matrix</div>
           </div>
-          <div>
+          <div style={{ overflowX: 'auto' }}>
             <table>
               <thead>
                 <tr>

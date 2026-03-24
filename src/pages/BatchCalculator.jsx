@@ -965,7 +965,7 @@ export default function BatchCalculator() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 24, alignItems: 'start' }}>
+      <div className="batch-grid" style={{ alignItems: 'start' }}>
         {/* Main Column */}
         <div>
           {/* Formula Architecture */}

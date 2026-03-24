@@ -39,7 +39,7 @@ function DrayhorsePricingGrid() {
       </div>
 
       {/* Controls */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
         <div className="form-group" style={{ margin: 0 }}>
           <label className="form-label">Carton Type</label>
           <select value={selectedProduct} onChange={(e) => setSelectedProduct(e.target.value)}>
@@ -76,7 +76,7 @@ function DrayhorsePricingGrid() {
       {/* Result Card */}
       {result && (
         <div style={{
-          display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, marginBottom: 20,
+          display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 20,
         }}>
           <div style={{ padding: 16, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, textAlign: 'center' }}>
             <div style={{ fontSize: 12, color: '#3b82f6', fontWeight: 600, marginBottom: 4 }}>Price / 1,000</div>
