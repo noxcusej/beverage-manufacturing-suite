@@ -843,7 +843,12 @@ td input:focus, td select:focus {
 
 /* ── Batch Grid ──────────────────────────────── */
 .batch-grid { display: grid; grid-template-columns: 1fr 380px; gap: 24px; }
+.batch-grid > * { min-width: 0; }
 @media (max-width: 1200px) { .batch-grid { grid-template-columns: 1fr; } }
+
+/* Hide non-essential table columns at viewport widths where the batch-grid
+   left column is too narrow to show all columns without page-level overflow */
+@media (max-width: 1600px) { .col-optional { display: none !important; } }
 
 /* ── Unit Toggle ──────────────────────────────── */
 .unit-toggle {

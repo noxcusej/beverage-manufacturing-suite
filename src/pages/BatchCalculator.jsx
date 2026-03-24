@@ -1063,19 +1063,19 @@ export default function BatchCalculator() {
               <div className="section-title">Ingredients</div>
             </div>
             <div style={{ overflowX: 'auto', width: '100%' }}>
-              <table ref={tableRef} style={{ minWidth: 900 }}>
+              <table ref={tableRef}>
                 <thead>
                   <tr>
                     <th style={{ maxWidth: 180, position: 'sticky', left: 0, zIndex: 2, background: 'var(--surface-alt)' }}>Ingredient</th>
-                    <th>Type</th>
+                    <th className="col-optional">Type</th>
                     <th>Recipe Amt</th>
                     <th>Recipe Unit</th>
-                    <th>SG</th>
+                    <th className="col-optional">SG</th>
                     <th>Buy Unit</th>
                     <th>Price/Buy Unit</th>
-                    <th>MOQ</th>
-                    <th>On Hand</th>
-                    <th>Inv. Unit</th>
+                    <th className="col-optional">MOQ</th>
+                    <th className="col-optional">On Hand</th>
+                    <th className="col-optional">Inv. Unit</th>
                     <th>Status</th>
                     <th></th>
                   </tr>
@@ -1135,7 +1135,7 @@ export default function BatchCalculator() {
                             />
                           )}
                         </td>
-                        <td>
+                        <td className="col-optional">
                           <select data-row={idx} data-col={1} value={ing.type} onChange={(e) => updateIngredient(idx, 'type', e.target.value)} onKeyDown={(e) => handleCellKeyDown(e, idx, 1)}>
                             <option value="liquid">Liquid</option>
                             <option value="dry">Dry</option>
@@ -1158,7 +1158,7 @@ export default function BatchCalculator() {
                             <option value="ml">mL</option><option value="lbs">lbs</option><option value="kg">kg</option><option value="g">g</option>
                           </select>
                         </td>
-                        <td>
+                        <td className="col-optional">
                           <input
                             data-row={idx} data-col={4}
                             type="number"
@@ -1188,7 +1188,7 @@ export default function BatchCalculator() {
                             style={{ width: 90, background: missingPriceIds.has(idx) ? '#fef9c3' : undefined, borderColor: missingPriceIds.has(idx) ? '#eab308' : undefined }}
                           />
                         </td>
-                        <td>
+                        <td className="col-optional">
                           <input
                             data-row={idx} data-col={7}
                             type="number"
@@ -1199,7 +1199,7 @@ export default function BatchCalculator() {
                             style={{ width: 70 }}
                           />
                         </td>
-                        <td>
+                        <td className="col-optional">
                           <input
                             data-row={idx} data-col={8}
                             type="number"
@@ -1210,7 +1210,7 @@ export default function BatchCalculator() {
                             style={{ width: 80 }}
                           />
                         </td>
-                        <td>
+                        <td className="col-optional">
                           <select data-row={idx} data-col={9} value={ing.inventoryUnit || 'gal'} onChange={(e) => updateIngredient(idx, 'inventoryUnit', e.target.value)} onKeyDown={(e) => handleCellKeyDown(e, idx, 9)}>
                             <option value="gal">gal</option><option value="L">L</option><option value="lbs">lbs</option>
                             <option value="kg">kg</option><option value="oz">oz</option><option value="g">g</option>
