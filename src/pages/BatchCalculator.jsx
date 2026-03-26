@@ -86,10 +86,23 @@ export default function BatchCalculator() {
     const batch = getCurrentBatch();
     if (batch) {
       if (batch.formulaName) setFormulaName(batch.formulaName);
-      if (batch.batchSize) setBatchSize(batch.batchSize);
-      if (batch.batchSizeUnit) setBatchSizeUnit(batch.batchSizeUnit);
+      if (batch.formulaClient) setFormulaClient(batch.formulaClient);
       if (batch.baseYield) setBaseYield(batch.baseYield);
+      if (batch.baseYieldUnit) setBaseYieldUnit(batch.baseYieldUnit);
+      if (batch.batchSizeUnit) setBatchSizeUnit(batch.batchSizeUnit);
+      if (batch.unitSizeVal) setUnitSizeVal(batch.unitSizeVal);
+      if (batch.unitSizeUnit) setUnitSizeUnitState(batch.unitSizeUnit);
+      if (batch.unitsPerCase) setUnitsPerCase(batch.unitsPerCase);
+      if (batch.lossPercent !== undefined) setLossPercent(batch.lossPercent);
       if (batch.ingredients) setIngredients(batch.ingredients);
+      const savedCases = batch.targetCases || 0;
+      if (savedCases > 0) {
+        setTargetCases(savedCases);
+        setSizeMode('cases');
+        if (batch.batchSize) setBatchSize(batch.batchSize);
+      } else {
+        if (batch.batchSize) setBatchSize(batch.batchSize);
+      }
     }
   }, []);
 
@@ -130,7 +143,7 @@ export default function BatchCalculator() {
       setTargetCases(savedCases);
       setSizeMode('cases');
     } else {
-      setBatchSize(newBaseYield);
+      setBatchSize(formula.batchSize || newBaseYield);
       setTargetCases(0);
       setSizeMode('batch');
     }
@@ -539,8 +552,8 @@ export default function BatchCalculator() {
       setTargetCases(savedCases);
       setSizeMode('cases');
     } else {
-      // No cases saved — just load the spec batch size (base yield)
-      setBatchSize(newBaseYield);
+      // No cases saved — restore the saved batch size (fall back to base yield if not stored)
+      setBatchSize(formula.batchSize || newBaseYield);
       setTargetCases(0);
       setSizeMode('batch');
     }

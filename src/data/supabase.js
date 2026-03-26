@@ -90,7 +90,21 @@ export async function saveFormulaToSupabase(formula) {
       id: id,
       name: name,
       client: client || 'Uncategorized',
-      data: { ...rest, batchSize: formula.batchSize, batchSizeUnit: formula.batchSizeUnit, baseYield: formula.baseYield, ingredients: formula.ingredients, packaging: formula.packaging, services: formula.services },
+      data: {
+        ...rest,
+        baseYield: formula.baseYield,
+        baseYieldUnit: formula.baseYieldUnit,
+        batchSize: formula.batchSize,
+        batchSizeUnit: formula.batchSizeUnit,
+        unitSizeVal: formula.unitSizeVal,
+        unitSizeUnit: formula.unitSizeUnit,
+        unitsPerCase: formula.unitsPerCase,
+        lossPercent: formula.lossPercent,
+        targetCases: formula.targetCases,
+        ingredients: formula.ingredients,
+        packaging: formula.packaging,
+        services: formula.services,
+      },
       versions: versions || [],
     };
 
