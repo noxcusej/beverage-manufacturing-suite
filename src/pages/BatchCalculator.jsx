@@ -95,10 +95,11 @@ export default function BatchCalculator() {
       if (batch.unitsPerCase) setUnitsPerCase(batch.unitsPerCase);
       if (batch.lossPercent !== undefined) setLossPercent(batch.lossPercent);
       if (batch.ingredients) setIngredients(batch.ingredients);
+      if (batch.sizeMode) setSizeMode(batch.sizeMode);
       const savedCases = batch.targetCases || 0;
       if (savedCases > 0) {
         setTargetCases(savedCases);
-        setSizeMode('cases');
+        if (!batch.sizeMode) setSizeMode('cases');
         if (batch.batchSize) setBatchSize(batch.batchSize);
       } else {
         if (batch.batchSize) setBatchSize(batch.batchSize);
@@ -169,6 +170,36 @@ export default function BatchCalculator() {
     setBatchSize(val);
     setSizeMode('batch');
   }
+
+  // When architecture fields change in cases mode, recalculate batchSize
+  useEffect(() => {
+    if (sizeMode !== 'cases' || targetCases <= 0) return;
+    const lossMultiplier = 1 + (lossPercent || 0) / 100;
+    const units = targetCases * unitsPerCase * lossMultiplier;
+    let unitOz = unitSizeVal;
+    if (unitSizeUnit === 'ml') unitOz = unitSizeVal / 29.5703;
+    if (unitSizeUnit === 'L') unitOz = unitSizeVal * 33.814;
+    const totalGal = (units * unitOz) / 128;
+    const newBatch = batchSizeUnit === 'L' ? totalGal * 3.78541 : totalGal;
+    setBatchSize(Math.round(newBatch * 100) / 100);
+  }, [sizeMode, targetCases, lossPercent, unitSizeVal, unitSizeUnit, unitsPerCase, batchSizeUnit]);
+
+  // Auto-save batch context when architecture fields change
+  const autoSaveRef = useRef(null);
+  useEffect(() => {
+    if (!formulaName && ingredients.length === 0) return;
+    clearTimeout(autoSaveRef.current);
+    autoSaveRef.current = setTimeout(() => {
+      saveBatch({
+        formulaName, formulaClient,
+        batchSize, batchSizeUnit, baseYield, baseYieldUnit,
+        unitSizeVal, unitSizeUnit, unitsPerCase, lossPercent,
+        targetCases, sizeMode,
+        ingredients: JSON.parse(JSON.stringify(ingredients)),
+      });
+    }, 500);
+    return () => clearTimeout(autoSaveRef.current);
+  }, [formulaName, formulaClient, batchSize, batchSizeUnit, baseYield, baseYieldUnit, unitSizeVal, unitSizeUnit, unitsPerCase, lossPercent, targetCases, sizeMode, ingredients]);
 
   const scaleFactor = baseYield > 0 ? batchSize / baseYield : 1;
 
@@ -493,7 +524,10 @@ export default function BatchCalculator() {
 
   function handleSaveBatch() {
     saveBatch({
-      formulaName, batchSize, batchSizeUnit, baseYield, baseYieldUnit,
+      formulaName, formulaClient,
+      batchSize, batchSizeUnit, baseYield, baseYieldUnit,
+      unitSizeVal, unitSizeUnit, unitsPerCase, lossPercent,
+      targetCases, sizeMode,
       totalUnits: unitEcon.totalUnits,
       ingredients: JSON.parse(JSON.stringify(ingredients)),
     });

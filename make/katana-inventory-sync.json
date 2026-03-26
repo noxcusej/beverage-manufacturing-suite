@@ -1,0 +1,233 @@
+{
+  "_readme": "Make.com Blueprint — Katana → Inventory Sync",
+  "_instructions": [
+    "1. Import this blueprint into Make.com (Scenarios → Create → Import Blueprint)",
+    "2. Configure the Katana connection in Module 1",
+    "3. Set your Vercel API URL and API key in Module 3",
+    "4. Set the schedule (recommended: every 15 minutes)",
+    "",
+    "This scenario has two flows:",
+    "  Flow A: Scheduled poll — fetches all Katana materials and syncs to your inventory",
+    "  Flow B: Webhook — receives real-time Katana events via webhook"
+  ],
+  "scenarios": [
+    {
+      "name": "Katana → Inventory Sync (Scheduled)",
+      "description": "Poll Katana materials and sync stock levels to the beverage manufacturing suite",
+      "scheduling": {
+        "type": "interval",
+        "interval": 15,
+        "unit": "minutes"
+      },
+      "modules": [
+        {
+          "id": 1,
+          "name": "Katana: List Materials",
+          "type": "http",
+          "method": "GET",
+          "url": "https://api.katanamrp.com/v1/materials",
+          "headers": [
+            { "key": "Authorization", "value": "Bearer {{katana_api_key}}" },
+            { "key": "Content-Type", "value": "application/json" }
+          ],
+          "qs": {
+            "per_page": 200,
+            "include": "category,default_supplier"
+          },
+          "notes": "Fetches all materials from Katana MRP. Replace {{katana_api_key}} with your Katana API key."
+        },
+        {
+          "id": 2,
+          "name": "Iterator",
+          "type": "builtin:iterator",
+          "source": "{{1.body.data}}",
+          "notes": "Iterates over each Katana material"
+        },
+        {
+          "id": 3,
+          "name": "POST to Inventory API",
+          "type": "http",
+          "method": "POST",
+          "url": "https://beverage-manufacturing-suite.vercel.app/api/katana-webhook",
+          "headers": [
+            { "key": "x-api-key", "value": "{{make_api_key}}" },
+            { "key": "Content-Type", "value": "application/json" }
+          ],
+          "body": {
+            "type": "sync",
+            "material": {
+              "id": "{{2.id}}",
+              "name": "{{2.name}}",
+              "sku": "{{2.sku}}",
+              "internal_code": "{{2.internal_code}}",
+              "default_uom": "{{2.default_uom}}",
+              "in_stock": "{{2.in_stock}}",
+              "reorder_point": "{{2.reorder_point}}",
+              "default_supplier_cost": "{{2.default_supplier_cost}}",
+              "minimum_order_quantity": "{{2.minimum_order_quantity}}",
+              "category": {
+                "name": "{{2.category.name}}"
+              },
+              "default_supplier": {
+                "name": "{{2.default_supplier.name}}"
+              },
+              "barcode": "{{2.barcode}}",
+              "notes": "{{2.notes}}",
+              "variant_id": "{{2.variant_id}}"
+            }
+          },
+          "notes": "Sends each Katana material to your Vercel inventory API"
+        }
+      ],
+      "variables": [
+        {
+          "name": "katana_api_key",
+          "label": "Katana API Key",
+          "type": "text",
+          "required": true,
+          "help": "Your Katana MRP API key — find it in Katana Settings → API"
+        },
+        {
+          "name": "make_api_key",
+          "label": "Inventory API Key",
+          "type": "text",
+          "required": true,
+          "help": "The MAKE_API_KEY environment variable you set in Vercel"
+        }
+      ]
+    },
+    {
+      "name": "Katana → Inventory Sync (Webhook)",
+      "description": "Real-time sync — Katana sends events directly to this scenario",
+      "modules": [
+        {
+          "id": 1,
+          "name": "Webhook Trigger",
+          "type": "builtin:webhook",
+          "notes": "Create a custom webhook in Make. Copy the webhook URL and paste it into Katana Settings → Webhooks. Subscribe to: material.created, material.updated, material.deleted, stock_adjustment.created"
+        },
+        {
+          "id": 2,
+          "name": "Router",
+          "type": "builtin:router",
+          "routes": [
+            {
+              "label": "Material Created/Updated",
+              "condition": "{{contains(1.event, \"material\")}}",
+              "modules": [
+                {
+                  "id": 3,
+                  "name": "POST to Inventory API",
+                  "type": "http",
+                  "method": "POST",
+                  "url": "https://beverage-manufacturing-suite.vercel.app/api/katana-webhook",
+                  "headers": [
+                    { "key": "x-api-key", "value": "{{make_api_key}}" },
+                    { "key": "Content-Type", "value": "application/json" }
+                  ],
+                  "body": "{{1.body}}"
+                }
+              ]
+            },
+            {
+              "label": "Stock Adjustment",
+              "condition": "{{contains(1.event, \"stock\")}}",
+              "modules": [
+                {
+                  "id": 4,
+                  "name": "PUT Stock Level",
+                  "type": "http",
+                  "method": "PUT",
+                  "url": "https://beverage-manufacturing-suite.vercel.app/api/inventory",
+                  "headers": [
+                    { "key": "x-api-key", "value": "{{make_api_key}}" },
+                    { "key": "Content-Type", "value": "application/json" }
+                  ],
+                  "body": {
+                    "updates": [
+                      {
+                        "katana_id": "{{1.body.material_id}}",
+                        "current_stock": "{{1.body.new_stock_level}}"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "make_api_key",
+          "label": "Inventory API Key",
+          "type": "text",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "Inventory → Katana Reverse Sync (Optional)",
+      "description": "Push manual inventory changes from your app back to Katana",
+      "scheduling": {
+        "type": "interval",
+        "interval": 30,
+        "unit": "minutes"
+      },
+      "modules": [
+        {
+          "id": 1,
+          "name": "GET Inventory",
+          "type": "http",
+          "method": "GET",
+          "url": "https://beverage-manufacturing-suite.vercel.app/api/inventory",
+          "headers": [
+            { "key": "x-api-key", "value": "{{make_api_key}}" }
+          ],
+          "notes": "Fetches all inventory items from your app"
+        },
+        {
+          "id": 2,
+          "name": "Filter Katana Items",
+          "type": "builtin:filter",
+          "condition": "{{1.body.items[].katana_id is not empty}}"
+        },
+        {
+          "id": 3,
+          "name": "Iterator",
+          "type": "builtin:iterator",
+          "source": "{{2.output}}"
+        },
+        {
+          "id": 4,
+          "name": "PATCH Katana Material",
+          "type": "http",
+          "method": "PATCH",
+          "url": "https://api.katanamrp.com/v1/materials/{{3.katana_id}}",
+          "headers": [
+            { "key": "Authorization", "value": "Bearer {{katana_api_key}}" },
+            { "key": "Content-Type", "value": "application/json" }
+          ],
+          "body": {
+            "in_stock": "{{3.current_stock}}"
+          },
+          "notes": "Updates Katana with stock levels changed in your app"
+        }
+      ],
+      "variables": [
+        {
+          "name": "katana_api_key",
+          "label": "Katana API Key",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "make_api_key",
+          "label": "Inventory API Key",
+          "type": "text",
+          "required": true
+        }
+      ]
+    }
+  ]
+}
