@@ -201,7 +201,12 @@ export default function BatchCalculator() {
     return () => clearTimeout(autoSaveRef.current);
   }, [formulaName, formulaClient, batchSize, batchSizeUnit, baseYield, baseYieldUnit, unitSizeVal, unitSizeUnit, unitsPerCase, lossPercent, targetCases, sizeMode, ingredients]);
 
-  const scaleFactor = baseYield > 0 ? batchSize / baseYield : 1;
+  // scaleFactor must be dimensionless — normalize batchSize and baseYield
+  // to gal before dividing. Without this, mismatched units (e.g. batchSize
+  // in L, baseYield in gal) silently inflate demand by 3.78x.
+  const _batchGal = batchSizeUnit === 'L' ? batchSize / 3.78541 : batchSize;
+  const _yieldGal = baseYieldUnit === 'L' ? baseYield / 3.78541 : baseYield;
+  const scaleFactor = _yieldGal > 0 ? _batchGal / _yieldGal : 1;
 
   // Calculate scaled batch data
   const scaledData = useMemo(() => {

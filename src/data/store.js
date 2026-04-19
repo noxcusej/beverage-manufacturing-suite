@@ -27,6 +27,8 @@ const _cache = {
   runs: null,
   clients: null,
   missionControl: null,
+  finishedGoods: null,
+  savedPOs: null,
 };
 
 const _defaults = {
@@ -40,6 +42,8 @@ const _defaults = {
   runs: [],
   clients: [],
   missionControl: { tasks: [], cronJobs: [], team: [], officeStatus: [] },
+  finishedGoods: [],
+  savedPOs: [],
 };
 
 let _hydrated = false;
@@ -55,6 +59,8 @@ const _keyMap = {
   tankConfig: 'tank_config',
   currentBatch: 'current_batch',
   missionControl: 'mission_control',
+  finishedGoods: 'finished_goods',
+  savedPOs: 'saved_pos',
 };
 
 function notify(dataType) {
@@ -240,6 +246,52 @@ export function saveVendors(vendors) {
 
 export function getVendor(id) {
   return getVendors().find((v) => v.id === id);
+}
+
+// ── Finished Goods ──
+// { id, name, pack: [{ formulaId, units }], packsPerCase, casesPerPallet }
+
+export function getFinishedGoods() {
+  return get('finishedGoods');
+}
+
+export function saveFinishedGoods(list) {
+  set('finishedGoods', list);
+}
+
+export function upsertFinishedGood(fg) {
+  const list = [...getFinishedGoods()];
+  const i = list.findIndex((x) => x.id === fg.id);
+  if (i >= 0) list[i] = fg;
+  else list.push(fg);
+  saveFinishedGoods(list);
+}
+
+export function deleteFinishedGood(id) {
+  saveFinishedGoods(getFinishedGoods().filter((x) => x.id !== id));
+}
+
+// ── Saved POs ──
+// { id, name, createdAt, fgSelections: [{ fgId, qty, level }] }
+
+export function getSavedPOs() {
+  return get('savedPOs');
+}
+
+export function saveSavedPOs(list) {
+  set('savedPOs', list);
+}
+
+export function upsertSavedPO(po) {
+  const list = [...getSavedPOs()];
+  const i = list.findIndex((x) => x.id === po.id);
+  if (i >= 0) list[i] = po;
+  else list.push(po);
+  saveSavedPOs(list);
+}
+
+export function deleteSavedPO(id) {
+  saveSavedPOs(getSavedPOs().filter((x) => x.id !== id));
 }
 
 // ── Formulas (dedicated Supabase table) ──
