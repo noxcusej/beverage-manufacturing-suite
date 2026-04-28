@@ -229,6 +229,10 @@ export const defaultTankConfig = [
   { id: 'TNK-003', name: 'Tank 3', capacity: 200, unit: 'gal' },
 ];
 
+export const defaultGlobalSettings = {
+  tollingTankCapacityLiters: 7500,
+};
+
 export const defaultTeam = [
   {
     id: 'gilbert',

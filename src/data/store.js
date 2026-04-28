@@ -4,6 +4,7 @@ import {
   defaultServices,
   defaultVendors,
   defaultTankConfig,
+  defaultGlobalSettings,
 } from './defaults';
 import {
   loadAppData,
@@ -29,6 +30,7 @@ const _cache = {
   missionControl: null,
   finishedGoods: null,
   savedPOs: null,
+  globalSettings: null,
 };
 
 const _defaults = {
@@ -44,6 +46,7 @@ const _defaults = {
   missionControl: { tasks: [], cronJobs: [], team: [], officeStatus: [] },
   finishedGoods: [],
   savedPOs: [],
+  globalSettings: defaultGlobalSettings,
 };
 
 let _hydrated = false;
@@ -61,6 +64,7 @@ const _keyMap = {
   missionControl: 'mission_control',
   finishedGoods: 'finished_goods',
   savedPOs: 'saved_pos',
+  globalSettings: 'global_settings',
 };
 
 function notify(dataType) {
@@ -428,6 +432,16 @@ export function getTankConfig() {
 
 export function saveTankConfig(tanks) {
   set('tankConfig', tanks);
+}
+
+// ── Global Settings ──
+
+export function getGlobalSettings() {
+  return get('globalSettings');
+}
+
+export function saveGlobalSettings(settings) {
+  set('globalSettings', { ...getGlobalSettings(), ...settings });
 }
 
 // ── Runs ──

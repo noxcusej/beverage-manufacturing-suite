@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { getCurrentBatch, getFormulas, getInventory, getRuns, saveRun, deleteRun } from '../data/store';
+import { getClients, getCurrentBatch, getFormulas, getGlobalSettings, getInventory, getRuns, saveGlobalSettings, saveRun, deleteRun } from '../data/store';
 import { getProducts, lookupPrice, NEW_ART_PREP_FEE } from '../data/drayhorsePricing';
 import { exportCoPackingToExcel } from '../utils/exportExcel';
 import { exportConsolidatedPOToExcel } from '../utils/exportConsolidatedPO';
@@ -54,6 +54,59 @@ const feeTypeColors = {
   'fixed': { bg: '#f3f4f6', color: '#374151' },
 };
 
+const COMPLEXITY_LEVELS = {
+  simple: { label: 'Simple', multiplier: 0.9 },
+  standard: { label: 'Standard', multiplier: 1 },
+  complex: { label: 'Complex', multiplier: 1.25 },
+  specialty: { label: 'Specialty', multiplier: 1.5 },
+};
+
+function makeDefaultTollingEngine() {
+  return {
+    enabled: false,
+    dailyRate: 2400,
+    dailyPrice: 8000,
+    casesPerDay: 750,
+    changeoverRate: 500,
+    changeoverPrice: 500,
+    multidayDiscountPct: 10,
+    complexity: 'standard',
+  };
+}
+
+function normalizeTollingEngine(engine = {}) {
+  const defaults = makeDefaultTollingEngine();
+  const legacyDailyRate = engine.dailyRate ?? ((engine.hourlyRate ?? 0) > 0 ? engine.hourlyRate * 8 : undefined);
+  const dailyRate = legacyDailyRate ?? defaults.dailyRate;
+  const dailyPrice = engine.dailyPrice ?? engine.priceDailyRate ?? dailyRate;
+  const changeoverRate = engine.changeoverRate ?? defaults.changeoverRate;
+  return {
+    enabled: engine.enabled ?? defaults.enabled,
+    dailyRate,
+    dailyPrice,
+    casesPerDay: engine.casesPerDay ?? defaults.casesPerDay,
+    changeoverRate,
+    changeoverPrice: engine.changeoverPrice ?? changeoverRate,
+    multidayDiscountPct: engine.multidayDiscountPct ?? defaults.multidayDiscountPct,
+    complexity: COMPLEXITY_LEVELS[engine.complexity] ? engine.complexity : defaults.complexity,
+  };
+}
+
+function calcDiscountedDailyTotal(baseRate, days, discountPct) {
+  if (days <= 0 || baseRate <= 0) return { total: 0, effectiveRate: 0 };
+  const discount = Math.min(95, Math.max(0, discountPct || 0)) / 100;
+  let remainingDays = days;
+  let dayIndex = 0;
+  let total = 0;
+  while (remainingDays > 0) {
+    const dayWeight = Math.min(1, remainingDays);
+    total += baseRate * (1 - discount) ** dayIndex * dayWeight;
+    remainingDays -= dayWeight;
+    dayIndex += 1;
+  }
+  return { total, effectiveRate: total / days };
+}
+
 const dragHandleStyle = {
   cursor: 'grab', color: '#cbd5e1', fontSize: 16, padding: '0 4px', userSelect: 'none',
 };
@@ -82,10 +135,23 @@ function makeDefaultPackaging() {
 
 function makeDefaultTolling() {
   return [
-    { id: 'toll-production', name: 'Production (Canning Line)', feeType: 'per-unit', rate: 0.08, qty: 0, qtyManual: false },
+    { id: 'toll-price-per-can', name: 'Tolling Price / Can', feeType: 'per-unit', rate: 0.08, qty: 0, qtyManual: false },
     { id: 'toll-case-pack', name: 'Case & Carton Packing', feeType: 'per-case', rate: 0.75, qty: 0, qtyManual: false },
     { id: 'toll-variety', name: 'Variety Pack Assembly', feeType: 'per-case', rate: 0.35, qty: 0, qtyManual: false },
   ];
+}
+
+function ensureStandardTolling(items) {
+  const existing = (items || []).map((item) => (
+    item.id === 'toll-production'
+      ? { ...item, id: 'toll-price-per-can', name: 'Tolling Price / Can' }
+      : item
+  ));
+  const byId = new Map(existing.map((item) => [item.id, item]));
+  makeDefaultTolling().forEach((item) => {
+    if (!byId.has(item.id)) byId.set(item.id, item);
+  });
+  return Array.from(byId.values());
 }
 
 function makeDefaultBOM() {
@@ -172,7 +238,7 @@ function calcFormulaIngredientCostPerCan(formula, batchSizeGal, fillOz) {
 }
 
 function makeDefaultFlavor() {
-  return { id: 'flv-' + Date.now(), formulaId: '', name: '', cases: 100, batchingFee: 0 };
+  return { id: 'flv-' + Date.now(), formulaId: '', name: '', cases: 100, batchingFee: 0, ingredientCostOverride: '' };
 }
 
 function ensureStandardBOM(items) {
@@ -188,6 +254,7 @@ function stripLegacyFlavorFields(flavor) {
   const next = { ...flavor };
   delete next.stabilizationCost;
   delete next.ingredientCostAuto;
+  if (next.ingredientCostOverride === undefined) next.ingredientCostOverride = '';
   return next;
 }
 
@@ -221,10 +288,14 @@ export default function CoPackingCalculator() {
   // Available formulas from the library
   const [allFormulas, setAllFormulas] = useState([]);
   const [inventoryArr, setInventoryArr] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [globalSettings, setGlobalSettings] = useState(getGlobalSettings);
   useEffect(() => {
     const refresh = () => {
       setAllFormulas(getFormulas());
       setInventoryArr(getInventory());
+      setClients(getClients());
+      setGlobalSettings(getGlobalSettings());
     };
     refresh();
     window.addEventListener('comanufacturing:datachange', refresh);
@@ -242,7 +313,9 @@ export default function CoPackingCalculator() {
 
   // Line items
   const [packagingItems, setPackagingItems] = useState(makeDefaultPackaging);
-  const [tollingItems, setTollingItems] = useState(makeDefaultTolling);
+  const [tollingItems, setTollingItems] = useState(() => ensureStandardTolling(makeDefaultTolling()));
+  const [tollingEngine, setTollingEngine] = useState(normalizeTollingEngine);
+  const [tollingCalculatorOpen, setTollingCalculatorOpen] = useState(false);
   const [bomItems, setBomItems] = useState(makeDefaultBOM);
   const [taxItems, setTaxItems] = useState(makeDefaultTaxes);
 
@@ -251,6 +324,7 @@ export default function CoPackingCalculator() {
   const [currentRunId, setCurrentRunId] = useState(null);
   const [runName, setRunName] = useState('');
   const [runClient, setRunClient] = useState('');
+  const [clientPickerOpen, setClientPickerOpen] = useState(false);
   useEffect(() => {
     const refresh = () => setSavedRuns(getRuns());
     refresh();
@@ -295,6 +369,80 @@ export default function CoPackingCalculator() {
     return { flavorRows, flavorCount, totalGallons, totalUnits, totalPacks, totalCases, totalPallets, totalTrucks, totalShifts, proofGallons };
   }, [flavors, fillVolume, fillVolumeUnit, packSize, unitsPerCase, casesPerPallet, palletsPerTruck, cansPerMinute, abv]);
 
+  const clientOptions = useMemo(() => {
+    const names = new Set();
+    clients.forEach((client) => { if (client.name) names.add(client.name); });
+    allFormulas.forEach((formula) => { if (formula.client) names.add(formula.client); });
+    savedRuns.forEach((run) => { if (run.client) names.add(run.client); });
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [clients, allFormulas, savedRuns]);
+
+  const filteredClientOptions = useMemo(() => {
+    const q = runClient.trim().toLowerCase();
+    if (!q) return clientOptions.slice(0, 8);
+    return clientOptions
+      .filter((name) => name.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [clientOptions, runClient]);
+
+  const tollingEstimate = useMemo(() => {
+    const activeFlavors = counts.flavorRows.filter((row) => row.cases > 0);
+    const tankCapacityLiters = Math.max(1, globalSettings.tollingTankCapacityLiters || 7500);
+    const flavorTankRows = activeFlavors.map((row) => {
+      const liters = row.gallons * 3.78541;
+      return {
+        id: row.id,
+        name: row.name || 'Flavor',
+        liters,
+        tanks: Math.max(1, Math.ceil(liters / tankCapacityLiters)),
+      };
+    });
+    const totalTanks = flavorTankRows.reduce((sum, row) => sum + row.tanks, 0);
+    const changeovers = activeFlavors.length;
+    const lineHours = cansPerMinute > 0 ? counts.totalUnits / cansPerMinute / 60 : 0;
+    const totalLiters = counts.totalGallons * 3.78541;
+    const productionDays = tollingEngine.casesPerDay > 0
+      ? counts.totalCases / tollingEngine.casesPerDay
+      : 0;
+    const complexity = COMPLEXITY_LEVELS[tollingEngine.complexity] || COMPLEXITY_LEVELS.standard;
+    const productionCost = productionDays * (tollingEngine.dailyRate || 0) * complexity.multiplier;
+    const changeoverCost = changeovers * (tollingEngine.changeoverRate || 0);
+    const totalCost = productionCost + changeoverCost;
+    const discountedPrice = calcDiscountedDailyTotal(tollingEngine.dailyPrice || 0, productionDays, tollingEngine.multidayDiscountPct || 0);
+    const productionPrice = discountedPrice.total * complexity.multiplier;
+    const changeoverPrice = changeovers * (tollingEngine.changeoverPrice || 0);
+    const calculatedPrice = productionPrice + changeoverPrice;
+    const totalPrice = calculatedPrice;
+    const margin = totalPrice - totalCost;
+    const marginPct = totalPrice > 0 ? (margin / totalPrice) * 100 : 0;
+    const costCentsPerCan = counts.totalUnits > 0 ? (totalCost / counts.totalUnits) * 100 : 0;
+    const priceCentsPerCan = counts.totalUnits > 0 ? (totalPrice / counts.totalUnits) * 100 : 0;
+    return {
+      activeFlavorCount: activeFlavors.length,
+      flavorTankRows,
+      tankCapacityLiters,
+      totalLiters,
+      totalCases: counts.totalCases,
+      totalTanks,
+      changeovers,
+      lineHours,
+      productionDays,
+      complexity,
+      productionCost,
+      changeoverCost,
+      totalCost,
+      discountedDailyPrice: discountedPrice.effectiveRate,
+      productionPrice,
+      changeoverPrice,
+      calculatedPrice,
+      totalPrice,
+      margin,
+      marginPct,
+      costCentsPerCan,
+      priceCentsPerCan,
+    };
+  }, [counts, cansPerMinute, tollingEngine, globalSettings.tollingTankCapacityLiters]);
+
   const formulaById = useMemo(() => Object.fromEntries(allFormulas.map((formula) => [formula.id, formula])), [allFormulas]);
   const fillOz = useMemo(() => {
     if (fillVolumeUnit === 'mL') return fillVolume / 29.5735;
@@ -309,6 +457,13 @@ export default function CoPackingCalculator() {
     if (formula.batchSizeUnit === 'L') batchGal = batchGal / 3.78541;
     return calcFormulaIngredientCostPerCan(formula, batchGal, fillOz) || 0;
   }, [formulaById, fillOz]);
+
+  const getEffectiveIngredientCostPerCan = useCallback((flavor) => {
+    if (flavor.ingredientCostOverride !== '' && flavor.ingredientCostOverride !== null && flavor.ingredientCostOverride !== undefined) {
+      return Number(flavor.ingredientCostOverride) || 0;
+    }
+    return getCalculatedIngredientCostPerCan(flavor);
+  }, [getCalculatedIngredientCostPerCan]);
 
   // Auto-populate packaging quantities
   useEffect(() => {
@@ -376,7 +531,7 @@ export default function CoPackingCalculator() {
     counts.flavorRows.forEach((fr) => {
       const flv = flavors.find((f) => f.id === fr.id);
       if (flv) {
-        totalIngredientCost += getCalculatedIngredientCostPerCan(flv) * fr.cans;
+        totalIngredientCost += getEffectiveIngredientCostPerCan(flv) * fr.cans;
       }
     });
 
@@ -386,6 +541,7 @@ export default function CoPackingCalculator() {
       tollingCost += lineCost;
       return { ...item, lineCost };
     });
+    if (tollingEngine.enabled) tollingCost += tollingEstimate.totalPrice;
 
     let bomCost = 0;
     const bomRows = bomItems.map((item) => {
@@ -406,8 +562,8 @@ export default function CoPackingCalculator() {
     const costPerUnit = counts.totalUnits > 0 ? totalCost / counts.totalUnits : 0;
     const costPerCase = costPerUnit * unitsPerCase;
 
-    return { pkgRows, tollRows, bomRows, taxRows, packagingCost: totalPackaging, rawPackagingCost: packagingCost, totalIngredientCost, tollingCost, bomCost, totalBatchingFees, taxCost, totalCost, costPerUnit, costPerCase };
-  }, [packagingItems, tollingItems, bomItems, taxItems, flavors, counts, unitsPerCase, cartonCost, carrierType, getCalculatedIngredientCostPerCan]);
+    return { pkgRows, tollRows, bomRows, taxRows, packagingCost: totalPackaging, rawPackagingCost: packagingCost, totalIngredientCost, tollingCost, tollingEngineCost: tollingEngine.enabled ? tollingEstimate.totalCost : 0, tollingEnginePrice: tollingEngine.enabled ? tollingEstimate.totalPrice : 0, bomCost, totalBatchingFees, taxCost, totalCost, costPerUnit, costPerCase };
+  }, [packagingItems, tollingItems, bomItems, taxItems, flavors, counts, unitsPerCase, cartonCost, carrierType, getEffectiveIngredientCostPerCan, tollingEngine.enabled, tollingEstimate.totalCost, tollingEstimate.totalPrice]);
 
   const breakdown = useMemo(() => {
     const total = costs.totalCost;
@@ -591,10 +747,12 @@ export default function CoPackingCalculator() {
       config: { fillVolume, fillVolumeUnit, packSize, carrierType, abv, unitsPerCase, casesPerPallet, palletsPerTruck, cansPerMinute },
       flavors: flavors.map((flavor) => ({
         ...flavor,
-        ingredientCost: getCalculatedIngredientCostPerCan(flavor),
+        ingredientCost: getEffectiveIngredientCostPerCan(flavor),
+        calculatedIngredientCost: getCalculatedIngredientCostPerCan(flavor),
       })),
       carton: { cartonProduct, skuCount, includeNewArt },
       packagingItems,
+      tollingEngine,
       tollingItems,
       bomItems,
       taxItems,
@@ -619,7 +777,8 @@ export default function CoPackingCalculator() {
       setIncludeNewArt(run.carton.includeNewArt || false);
     }
     if (run.packagingItems) setPackagingItems(run.packagingItems);
-    if (run.tollingItems) setTollingItems(run.tollingItems);
+    if (run.tollingEngine) setTollingEngine(normalizeTollingEngine(run.tollingEngine));
+    if (run.tollingItems) setTollingItems(ensureStandardTolling(run.tollingItems));
     if (run.bomItems) setBomItems(ensureStandardBOM(run.bomItems));
     if (run.taxItems) setTaxItems(run.taxItems);
   }
@@ -676,7 +835,8 @@ export default function CoPackingCalculator() {
     setFlavors([makeDefaultFlavor()]);
     setCartonProduct('sleek-4pk'); setSkuCount(1); setIncludeNewArt(false);
     setPackagingItems(makeDefaultPackaging());
-    setTollingItems(makeDefaultTolling());
+    setTollingEngine(normalizeTollingEngine());
+    setTollingItems(ensureStandardTolling(makeDefaultTolling()));
     setBomItems(makeDefaultBOM());
     setTaxItems(makeDefaultTaxes());
   }
@@ -701,7 +861,7 @@ export default function CoPackingCalculator() {
       fgCosts: counts.flavorRows
         .filter((row) => row.formulaId && row.cases > 0)
         .map((row) => {
-          const ingredientCost = getCalculatedIngredientCostPerCan(row);
+          const ingredientCost = getEffectiveIngredientCostPerCan(row);
           return {
             fgId: row.id,
             name: row.name || allFormulas.find((f) => f.id === row.formulaId)?.name || 'Flavor',
@@ -852,13 +1012,37 @@ export default function CoPackingCalculator() {
 
       {/* Run Name + Client */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-        <input type="text" value={runClient} placeholder="Client name..."
-          style={{ width: 200, padding: '10px 14px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: 14, fontFamily: 'inherit' }}
-          onChange={(e) => setRunClient(e.target.value)}
-          list="run-clients" />
-        <datalist id="run-clients">
-          {[...new Set(savedRuns.map((r) => r.client).filter(Boolean))].map((c) => <option key={c} value={c} />)}
-        </datalist>
+        <div style={{ position: 'relative', width: 220 }}>
+          <input
+            type="text"
+            value={runClient}
+            placeholder="Client name..."
+            style={{ width: '100%', padding: '10px 14px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: 14, fontFamily: 'inherit' }}
+            onFocus={() => setClientPickerOpen(true)}
+            onBlur={() => setTimeout(() => setClientPickerOpen(false), 150)}
+            onChange={(e) => {
+              setRunClient(e.target.value);
+              setClientPickerOpen(true);
+            }}
+          />
+          {clientPickerOpen && filteredClientOptions.length > 0 && (
+            <div className="typeahead-dropdown" style={{ zIndex: 80 }}>
+              {filteredClientOptions.map((name) => (
+                <div
+                  key={name}
+                  className="typeahead-item"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setRunClient(name);
+                    setClientPickerOpen(false);
+                  }}
+                >
+                  <div className="typeahead-item-primary">{name}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         <input type="text" value={runName} placeholder="Run name (e.g. Spring Seltzer Variety Pack)..."
           style={{ flex: 1, padding: '10px 14px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: 15, fontWeight: 600, fontFamily: 'inherit' }}
           onChange={(e) => setRunName(e.target.value)} />
@@ -947,7 +1131,7 @@ export default function CoPackingCalculator() {
                 <th style={{ width: 28 }}></th>
                 <th>Formula</th>
                 <th style={{ textAlign: 'right' }}>Cases</th>
-                <th style={{ textAlign: 'right' }}>Calculated Ingr. $/can</th>
+                <th style={{ textAlign: 'right' }}>Ingr. $/can</th>
                 <th style={{ textAlign: 'right' }}>Batching Fee</th>
                 <th style={{ textAlign: 'right' }}>Cans</th>
                 <th style={{ textAlign: 'right' }}>Cases</th>
@@ -1012,10 +1196,39 @@ export default function CoPackingCalculator() {
                     <input type="number" value={row.cases} min="0" style={{ width: 80, textAlign: 'right' }}
                       onChange={(e) => setFlavors((p) => p.map((f, i) => i === idx ? { ...f, cases: parseInt(e.target.value) || 0 } : f))} />
                   </td>
-                  <td style={{ textAlign: 'right' }}>
-                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: row.formulaId ? 'var(--brand)' : 'var(--text-muted)' }}>
-                      {row.formulaId ? '$' + getCalculatedIngredientCostPerCan(row).toFixed(4) : '—'}
-                    </span>
+                  <td style={{ textAlign: 'right', minWidth: 150 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>$</span>
+                      <input
+                        type="number"
+                        step="0.0001"
+                        min="0"
+                        value={row.ingredientCostOverride ?? ''}
+                        placeholder={row.formulaId ? getCalculatedIngredientCostPerCan(row).toFixed(4) : '0.0000'}
+                        title={row.formulaId ? `Calculated: $${getCalculatedIngredientCostPerCan(row).toFixed(4)}` : 'Manual ingredient cost per can'}
+                        style={{ width: 88, textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          setFlavors((p) => p.map((f, i) => i === idx ? {
+                            ...f,
+                            ingredientCostOverride: next === '' ? '' : parseFloat(next) || 0,
+                          } : f));
+                        }}
+                      />
+                      {row.ingredientCostOverride !== '' && row.ingredientCostOverride !== undefined && (
+                        <button
+                          className="btn btn-small"
+                          style={{ padding: '4px 6px', fontSize: 10 }}
+                          title="Clear override and use calculated formula cost"
+                          onClick={() => setFlavors((p) => p.map((f, i) => i === idx ? { ...f, ingredientCostOverride: '' } : f))}
+                        >
+                          Auto
+                        </button>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3 }}>
+                      {row.formulaId ? `calc $${getCalculatedIngredientCostPerCan(row).toFixed(4)}` : 'manual'}
+                    </div>
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
@@ -1324,8 +1537,167 @@ export default function CoPackingCalculator() {
       {/* Tolling */}
       <div className="section" style={{ marginBottom: 20 }}>
         <div className="section-header">
-          <div className="section-title">Tolling</div>
+          <div>
+            <div className="section-title">Tolling</div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+              Standard tolling price lives in the line items. Use the calculator when you want a modeled reference price.
+            </div>
+          </div>
+          <button
+            className="btn btn-small"
+            style={{
+              background: tollingCalculatorOpen ? 'linear-gradient(135deg, #f97316, #ef4444)' : 'linear-gradient(135deg, #22c55e, #06b6d4)',
+              color: 'white',
+              border: 'none',
+              boxShadow: '0 8px 18px rgba(6, 182, 212, 0.25)',
+              fontWeight: 800,
+            }}
+            onClick={() => setTollingCalculatorOpen((open) => !open)}
+          >
+            {tollingCalculatorOpen ? 'Hide Calculator' : 'Tolling Calculator'}
+          </button>
         </div>
+        {tollingCalculatorOpen && (
+        <div style={{ border: '1px solid var(--border-light)', borderRadius: 'var(--radius)', padding: 14, marginBottom: 14, background: 'var(--surface-alt)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700 }}>
+              <input
+                type="checkbox"
+                checked={tollingEngine.enabled}
+                onChange={(e) => setTollingEngine((current) => ({ ...current, enabled: e.target.checked }))}
+              />
+              Use tolling engine in quote total
+            </label>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 22, fontWeight: 900, color: tollingEngine.enabled ? 'var(--brand)' : 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                {tollingEstimate.priceCentsPerCan.toFixed(2)}¢/can
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                ${tollingEstimate.totalPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} price
+              </div>
+            </div>
+          </div>
+
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.45 }}>
+            Price basis: calculated engine price. If you need to override price per can, add it as a Tolling line item below.
+          </div>
+
+          <div className="form-grid-3" style={{ marginBottom: 12 }}>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Daily Tolling Cost</label>
+              <input
+                type="number"
+                value={tollingEngine.dailyRate}
+                onChange={(e) => setTollingEngine((current) => ({ ...current, dailyRate: parseFloat(e.target.value) || 0 }))}
+              />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Daily Tolling Price</label>
+              <input
+                type="number"
+                value={tollingEngine.dailyPrice}
+                onChange={(e) => setTollingEngine((current) => ({ ...current, dailyPrice: parseFloat(e.target.value) || 0 }))}
+              />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Cases Per Day Output</label>
+              <input
+                type="number"
+                value={tollingEngine.casesPerDay}
+                onChange={(e) => setTollingEngine((current) => ({ ...current, casesPerDay: parseFloat(e.target.value) || 0 }))}
+              />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Complexity</label>
+              <select
+                value={tollingEngine.complexity}
+                onChange={(e) => setTollingEngine((current) => ({ ...current, complexity: e.target.value }))}
+              >
+                {Object.entries(COMPLEXITY_LEVELS).map(([value, level]) => (
+                  <option key={value} value={value}>{level.label} ({level.multiplier}x)</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Changeover Cost</label>
+              <input
+                type="number"
+                value={tollingEngine.changeoverRate}
+                onChange={(e) => setTollingEngine((current) => ({ ...current, changeoverRate: parseFloat(e.target.value) || 0 }))}
+              />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Changeover Price</label>
+              <input
+                type="number"
+                value={tollingEngine.changeoverPrice}
+                onChange={(e) => setTollingEngine((current) => ({ ...current, changeoverPrice: parseFloat(e.target.value) || 0 }))}
+              />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Multi-Day Discount / Day (%)</label>
+              <input
+                type="number"
+                min="0"
+                max="95"
+                step="0.25"
+                value={tollingEngine.multidayDiscountPct}
+                onChange={(e) => setTollingEngine((current) => ({ ...current, multidayDiscountPct: parseFloat(e.target.value) || 0 }))}
+              />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Global Tank Capacity (L)</label>
+              <input
+                type="number"
+                value={globalSettings.tollingTankCapacityLiters || 7500}
+                onChange={(e) => {
+                  const next = parseFloat(e.target.value) || 1;
+                  setGlobalSettings((current) => ({ ...current, tollingTankCapacityLiters: next }));
+                  saveGlobalSettings({ tollingTankCapacityLiters: next });
+                }}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+            {[
+              ['Total Cases', tollingEstimate.totalCases.toLocaleString(undefined, { maximumFractionDigits: 1 })],
+              ['Production Days', tollingEstimate.productionDays.toFixed(2)],
+              ['Total Liquid', tollingEstimate.totalLiters.toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' L'],
+              ['Line Hours (Ref)', tollingEstimate.lineHours.toFixed(2)],
+              ['Tanks Required', tollingEstimate.totalTanks.toLocaleString()],
+              ['Changeovers', tollingEstimate.changeovers.toLocaleString()],
+              ['Complexity', tollingEstimate.complexity.label],
+              ['Avg Daily Price', '$' + tollingEstimate.discountedDailyPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })],
+              ['Cost Rate', tollingEstimate.costCentsPerCan.toFixed(2) + '¢/can'],
+              ['Price Rate', tollingEstimate.priceCentsPerCan.toFixed(2) + '¢/can'],
+              ['Engine Cost', '$' + tollingEstimate.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })],
+              ['Calculated Price', '$' + tollingEstimate.calculatedPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })],
+              ['Engine Price', '$' + tollingEstimate.totalPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })],
+              ['Gross Margin', tollingEstimate.marginPct.toFixed(1) + '%'],
+            ].map(([label, value]) => (
+              <div key={label} style={{ padding: 10, background: 'var(--surface)', border: '1px solid var(--border-light)', borderRadius: 6 }}>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>{label}</div>
+                <div style={{ fontSize: 15, fontWeight: 800, marginTop: 2 }}>{value}</div>
+              </div>
+            ))}
+          </div>
+          {tollingEstimate.flavorTankRows.length > 0 && (
+            <div style={{ marginTop: 10, border: '1px solid var(--border-light)', borderRadius: 6, overflow: 'hidden', background: 'var(--surface)' }}>
+              <div style={{ padding: '7px 10px', fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.4, background: 'var(--surface-alt)' }}>
+                Tank Allocation by Flavor
+              </div>
+              {tollingEstimate.flavorTankRows.map((row) => (
+                <div key={row.id} style={{ display: 'grid', gridTemplateColumns: '1fr 110px 80px', gap: 8, padding: '7px 10px', borderTop: '1px solid var(--border-light)', fontSize: 12 }}>
+                  <span style={{ fontWeight: 700 }}>{row.name}</span>
+                  <span style={{ textAlign: 'right', fontFamily: 'monospace' }}>{row.liters.toLocaleString(undefined, { maximumFractionDigits: 0 })} L</span>
+                  <span style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 800 }}>{row.tanks} tank{row.tanks !== 1 ? 's' : ''}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        )}
         <div>
           {renderFeeTable(
             costs.tollRows, updateToll, resetTollQty,
