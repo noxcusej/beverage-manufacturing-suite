@@ -84,7 +84,7 @@ export async function loadFormulasFromSupabase() {
 export async function saveFormulaToSupabase(formula) {
   if (!supabase) return false;
   try {
-    const { versions, id, name, client, createdAt, updatedAt, ...rest } = formula;
+    const { versions, id, name, client, ...rest } = formula;
 
     const row = {
       id: id,
@@ -127,7 +127,7 @@ export async function syncAllFormulasToSupabase(formulas) {
   if (!supabase) return false;
   try {
     const rows = formulas.map(f => {
-      const { versions, id, name, client, createdAt, updatedAt, ...rest } = f;
+      const { versions, id, name, client, ...rest } = f;
       return {
         id: id,
         name: name,

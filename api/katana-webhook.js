@@ -130,7 +130,7 @@ export default async function handler(req, res) {
         if (existing) {
           // Update existing — keep our local ID
           const { id, ...updateFields } = row;
-          const { data, error } = await supabase
+          const { error } = await supabase
             .from('inventory')
             .update(updateFields)
             .eq('katana_id', row.katana_id)
@@ -145,7 +145,7 @@ export default async function handler(req, res) {
           });
         } else {
           // Insert new
-          const { data, error } = await supabase
+          const { error } = await supabase
             .from('inventory')
             .insert(row)
             .select();

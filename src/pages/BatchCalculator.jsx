@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import { getInventory, saveInventory, addInventoryItem, getVendors, getTankConfig, getCurrentBatch, saveBatch, getFormulas, saveFormula as saveFormulaToStore, getClients } from '../data/store';
+import { getInventory, getCurrentBatch, saveBatch, getFormulas, saveFormula as saveFormulaToStore, getClients } from '../data/store';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import * as XLSX from 'xlsx';
 
@@ -57,7 +57,6 @@ export default function BatchCalculator() {
   const [unitsPerCase, setUnitsPerCase] = useState(24);
   const [lossPercent, setLossPercent] = useState(5);
   const [ingredients, setIngredients] = useState([]);
-  const [showUnitCalc, setShowUnitCalc] = useState(false);
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [loadSearch, setLoadSearch] = useState('');
   const [showAddIngModal, setShowAddIngModal] = useState(false);
@@ -76,6 +75,7 @@ export default function BatchCalculator() {
     const handler = () => {
       setInventoryArr(getInventory());
       setFormulas(getFormulas());
+      setClients(getClients());
     };
     window.addEventListener('comanufacturing:datachange', handler);
     return () => window.removeEventListener('comanufacturing:datachange', handler);
@@ -269,7 +269,6 @@ export default function BatchCalculator() {
       // Always derive from weight using SG: GAL = LB / 8.345 × SG
       // If recipe is already in a volume unit, convert directly to gal
       let liquidGal = 0;
-      const weightUnits = ['lbs', 'lb', 'kg', 'g', 'oz'];
       const volumeUnits = ['gal', 'L', 'ml', 'fl oz'];
       if (volumeUnits.includes(ing.recipeUnit)) {
         liquidGal = convert(scaledRecipe, ing.recipeUnit, 'gal');
@@ -299,27 +298,6 @@ export default function BatchCalculator() {
 
     return { rows, totalCost, totalCostWithInventory };
   }, [ingredients, inventory, scaleFactor]);
-
-  // Tank allocation
-  const tankAllocation = useMemo(() => {
-    let batchGal = batchSize;
-    if (batchSizeUnit === 'L') batchGal = batchSize / 3.78541;
-
-    const tanks = getTankConfig();
-    const sorted = [...tanks].sort((a, b) => b.capacity - a.capacity);
-    let remaining = batchGal;
-    const alloc = [];
-
-    for (const tank of sorted) {
-      if (remaining <= 0) break;
-      const allocated = Math.min(remaining, tank.capacity);
-      alloc.push({ ...tank, allocated, utilization: ((allocated / tank.capacity) * 100).toFixed(0) });
-      remaining -= allocated;
-    }
-
-    const totalCap = sorted.reduce((s, t) => s + t.capacity, 0);
-    return { alloc, canFit: remaining <= 0, remaining, batchGal, totalCap };
-  }, [batchSize, batchSizeUnit]);
 
   // Unit economics
   const unitEcon = useMemo(() => {
@@ -623,7 +601,6 @@ export default function BatchCalculator() {
   ]);
 
   function exportToExcel() {
-    const batchSizeGal = batchSizeUnit === 'L' ? batchSize / 3.78541 : batchSize;
     const wb = XLSX.utils.book_new();
 
     // SHEET 1: Overview
@@ -749,7 +726,7 @@ export default function BatchCalculator() {
       e.preventDefault();
       // showPicker is the modern API to open selects programmatically
       if (e.target.showPicker) {
-        try { e.target.showPicker(); } catch (_) { /* some browsers restrict this */ }
+        try { e.target.showPicker(); } catch { /* some browsers restrict this */ }
       } else {
         // Fallback: simulate mousedown to open
         e.target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
@@ -1133,9 +1110,7 @@ export default function BatchCalculator() {
                   </tr>
                 </thead>
                 <tbody>
-                  {ingredients.map((ing, idx) => {
-                    const item = inventory[ing.inventoryId];
-                    return (
+                  {ingredients.map((ing, idx) => (
                       <tr key={idx}>
                         <td style={{ position: 'sticky', left: 0, zIndex: 1, background: 'var(--surface)', boxShadow: '2px 0 4px rgba(0,0,0,0.06)' }}>
                           {ing.inventoryId && !ing.inventoryId.startsWith('DRAFT-') ? (
@@ -1297,8 +1272,7 @@ export default function BatchCalculator() {
                           <button className="btn btn-small btn-danger" onClick={() => removeIngredient(idx)}>x</button>
                         </td>
                       </tr>
-                    );
-                  })}
+                  ))}
                 </tbody>
                 <tfoot>
                   <tr>
@@ -1468,7 +1442,6 @@ export default function BatchCalculator() {
           {(() => {
             const needsOrder = scaledData.rows.filter((r) => !r.stockOk);
             const partialCount = needsOrder.filter((r) => r.stockPartial).length;
-            const orderCount = needsOrder.length - partialCount;
             return (
               <div style={{ background: 'var(--surface)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius)', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
                 <div

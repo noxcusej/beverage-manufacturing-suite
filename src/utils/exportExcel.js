@@ -7,12 +7,6 @@ function s(ws, ref, val, opts = {}) {
   ws[ref] = cell;
 }
 
-function colLetter(i) {
-  let r = '';
-  while (i >= 0) { r = String.fromCharCode(65 + (i % 26)) + r; i = Math.floor(i / 26) - 1; }
-  return r;
-}
-
 // ── Co-Packing Export ──
 
 export function exportCoPackingToExcel(runData) {
@@ -47,11 +41,9 @@ export function exportCoPackingToExcel(runData) {
   r++;
 
   // Flavor Lineup
-  const flvStart = r;
   s(ws, 'A' + r, 'Flavor Lineup'); r++;
   s(ws, 'A' + r, 'SKU'); s(ws, 'B' + r, 'Cases'); s(ws, 'C' + r, 'Cans');
-  s(ws, 'D' + r, 'Ingr $/can'); s(ws, 'E' + r, 'Stab $/can'); s(ws, 'F' + r, 'Batching Fee');
-  s(ws, 'G' + r, 'Ingr Cost'); s(ws, 'H' + r, 'Stab Cost'); r++;
+  s(ws, 'D' + r, 'Ingr $/can'); s(ws, 'E' + r, 'Batching Fee'); s(ws, 'F' + r, 'Ingr Cost'); r++;
 
   const flvDataStart = r;
   flavors.forEach((f, i) => {
@@ -60,10 +52,8 @@ export function exportCoPackingToExcel(runData) {
     s(ws, 'B' + row, f.cases || 0);
     s(ws, `C${row}`, null, { f: `B${row}*${upc}` }); // cans = cases * upc
     s(ws, 'D' + row, f.ingredientCost || 0, { z: '$#,##0.0000' });
-    s(ws, 'E' + row, f.stabilizationCost || 0, { z: '$#,##0.0000' });
-    s(ws, 'F' + row, f.batchingFee || 0, { z: '$#,##0.00' });
-    s(ws, `G${row}`, null, { f: `D${row}*C${row}`, z: '$#,##0.00' }); // ingr cost = rate * cans
-    s(ws, `H${row}`, null, { f: `E${row}*C${row}`, z: '$#,##0.00' }); // stab cost = rate * cans
+    s(ws, 'E' + row, f.batchingFee || 0, { z: '$#,##0.00' });
+    s(ws, `F${row}`, null, { f: `D${row}*C${row}`, z: '$#,##0.00' }); // ingr cost = rate * cans
   });
   const flvDataEnd = r + flavors.length - 1;
   r = flvDataEnd + 1;
@@ -72,14 +62,11 @@ export function exportCoPackingToExcel(runData) {
   s(ws, 'A' + r, 'TOTAL');
   s(ws, `B${r}`, null, { f: `SUM(B${flvDataStart}:B${flvDataEnd})` });
   s(ws, `C${r}`, null, { f: `SUM(C${flvDataStart}:C${flvDataEnd})` });
+  s(ws, `E${r}`, null, { f: `SUM(E${flvDataStart}:E${flvDataEnd})`, z: '$#,##0.00' });
   s(ws, `F${r}`, null, { f: `SUM(F${flvDataStart}:F${flvDataEnd})`, z: '$#,##0.00' });
-  s(ws, `G${r}`, null, { f: `SUM(G${flvDataStart}:G${flvDataEnd})`, z: '$#,##0.00' });
-  s(ws, `H${r}`, null, { f: `SUM(H${flvDataStart}:H${flvDataEnd})`, z: '$#,##0.00' });
   const totalCansCell = `C${r}`;
-  const totalCasesCell = `B${r}`;
-  const totalIngCell = `G${r}`;
-  const totalStabCell = `H${r}`;
-  const totalBatchCell = `F${r}`;
+  const totalIngCell = `F${r}`;
+  const totalBatchCell = `E${r}`;
   r += 2;
 
   // Line item sections
@@ -117,7 +104,6 @@ export function exportCoPackingToExcel(runData) {
   s(ws, 'A' + r, 'COST SUMMARY'); r++;
   const summaryItems = [
     ['Ingredients', totalIngCell],
-    ['Stabilization', totalStabCell],
     ['Batching Fees', totalBatchCell],
     ['Packaging Materials', pkg.subtotalCell],
     ['Tolling', toll.subtotalCell],
@@ -152,4 +138,3 @@ export function exportCoPackingToExcel(runData) {
   // Download
   XLSX.writeFile(wb, `copacking_${(runData.name || 'run').replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
 }
-

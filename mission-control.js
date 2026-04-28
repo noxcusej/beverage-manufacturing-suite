@@ -221,7 +221,7 @@ function handleDragStart(e) {
     e.dataTransfer.effectAllowed = 'move';
 }
 
-function handleDragEnd(e) {
+function handleDragEnd() {
     this.classList.remove('dragging');
     draggedTask = null;
 }

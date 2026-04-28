@@ -79,7 +79,7 @@ export default function ClientProfile() {
     function handleAddContact() {
       const name = prompt('Contact name:');
       if (!name?.trim()) return;
-      save({ contacts: [...contacts, { id: 'ct-' + Date.now(), name: name.trim(), email: '', phone: '', role: '' }] });
+      save({ contacts: [...contacts, { id: crypto.randomUUID(), name: name.trim(), email: '', phone: '', role: '' }] });
     }
 
     function updateContact(idx, field, value) {

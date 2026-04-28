@@ -103,7 +103,7 @@ export async function hydrateAll() {
 
   const domains = Object.keys(_keyMap);
 
-  const results = await Promise.allSettled(
+  await Promise.allSettled(
     domains.map(async (domain) => {
       const remote = await loadAppData(_keyMap[domain]);
       if (remote !== null && remote !== undefined) {

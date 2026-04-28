@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getInventory, saveInventory, addInventoryItem, deleteInventoryItem, getVendors } from '../data/store';
+import { getInventory, saveInventory, addInventoryItem, deleteInventoryItem } from '../data/store';
 
 const UNIT_MAP = {
   'kg': 'kg', 'kilogram': 'kg', 'kilograms': 'kg',
@@ -25,8 +25,6 @@ export default function Inventory() {
   const [pendingCSVData, setPendingCSVData] = useState(null); // holds parsed CSV data awaiting confirmation
   const [showImportConfirm, setShowImportConfirm] = useState(false);
   const fileInputRef = useRef(null);
-  const vendors = getVendors();
-
   const refresh = useCallback(() => setInventory(getInventory()), []);
 
   useEffect(() => {

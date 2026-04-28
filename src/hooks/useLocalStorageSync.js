@@ -1,17 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 
-export function useLocalStorageSync(getter, deps = []) {
+export function useLocalStorageSync(getter) {
   const [data, setData] = useState(getter);
 
-  const refresh = useCallback(() => {
+  const refresh = () => {
     setData(getter());
-  }, deps);
+  };
 
   useEffect(() => {
-    const handler = () => refresh();
+    const handler = () => setData(getter());
     window.addEventListener('comanufacturing:datachange', handler);
     return () => window.removeEventListener('comanufacturing:datachange', handler);
-  }, [refresh]);
+  }, [getter]);
 
   return [data, refresh];
 }

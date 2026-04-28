@@ -1,7 +1,8 @@
-import { useState, useMemo, useEffect } from 'react';
-import { getCurrentBatch, getFormulas, getRuns, saveRun, deleteRun } from '../data/store';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { getCurrentBatch, getFormulas, getInventory, getRuns, saveRun, deleteRun } from '../data/store';
 import { getProducts, lookupPrice, NEW_ART_PREP_FEE } from '../data/drayhorsePricing';
 import { exportCoPackingToExcel } from '../utils/exportExcel';
+import { exportConsolidatedPOToExcel } from '../utils/exportConsolidatedPO';
 
 // ── Constants ──
 
@@ -89,6 +90,7 @@ function makeDefaultTolling() {
 
 function makeDefaultBOM() {
   return [
+    { id: 'bom-stabilization', name: 'Stabilization', feeType: 'per-unit', rate: 0.02, qty: 0, qtyManual: false },
     { id: 'bom-lab', name: 'Lab Testing', feeType: 'per-batch', rate: 750, qty: 0, qtyManual: false },
     { id: 'bom-pa-letter', name: 'PA Letter (Prior Approval)', feeType: 'fixed', rate: 200, qty: 0, qtyManual: false },
     { id: 'bom-freight-out', name: 'Freight \u2014 Outbound Finished Goods', feeType: 'per-pallet', rate: 200, qty: 0, qtyManual: false },
@@ -111,10 +113,17 @@ function makeDefaultTaxes() {
 const conversions = {
   gal_L: 3.78541, L_gal: 0.264172, gal_oz: 128, oz_gal: 0.0078125,
   L_oz: 33.814, oz_L: 0.0295735, lbs_kg: 0.453592, kg_lbs: 2.20462,
+  lbs_g: 453.592, g_lbs: 0.00220462, oz_lbs: 0.0625, lbs_oz: 16,
+  gal_ml: 3785.41, ml_gal: 0.000264172, ml_L: 0.001, L_ml: 1000,
 };
+const weightUnits = new Set(['lbs', 'lb', 'kg', 'g', 'oz']);
+const volumeUnits = new Set(['gal', 'L', 'ml', 'fl oz']);
 
 function convertUnit(value, from, to) {
   if (from === to) return value;
+  const normalizedFrom = from === 'fl oz' ? 'oz' : from;
+  const normalizedTo = to === 'fl oz' ? 'oz' : to;
+  if (normalizedFrom !== from || normalizedTo !== to) return convertUnit(value, normalizedFrom, normalizedTo);
   const key = `${from}_${to}`;
   if (conversions[key]) return value * conversions[key];
   const rev = `${to}_${from}`;
@@ -122,9 +131,29 @@ function convertUnit(value, from, to) {
   return value;
 }
 
+function convertWithSG(value, from, to, sg) {
+  if (from === to) return value;
+  const fromIsWeight = weightUnits.has(from);
+  const toIsWeight = weightUnits.has(to);
+  const fromIsVolume = volumeUnits.has(from);
+  const toIsVolume = volumeUnits.has(to);
+  if (fromIsWeight && toIsVolume) {
+    const lbs = convertUnit(value, from, 'lbs');
+    const gal = (lbs / 8.345) * (sg || 1);
+    return convertUnit(gal, 'gal', to);
+  }
+  if (fromIsVolume && toIsWeight) {
+    const gal = convertUnit(value, from, 'gal');
+    const lbs = (gal * 8.345) / (sg || 1);
+    return convertUnit(lbs, 'lbs', to);
+  }
+  return convertUnit(value, from, to);
+}
+
 function calcFormulaIngredientCostPerCan(formula, batchSizeGal, fillOz) {
   if (!formula?.ingredients?.length || !fillOz || !batchSizeGal) return null;
-  const baseYield = formula.baseYield || 100;
+  let baseYield = formula.baseYield || 100;
+  if (formula.baseYieldUnit === 'L') baseYield = baseYield / 3.78541;
   const scaleFactor = batchSizeGal / baseYield;
 
   let totalCost = 0;
@@ -132,7 +161,7 @@ function calcFormulaIngredientCostPerCan(formula, batchSizeGal, fillOz) {
     const scaledRecipe = (ing.recipeAmount || 0) * scaleFactor;
     let buyAmt = scaledRecipe;
     if (ing.recipeUnit && ing.buyUnit && ing.recipeUnit !== ing.buyUnit) {
-      buyAmt = convertUnit(scaledRecipe, ing.recipeUnit, ing.buyUnit);
+      buyAmt = convertWithSG(scaledRecipe, ing.recipeUnit, ing.buyUnit, ing.specificGravity);
     }
     const orderQty = Math.ceil(buyAmt / (ing.moq || 1)) * (ing.moq || 1);
     totalCost += orderQty * (ing.pricePerBuyUnit || 0);
@@ -140,6 +169,26 @@ function calcFormulaIngredientCostPerCan(formula, batchSizeGal, fillOz) {
 
   const cans = Math.floor((batchSizeGal * 128) / fillOz);
   return cans > 0 ? totalCost / cans : null;
+}
+
+function makeDefaultFlavor() {
+  return { id: 'flv-' + Date.now(), formulaId: '', name: '', cases: 100, batchingFee: 0 };
+}
+
+function ensureStandardBOM(items) {
+  const defaults = makeDefaultBOM();
+  const byId = new Map((items || []).map((item) => [item.id, item]));
+  defaults.forEach((item) => {
+    if (!byId.has(item.id)) byId.set(item.id, item);
+  });
+  return Array.from(byId.values());
+}
+
+function stripLegacyFlavorFields(flavor) {
+  const next = { ...flavor };
+  delete next.stabilizationCost;
+  delete next.ingredientCostAuto;
+  return next;
 }
 
 // ── Auto-qty logic ──
@@ -171,8 +220,12 @@ export default function CoPackingCalculator() {
 
   // Available formulas from the library
   const [allFormulas, setAllFormulas] = useState([]);
+  const [inventoryArr, setInventoryArr] = useState([]);
   useEffect(() => {
-    const refresh = () => setAllFormulas(getFormulas());
+    const refresh = () => {
+      setAllFormulas(getFormulas());
+      setInventoryArr(getInventory());
+    };
     refresh();
     window.addEventListener('comanufacturing:datachange', refresh);
     return () => window.removeEventListener('comanufacturing:datachange', refresh);
@@ -180,9 +233,7 @@ export default function CoPackingCalculator() {
 
   // Flavors in this run (each SKU has its own ingredient + stabilization cost)
   // cases = number of cases to produce for this SKU
-  const [flavors, setFlavors] = useState([
-    { id: 'flv-1', formulaId: '', name: '', cases: 100, batchingFee: 0, ingredientCost: 0.25, stabilizationCost: 0.02, ingredientCostAuto: false },
-  ]);
+  const [flavors, setFlavors] = useState([makeDefaultFlavor()]);
 
   // Drayhorse carton pricing
   const [cartonProduct, setCartonProduct] = useState('sleek-4pk');
@@ -205,24 +256,6 @@ export default function CoPackingCalculator() {
     refresh();
     window.addEventListener('comanufacturing:datachange', refresh);
     return () => window.removeEventListener('comanufacturing:datachange', refresh);
-  }, []);
-
-  // Load run from URL query param or batch on mount
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const runId = params.get('run');
-    if (runId) {
-      const allRuns = getRuns();
-      const run = allRuns.find((r) => r.id === runId);
-      if (run) { handleLoadRun(runId); return; }
-    }
-    const batch = getCurrentBatch();
-    if (batch) {
-      setFlavors((p) => p.map((f, i) => {
-        if (i !== 0) return f;
-        return { ...f, formulaId: batch.formulaId || '', name: batch.formulaName || f.name, cases: batch.totalUnits ? Math.ceil(batch.totalUnits / unitsPerCase) : f.cases };
-      }));
-    }
   }, []);
 
   // Sync Drayhorse product with pack size
@@ -261,6 +294,21 @@ export default function CoPackingCalculator() {
     const flavorCount = flavors.length;
     return { flavorRows, flavorCount, totalGallons, totalUnits, totalPacks, totalCases, totalPallets, totalTrucks, totalShifts, proofGallons };
   }, [flavors, fillVolume, fillVolumeUnit, packSize, unitsPerCase, casesPerPallet, palletsPerTruck, cansPerMinute, abv]);
+
+  const formulaById = useMemo(() => Object.fromEntries(allFormulas.map((formula) => [formula.id, formula])), [allFormulas]);
+  const fillOz = useMemo(() => {
+    if (fillVolumeUnit === 'mL') return fillVolume / 29.5735;
+    if (fillVolumeUnit === 'L') return fillVolume * 33.814;
+    return fillVolume;
+  }, [fillVolume, fillVolumeUnit]);
+
+  const getCalculatedIngredientCostPerCan = useCallback((flavor) => {
+    const formula = formulaById[flavor.formulaId];
+    if (!formula) return 0;
+    let batchGal = formula.batchSize || 500;
+    if (formula.batchSizeUnit === 'L') batchGal = batchGal / 3.78541;
+    return calcFormulaIngredientCostPerCan(formula, batchGal, fillOz) || 0;
+  }, [formulaById, fillOz]);
 
   // Auto-populate packaging quantities
   useEffect(() => {
@@ -322,13 +370,13 @@ export default function CoPackingCalculator() {
       return { ...item, lineCost, inactive: false };
     });
 
-    // Per-SKU ingredient costs (ingredient + stabilization per can, multiplied by that SKU's can count)
+    // Per-SKU ingredient costs are calculated from the selected formula.
+    // Stabilization is handled as a standard BOM line item.
     let totalIngredientCost = 0;
     counts.flavorRows.forEach((fr) => {
       const flv = flavors.find((f) => f.id === fr.id);
       if (flv) {
-        totalIngredientCost += (flv.ingredientCost || 0) * fr.cans;
-        totalIngredientCost += (flv.stabilizationCost || 0) * fr.cans;
+        totalIngredientCost += getCalculatedIngredientCostPerCan(flv) * fr.cans;
       }
     });
 
@@ -359,7 +407,7 @@ export default function CoPackingCalculator() {
     const costPerCase = costPerUnit * unitsPerCase;
 
     return { pkgRows, tollRows, bomRows, taxRows, packagingCost: totalPackaging, rawPackagingCost: packagingCost, totalIngredientCost, tollingCost, bomCost, totalBatchingFees, taxCost, totalCost, costPerUnit, costPerCase };
-  }, [packagingItems, tollingItems, bomItems, taxItems, flavors, counts, unitsPerCase, cartonCost, carrierType]);
+  }, [packagingItems, tollingItems, bomItems, taxItems, flavors, counts, unitsPerCase, cartonCost, carrierType, getCalculatedIngredientCostPerCan]);
 
   const breakdown = useMemo(() => {
     const total = costs.totalCost;
@@ -376,6 +424,98 @@ export default function CoPackingCalculator() {
       pct: total > 0 ? (r.cost / total) * 100 : 0,
     }));
   }, [costs, counts, carrierType, cartonCost]);
+
+  const inventoryMap = useMemo(() => {
+    const map = {};
+    inventoryArr.forEach((item) => { map[item.id] = item; });
+    return map;
+  }, [inventoryArr]);
+
+  const rawMaterialPO = useMemo(() => {
+    const formulaById = Object.fromEntries(allFormulas.map((formula) => [formula.id, formula]));
+    const caseCounts = {};
+    counts.flavorRows.forEach((flavor) => {
+      if (!flavor.formulaId || !flavor.cases) return;
+      caseCounts[flavor.formulaId] = (caseCounts[flavor.formulaId] || 0) + flavor.cases;
+    });
+
+    const rowsByKey = {};
+    Object.entries(caseCounts).forEach(([formulaId, cases]) => {
+      const formula = formulaById[formulaId];
+      if (!formula?.ingredients?.length || cases <= 0) return;
+      const formulaUnitsPerCase = formula.unitsPerCase || unitsPerCase || 24;
+      const units = cases * formulaUnitsPerCase;
+      let unitOz = formula.unitSizeVal || fillVolume || 12;
+      const unitSizeUnit = formula.unitSizeUnit || fillVolumeUnit || 'oz';
+      if (unitSizeUnit === 'ml' || unitSizeUnit === 'mL') unitOz = unitOz / 29.5735;
+      else if (unitSizeUnit === 'L') unitOz = unitOz * 33.814;
+      const batchGal = (units * unitOz) / 128;
+      let baseYieldGal = formula.baseYield || 100;
+      if (formula.baseYieldUnit === 'L') baseYieldGal = baseYieldGal / 3.78541;
+      const scaleFactor = baseYieldGal > 0 ? batchGal / baseYieldGal : 1;
+
+      formula.ingredients.forEach((ingredient) => {
+        const inventoryItem = inventoryMap[ingredient.inventoryId];
+        const recipeAmount = (ingredient.recipeAmount || 0) * scaleFactor;
+        const buyUnit = ingredient.buyUnit || ingredient.recipeUnit || 'gal';
+        const required = ingredient.recipeUnit && ingredient.recipeUnit !== buyUnit
+          ? convertWithSG(recipeAmount, ingredient.recipeUnit, buyUnit, ingredient.specificGravity)
+          : recipeAmount;
+        const key = ingredient.inventoryId || `draft:${ingredient.draftName || ingredient.name || 'unknown'}`;
+        if (!rowsByKey[key]) {
+          let onHand = ingredient.currentInventory || 0;
+          const invUnit = ingredient.inventoryUnit || buyUnit;
+          if (onHand > 0 && invUnit !== buyUnit) {
+            onHand = convertWithSG(onHand, invUnit, buyUnit, ingredient.specificGravity);
+          }
+          rowsByKey[key] = {
+            key,
+            name: inventoryItem?.name || ingredient.draftName || ingredient.name || 'Unknown',
+            sku: inventoryItem?.sku || '',
+            vendor: inventoryItem?.vendor || 'No Vendor',
+            buyUnit,
+            required: 0,
+            onHand: Math.max(0, onHand),
+            moq: ingredient.moq || 1,
+            price: ingredient.pricePerBuyUnit || 0,
+            formulas: new Set(),
+          };
+        }
+        rowsByKey[key].required += required;
+        rowsByKey[key].formulas.add(formula.name);
+        if ((ingredient.pricePerBuyUnit || 0) > 0) rowsByKey[key].price = ingredient.pricePerBuyUnit;
+        if ((ingredient.moq || 1) > rowsByKey[key].moq) rowsByKey[key].moq = ingredient.moq;
+      });
+    });
+
+    const rows = Object.values(rowsByKey).map((row) => {
+      const netNeeded = Math.max(0, row.required - row.onHand);
+      const orderQty = netNeeded <= 0 ? 0 : Math.ceil(netNeeded / (row.moq || 1)) * (row.moq || 1);
+      return {
+        ...row,
+        netNeeded,
+        orderQty,
+        lineCost: orderQty * row.price,
+        formulaCount: row.formulas.size,
+      };
+    }).sort((a, b) => a.vendor.localeCompare(b.vendor) || a.name.localeCompare(b.name));
+
+    const byVendor = {};
+    rows.forEach((row) => {
+      if (!byVendor[row.vendor]) byVendor[row.vendor] = { rows: [], subtotal: 0 };
+      byVendor[row.vendor].rows.push(row);
+      byVendor[row.vendor].subtotal += row.lineCost;
+    });
+
+    return {
+      caseCounts,
+      selectedFormulas: Object.keys(caseCounts).map((id) => formulaById[id]).filter(Boolean),
+      rows,
+      byVendor,
+      totalCost: rows.reduce((sum, row) => sum + row.lineCost, 0),
+      missingPriceCount: rows.filter((row) => row.price <= 0 && row.orderQty > 0).length,
+    };
+  }, [allFormulas, counts.flavorRows, fillVolume, fillVolumeUnit, inventoryMap, unitsPerCase]);
 
   // ── Handlers ──
 
@@ -449,7 +589,10 @@ export default function CoPackingCalculator() {
   function collectRunState() {
     return {
       config: { fillVolume, fillVolumeUnit, packSize, carrierType, abv, unitsPerCase, casesPerPallet, palletsPerTruck, cansPerMinute },
-      flavors,
+      flavors: flavors.map((flavor) => ({
+        ...flavor,
+        ingredientCost: getCalculatedIngredientCostPerCan(flavor),
+      })),
       carton: { cartonProduct, skuCount, includeNewArt },
       packagingItems,
       tollingItems,
@@ -469,7 +612,7 @@ export default function CoPackingCalculator() {
     if (c.casesPerPallet) setCasesPerPallet(c.casesPerPallet);
     if (c.palletsPerTruck) setPalletsPerTruck(c.palletsPerTruck);
     if (c.cansPerMinute) setCansPerMinute(c.cansPerMinute);
-    if (run.flavors) setFlavors(run.flavors);
+    if (run.flavors) setFlavors(run.flavors.map(stripLegacyFlavorFields));
     if (run.carton) {
       setCartonProduct(run.carton.cartonProduct || 'sleek-4pk');
       setSkuCount(run.carton.skuCount || 1);
@@ -477,7 +620,7 @@ export default function CoPackingCalculator() {
     }
     if (run.packagingItems) setPackagingItems(run.packagingItems);
     if (run.tollingItems) setTollingItems(run.tollingItems);
-    if (run.bomItems) setBomItems(run.bomItems);
+    if (run.bomItems) setBomItems(ensureStandardBOM(run.bomItems));
     if (run.taxItems) setTaxItems(run.taxItems);
   }
 
@@ -498,13 +641,39 @@ export default function CoPackingCalculator() {
     applyRunState(run);
   }
 
+  // Load run from URL query param or batch on mount.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const runId = params.get('run');
+    if (runId) {
+      const run = getRuns().find((r) => r.id === runId);
+      if (run) {
+        setCurrentRunId(run.id);
+        setRunName(run.name);
+        setRunClient(run.client || '');
+        applyRunState(run);
+        return;
+      }
+    }
+
+    const batch = getCurrentBatch();
+    if (batch) {
+      setFlavors((p) => p.map((f, i) => {
+        if (i !== 0) return f;
+        return { ...f, formulaId: batch.formulaId || '', name: batch.formulaName || f.name, cases: batch.totalUnits ? Math.ceil(batch.totalUnits / unitsPerCase) : f.cases };
+      }));
+    }
+    // This is an initial load from URL/current batch; later changes are user-driven.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function handleNewRun() {
     setCurrentRunId(null);
     setRunName('');
     setRunClient('');
     setFillVolume(12); setFillVolumeUnit('oz'); setPackSize(4); setCarrierType('paktech');
     setAbv(0); setUnitsPerCase(24); setCasesPerPallet(80); setPalletsPerTruck(20); setCansPerMinute(400);
-    setFlavors([{ id: 'flv-1', formulaId: '', name: '', cases: 100, batchingFee: 0, ingredientCost: 0.25, stabilizationCost: 0.02, ingredientCostAuto: false }]);
+    setFlavors([makeDefaultFlavor()]);
     setCartonProduct('sleek-4pk'); setSkuCount(1); setIncludeNewArt(false);
     setPackagingItems(makeDefaultPackaging());
     setTollingItems(makeDefaultTolling());
@@ -518,6 +687,38 @@ export default function CoPackingCalculator() {
     deleteRun(runId);
     setSavedRuns(getRuns());
     if (currentRunId === runId) { setCurrentRunId(null); setRunName(''); setRunClient(''); }
+  }
+
+  function exportRawMaterialsPO() {
+    if (rawMaterialPO.selectedFormulas.length === 0) {
+      alert('Select at least one formula flavor with cases before exporting raw materials.');
+      return;
+    }
+    const ok = exportConsolidatedPOToExcel({
+      selectedFormulas: rawMaterialPO.selectedFormulas,
+      inventoryMap,
+      caseCounts: rawMaterialPO.caseCounts,
+      fgCosts: counts.flavorRows
+        .filter((row) => row.formulaId && row.cases > 0)
+        .map((row) => {
+          const ingredientCost = getCalculatedIngredientCostPerCan(row);
+          return {
+            fgId: row.id,
+            name: row.name || allFormulas.find((f) => f.id === row.formulaId)?.name || 'Flavor',
+            totalUnits: row.cans,
+            totalPacks: packSize > 0 ? Math.ceil(row.cans / packSize) : 0,
+            totalCases: row.cases,
+            totalPallets: row.pallets,
+            nonMoqCost: ingredientCost * row.cans,
+            grossCost: ingredientCost * row.cans,
+            nonMoqPerUnit: ingredientCost,
+            nonMoqPerPack: packSize > 0 ? ingredientCost * packSize : 0,
+            nonMoqPerCase: ingredientCost * unitsPerCase,
+            nonMoqPerPallet: row.cases > 0 ? (ingredientCost * row.cans / row.cases) * casesPerPallet : 0,
+          };
+        }),
+    });
+    if (!ok) alert('No valid formula ingredient requirements were found to export.');
   }
 
   // ── Render helper: fee table (shared by services, taxes) ──
@@ -642,6 +843,7 @@ export default function CoPackingCalculator() {
             <button className="btn btn-danger" onClick={() => handleDeleteRun(currentRunId)} style={{ fontSize: 12 }}>Delete</button>
           )}
           <button className="btn" onClick={() => exportCoPackingToExcel(collectRunState())}>Export Excel</button>
+          <button className="btn" onClick={exportRawMaterialsPO}>Export Raw PO</button>
           <button className="btn btn-primary" onClick={handleSaveRun}>
             {currentRunId ? 'Save' : 'Save Configuration'}
           </button>
@@ -734,7 +936,7 @@ export default function CoPackingCalculator() {
       <div className="section" style={{ marginBottom: 20 }}>
         <div className="section-header">
           <div className="section-title">Flavor Lineup</div>
-          <button className="btn btn-primary btn-small" onClick={() => setFlavors((p) => [...p, { id: 'flv-' + Date.now(), formulaId: '', name: '', cases: 100, batchingFee: 0, ingredientCost: 0.25, stabilizationCost: 0.02, ingredientCostAuto: false }])}>
+          <button className="btn btn-primary btn-small" onClick={() => setFlavors((p) => [...p, makeDefaultFlavor()])}>
             + Add Flavor
           </button>
         </div>
@@ -745,8 +947,7 @@ export default function CoPackingCalculator() {
                 <th style={{ width: 28 }}></th>
                 <th>Formula</th>
                 <th style={{ textAlign: 'right' }}>Cases</th>
-                <th style={{ textAlign: 'right' }}>Ingr. $/can</th>
-                <th style={{ textAlign: 'right' }}>Stab. $/can</th>
+                <th style={{ textAlign: 'right' }}>Calculated Ingr. $/can</th>
                 <th style={{ textAlign: 'right' }}>Batching Fee</th>
                 <th style={{ textAlign: 'right' }}>Cans</th>
                 <th style={{ textAlign: 'right' }}>Cases</th>
@@ -782,14 +983,6 @@ export default function CoPackingCalculator() {
                         }
                         const formula = allFormulas.find((f) => f.id === selectedId);
                         if (formula) {
-                          // Calculate ingredient cost per can from formula's ingredient data
-                          let batchGal = formula.batchSize || 500;
-                          if (formula.batchSizeUnit === 'L') batchGal = batchGal / 3.78541;
-                          let fillOz = fillVolume;
-                          if (fillVolumeUnit === 'mL') fillOz = fillVolume / 29.5735;
-                          else if (fillVolumeUnit === 'L') fillOz = fillVolume * 33.814;
-                          const autoIngCost = calcFormulaIngredientCostPerCan(formula, batchGal, fillOz);
-
                           setFlavors((p) => p.map((f, i) => i === idx ? {
                             ...f,
                             formulaId: formula.id,
@@ -797,8 +990,6 @@ export default function CoPackingCalculator() {
                             cases: formula.batchSize && unitsPerCase > 0
                               ? Math.ceil((formula.batchSize * (formula.batchSizeUnit === 'L' ? 33.814 / fillVolume : 128 / fillVolume)) / unitsPerCase)
                               : f.cases,
-                            ingredientCost: autoIngCost ?? f.ingredientCost,
-                            ingredientCostAuto: autoIngCost !== null,
                           } : f));
                         }
                       }}
@@ -822,20 +1013,9 @@ export default function CoPackingCalculator() {
                       onChange={(e) => setFlavors((p) => p.map((f, i) => i === idx ? { ...f, cases: parseInt(e.target.value) || 0 } : f))} />
                   </td>
                   <td style={{ textAlign: 'right' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
-                      <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>$</span>
-                      <input type="text" inputMode="decimal" defaultValue={row.ingredientCost}
-                        style={{ width: 65, textAlign: 'right', background: row.ingredientCostAuto ? '#EDE9FE' : undefined }}
-                        title={row.ingredientCostAuto ? 'Auto-calculated from formula ingredients' : 'Manual entry'}
-                        onBlur={(e) => setFlavors((p) => p.map((f, i) => i === idx ? { ...f, ingredientCost: e.target.value === '' ? 0 : +e.target.value, ingredientCostAuto: false } : f))} />
-                    </div>
-                  </td>
-                  <td style={{ textAlign: 'right' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
-                      <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>$</span>
-                      <input type="text" inputMode="decimal" defaultValue={row.stabilizationCost} style={{ width: 65, textAlign: 'right' }}
-                        onBlur={(e) => setFlavors((p) => p.map((f, i) => i === idx ? { ...f, stabilizationCost: e.target.value === '' ? 0 : +e.target.value } : f))} />
-                    </div>
+                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: row.formulaId ? 'var(--brand)' : 'var(--text-muted)' }}>
+                      {row.formulaId ? '$' + getCalculatedIngredientCostPerCan(row).toFixed(4) : '—'}
+                    </span>
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
@@ -862,7 +1042,7 @@ export default function CoPackingCalculator() {
                   <td></td>
                   <td style={{ fontWeight: 700 }}>Run Totals</td>
                   <td></td>
-                  <td colSpan={2} style={{ textAlign: 'right', fontWeight: 600, fontSize: 12, color: 'var(--text-secondary)' }}>
+                  <td style={{ textAlign: 'right', fontWeight: 600, fontSize: 12, color: 'var(--text-secondary)' }}>
                     Ingr: ${costs.totalIngredientCost?.toLocaleString(undefined, { minimumFractionDigits: 2 }) || '0.00'}
                   </td>
                   <td style={{ textAlign: 'right', fontWeight: 700 }}>
@@ -877,6 +1057,103 @@ export default function CoPackingCalculator() {
             )}
           </table>
         </div>
+      </div>
+
+      {/* Consolidated raw materials */}
+      <div className="section" style={{ marginBottom: 20 }}>
+        <div className="section-header">
+          <div>
+            <div className="section-title">Consolidated Raw Materials</div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+              Aggregates all selected formula flavors, then applies on-hand and MOQ once per ingredient.
+            </div>
+          </div>
+          <button className="btn btn-small" onClick={exportRawMaterialsPO} disabled={rawMaterialPO.rows.length === 0}>
+            Export Raw PO
+          </button>
+        </div>
+        {rawMaterialPO.rows.length === 0 ? (
+          <div style={{ padding: 14, fontSize: 13, color: 'var(--text-secondary)' }}>
+            Select formulas in the flavor lineup to see consolidated ingredient ordering.
+          </div>
+        ) : (
+          <>
+            <div className="cost-summary" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 12 }}>
+              <div className="cost-card">
+                <div className="cost-card-label">Raw Material PO</div>
+                <div className="cost-card-value">${rawMaterialPO.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div className="cost-card-subtitle">{rawMaterialPO.rows.length} consolidated ingredient{rawMaterialPO.rows.length !== 1 ? 's' : ''}</div>
+              </div>
+              <div className="cost-card">
+                <div className="cost-card-label">Formula Coverage</div>
+                <div className="cost-card-value">{rawMaterialPO.selectedFormulas.length}</div>
+                <div className="cost-card-subtitle">formula{rawMaterialPO.selectedFormulas.length !== 1 ? 's' : ''} included</div>
+              </div>
+              <div className="cost-card">
+                <div className="cost-card-label">Missing Prices</div>
+                <div className="cost-card-value">{rawMaterialPO.missingPriceCount}</div>
+                <div className="cost-card-subtitle">ordered items with $0 price</div>
+              </div>
+            </div>
+            {Object.entries(rawMaterialPO.byVendor).map(([vendor, group]) => (
+              <div key={vendor} style={{ marginBottom: 12, border: '1px solid var(--border-light)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+                <div style={{ padding: '9px 12px', background: 'var(--surface-alt)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, fontWeight: 700 }}>
+                  <span>{vendor}</span>
+                  <span>${group.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Ingredient</th>
+                        <th>SKU</th>
+                        <th style={{ textAlign: 'right' }}>Needed</th>
+                        <th style={{ textAlign: 'right' }}>On Hand</th>
+                        <th style={{ textAlign: 'right' }}>Net</th>
+                        <th style={{ textAlign: 'right' }}>MOQ</th>
+                        <th style={{ textAlign: 'right' }}>Order Qty</th>
+                        <th>Unit</th>
+                        <th style={{ textAlign: 'right' }}>Price</th>
+                        <th style={{ textAlign: 'right' }}>Line Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.rows.map((row) => {
+                        const moqAdjusted = row.orderQty > row.netNeeded && row.netNeeded > 0;
+                        return (
+                          <tr key={row.key}>
+                            <td>
+                              <strong>{row.name}</strong>
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{row.formulaCount} formula{row.formulaCount !== 1 ? 's' : ''}</div>
+                            </td>
+                            <td>{row.sku || '—'}</td>
+                            <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{row.required.toFixed(2)}</td>
+                            <td style={{ textAlign: 'right', fontFamily: 'monospace', color: row.onHand > 0 ? '#15803d' : 'var(--text-muted)' }}>
+                              {row.onHand > 0 ? row.onHand.toFixed(2) : '—'}
+                            </td>
+                            <td style={{ textAlign: 'right', fontFamily: 'monospace', color: row.netNeeded <= 0 ? '#15803d' : undefined }}>
+                              {row.netNeeded <= 0 ? 'Covered' : row.netNeeded.toFixed(2)}
+                            </td>
+                            <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{row.moq}</td>
+                            <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: moqAdjusted ? '#b45309' : undefined }}>
+                              {row.orderQty.toFixed(2)}
+                              {moqAdjusted && <span style={{ fontSize: 10, marginLeft: 4 }}>MOQ</span>}
+                            </td>
+                            <td>{row.buyUnit}</td>
+                            <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{row.price > 0 ? '$' + row.price.toFixed(4) : '—'}</td>
+                            <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>
+                              {row.lineCost > 0 ? '$' + row.lineCost.toFixed(2) : '—'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </>
+        )}
       </div>
 
       {/* Carton Pricing — only when carrier type is carton */}

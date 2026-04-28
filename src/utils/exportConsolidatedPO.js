@@ -281,8 +281,6 @@ export function buildConsolidatedPOWorkbook({ selectedFormulas, inventoryMap, ca
   setCell(wsIn, `A${r}`, 'TOTAL');
   setCell(wsIn, `C${r}`, totalCasesAll, { f: `SUM(C${caseRowStart}:C${caseRowEnd})`, z: '#,##0' });
   setCell(wsIn, `E${r}`, totalUnitsAll, { f: `SUM(E${caseRowStart}:E${caseRowEnd})`, z: '#,##0' });
-  const inputsTotalCasesCell = `Inputs!$C$${r}`;
-  const inputsTotalUnitsCell = `Inputs!$E$${r}`;
   r++;
 
   // ── On-Hand Inventory (editable; one row per unique ingredient) ──────
@@ -293,7 +291,6 @@ export function buildConsolidatedPOWorkbook({ selectedFormulas, inventoryMap, ca
   setCell(wsIn, `C${r}`, 'On Hand');
   r++;
 
-  const onHandRowStart = r;
   const onHandRefByKey = {};
   masterList.forEach((m, i) => {
     const row = r + i;
@@ -367,9 +364,7 @@ export function buildConsolidatedPOWorkbook({ selectedFormulas, inventoryMap, ca
   XLSX.utils.book_append_sheet(wb, wsDet, 'Detail');
 
   const detKeyRange = `Detail!$B$${detStart}:$B$${detEnd}`;
-  const detFormulaRange = `Detail!$A$${detStart}:$A$${detEnd}`;
   const detDemandRange = `Detail!$I$${detStart}:$I$${detEnd}`;
-  const detFormulaMOQCostRange = `Detail!$L$${detStart}:$L$${detEnd}`;
 
   // ═══════════════════════════════════════════════════════════════════
   //  Sheet 3 — Summary (PO by Supplier + Cost/Can/Case)
@@ -496,7 +491,6 @@ export function buildConsolidatedPOWorkbook({ selectedFormulas, inventoryMap, ca
     f: `${grossSubtotalRef}*(1+${freightCell}+${wasteCell})*(1+${taxCell})`,
     z: '$#,##0.00',
   });
-  const grossGrandTotalRef = `Summary!$L$${r}`;
   r += 2;
 
   // Per-finished-good cost rollup — Unit / Pack / Case / Pallet.

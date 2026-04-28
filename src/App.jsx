@@ -1,53 +1,66 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { initStore, hydrateAll } from './data/store';
 import Layout from './components/Layout';
-import CoPackingCalculator from './pages/CoPackingCalculator';
-import Packaging from './pages/Packaging';
-import Inventory from './pages/Inventory';
-import BatchCalculator from './pages/BatchCalculator';
-import FormulaLibrary from './pages/FormulaLibrary';
-import Summary from './pages/Summary';
-import ClientProfile from './pages/ClientProfile';
-import Services from './pages/Services';
-import ConsolidatedPO from './pages/ConsolidatedPO';
+
+const BatchCalculator = lazy(() => import('./pages/BatchCalculator'));
+const CoPackingCalculator = lazy(() => import('./pages/CoPackingCalculator'));
+const Packaging = lazy(() => import('./pages/Packaging'));
+const Inventory = lazy(() => import('./pages/Inventory'));
+const FormulaLibrary = lazy(() => import('./pages/FormulaLibrary'));
+const Summary = lazy(() => import('./pages/Summary'));
+const ClientProfile = lazy(() => import('./pages/ClientProfile'));
+const Services = lazy(() => import('./pages/Services'));
+
+function AppStatus({ error }) {
+  return (
+    <div className="app-status">
+      <div>
+        <div className="app-status-title">{error ? 'Using local defaults' : 'Loading...'}</div>
+        <div className="app-status-detail">
+          {error ? 'Cloud sync was unavailable, so the app loaded with local seed data.' : 'Syncing beverage manufacturing data'}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const [ready, setReady] = useState(false);
+  const [hydrateError, setHydrateError] = useState(null);
 
   useEffect(() => {
     initStore();
-    hydrateAll().finally(() => setReady(true));
+    hydrateAll()
+      .catch((err) => {
+        console.error('[App] Data hydration failed:', err);
+        setHydrateError(err);
+      })
+      .finally(() => setReady(true));
   }, []);
 
   if (!ready) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'system-ui' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 24, fontWeight: 600, marginBottom: 8 }}>Loading...</div>
-          <div style={{ fontSize: 14, color: '#888' }}>Syncing data from cloud</div>
-        </div>
-      </div>
-    );
+    return <AppStatus error={hydrateError} />;
   }
 
   return (
     <BrowserRouter>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route path="/" element={<BatchCalculator />} />
-          <Route path="/batch-calculator" element={<BatchCalculator />} />
-          <Route path="/copacking" element={<CoPackingCalculator />} />
-          <Route path="/inventory" element={<Inventory />} />
-          <Route path="/packaging" element={<Packaging />} />
-          <Route path="/formulas" element={<FormulaLibrary />} />
-          <Route path="/summary" element={<Summary />} />
-          <Route path="/clients" element={<ClientProfile />} />
-          <Route path="/clients/:clientName" element={<ClientProfile />} />
-          <Route path="/services" element={<Services />} />
-<Route path="/consolidated-po" element={<ConsolidatedPO />} />
-        </Route>
-      </Routes>
+      <Suspense fallback={<AppStatus />}>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/" element={<BatchCalculator />} />
+            <Route path="/batch-calculator" element={<BatchCalculator />} />
+            <Route path="/copacking" element={<CoPackingCalculator />} />
+            <Route path="/inventory" element={<Inventory />} />
+            <Route path="/packaging" element={<Packaging />} />
+            <Route path="/formulas" element={<FormulaLibrary />} />
+            <Route path="/summary" element={<Summary />} />
+            <Route path="/clients" element={<ClientProfile />} />
+            <Route path="/clients/:clientName" element={<ClientProfile />} />
+            <Route path="/services" element={<Services />} />
+          </Route>
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

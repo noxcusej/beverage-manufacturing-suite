@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { getPackaging, savePackaging, addPackagingItem as addPkgItem, deletePackagingItem, getVendors } from '../data/store';
 import { getProducts, getQuantityTiers, lookupPrice, NEW_ART_PREP_FEE } from '../data/drayhorsePricing';
 
@@ -20,14 +20,11 @@ function DrayhorsePricingGrid() {
   const product = products.find((p) => p.id === selectedProduct);
   const result = lookupPrice(selectedProduct, cartonQty, skuCount);
 
-  const structureGroups = useMemo(() => {
-    const groups = {};
-    products.forEach((p) => {
-      if (!groups[p.structure]) groups[p.structure] = [];
-      groups[p.structure].push(p);
-    });
+  const structureGroups = products.reduce((groups, p) => {
+    if (!groups[p.structure]) groups[p.structure] = [];
+    groups[p.structure].push(p);
     return groups;
-  }, []);
+  }, {});
 
   return (
     <div style={{ padding: 24 }}>

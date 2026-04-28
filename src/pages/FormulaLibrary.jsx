@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getFormulas, getInventory, saveAllFormulas, saveFormula, deleteFormula, hydrateFormulasFromSupabase, getClients, saveBatch } from '../data/store';
+import { getFormulas, getInventory, saveAllFormulas, deleteFormula, hydrateFormulasFromSupabase, getClients, saveBatch } from '../data/store';
 
 function generateFormulaId() {
   return 'FRM-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);

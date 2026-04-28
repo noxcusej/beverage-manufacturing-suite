@@ -9,7 +9,7 @@ export default function Summary() {
     const refresh = () => {
       const all = getRuns();
       setRuns(all);
-      if (!selectedRunId && all.length > 0) setSelectedRunId(all[all.length - 1].id);
+      setSelectedRunId((current) => current || (all.length > 0 ? all[all.length - 1].id : ''));
     };
     refresh();
     window.addEventListener('comanufacturing:datachange', refresh);
@@ -35,13 +35,6 @@ export default function Summary() {
     const unitsPerCase = config.unitsPerCase || 24;
     const packSize = config.packSize || 4;
     const casesPerPallet = config.casesPerPallet || 80;
-    const fillVolume = config.fillVolume || 12;
-    const fillVolumeUnit = config.fillVolumeUnit || 'oz';
-
-    let fillOz = fillVolume;
-    if (fillVolumeUnit === 'mL') fillOz = fillVolume / 29.5735;
-    else if (fillVolumeUnit === 'L') fillOz = fillVolume * 33.814;
-
     // Compute per-flavor counts
     const flavorData = flavors.map((f) => {
       const cases = f.cases || 0;
@@ -86,12 +79,6 @@ export default function Summary() {
       label: 'Ingredients',
       perFlavor: flavorData.map((f) => (f.ingredientCost || 0) * f.cans),
       total: flavorData.reduce((s, f) => s + (f.ingredientCost || 0) * f.cans, 0),
-    });
-
-    costRows.push({
-      label: 'Stabilization',
-      perFlavor: flavorData.map((f) => (f.stabilizationCost || 0) * f.cans),
-      total: flavorData.reduce((s, f) => s + (f.stabilizationCost || 0) * f.cans, 0),
     });
 
     costRows.push({
