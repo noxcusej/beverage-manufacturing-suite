@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { getClients, saveClient, deleteClient, getFormulas, getRuns, saveFormula, saveRun } from '../data/store';
+import { getClients, saveClient, deleteClient, getFormulas, getRuns, saveFormula, saveRun, deleteRun } from '../data/store';
 
 export default function ClientProfile() {
   const { clientName } = useParams();
@@ -74,6 +74,23 @@ export default function ClientProfile() {
       const name = prompt('Run name:');
       if (!name?.trim()) return;
       saveRun({ name: name.trim(), client: decoded, flavors: [], config: {} });
+    }
+
+    function handleDuplicateRun(run) {
+      const baseName = (run.name || 'Run').replace(/\s*\(Copy(?:\s+\d+)?\)\s*$/i, '');
+      const existingNames = new Set(allRuns.map((r) => r.name));
+      let candidate = `${baseName} (Copy)`;
+      let n = 2;
+      while (existingNames.has(candidate)) { candidate = `${baseName} (Copy ${n})`; n += 1; }
+      const { id, createdAt, updatedAt, ...rest } = run;
+      saveRun({ ...rest, id: null, name: candidate });
+      setAllRuns(getRuns());
+    }
+
+    function handleDeleteRun(run) {
+      if (!confirm(`Delete "${run.name || 'this run'}"? This cannot be undone.`)) return;
+      deleteRun(run.id);
+      setAllRuns(getRuns());
     }
 
     function handleAddContact() {
@@ -199,7 +216,7 @@ export default function ClientProfile() {
               <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No runs yet</div>
             ) : (
               <table>
-                <thead><tr><th>Run Name</th><th>SKUs</th><th style={{ textAlign: 'right' }}>Total Cases</th><th>Updated</th></tr></thead>
+                <thead><tr><th>Run Name</th><th>SKUs</th><th style={{ textAlign: 'right' }}>Total Cases</th><th>Updated</th><th style={{ width: 140 }}></th></tr></thead>
                 <tbody>
                   {runs.map((r) => (
                     <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/copacking?run=${r.id}`)}>
@@ -207,6 +224,10 @@ export default function ClientProfile() {
                       <td>{r.flavors?.length || 0}</td>
                       <td style={{ textAlign: 'right' }}>{(r.flavors || []).reduce((s, f) => s + (f.cases || 0), 0).toLocaleString()}</td>
                       <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{r.updatedAt ? new Date(r.updatedAt).toLocaleDateString() : '\u2014'}</td>
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
+                        <button className="btn btn-small" onClick={() => handleDuplicateRun(r)} style={{ fontSize: 11, marginRight: 4 }}>Duplicate</button>
+                        <button className="btn btn-small btn-danger" onClick={() => handleDeleteRun(r)} style={{ fontSize: 11 }}>Delete</button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

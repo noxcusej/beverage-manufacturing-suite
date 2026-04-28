@@ -3,6 +3,7 @@ import { getClients, getCurrentBatch, getFormulas, getGlobalSettings, getInvento
 import { getProducts, lookupPrice, NEW_ART_PREP_FEE } from '../data/drayhorsePricing';
 import { exportCoPackingToExcel } from '../utils/exportExcel';
 import { exportConsolidatedPOToExcel } from '../utils/exportConsolidatedPO';
+import { exportClientQuote } from '../utils/exportClientQuote';
 
 // ── Constants ──
 
@@ -331,6 +332,9 @@ export default function CoPackingCalculator() {
   const [runName, setRunName] = useState('');
   const [runClient, setRunClient] = useState('');
   const [clientPickerOpen, setClientPickerOpen] = useState(false);
+  // Bumped on every external state apply (load/new) so uncontrolled inputs remount with fresh defaultValue.
+  const [stateVersion, setStateVersion] = useState(0);
+  const [savedFlash, setSavedFlash] = useState(false);
   useEffect(() => {
     const refresh = () => setSavedRuns(getRuns());
     refresh();
@@ -547,7 +551,6 @@ export default function CoPackingCalculator() {
       tollingCost += lineCost;
       return { ...item, lineCost };
     });
-    if (tollingEngine.enabled) tollingCost += tollingEstimate.totalPrice;
 
     let bomCost = 0;
     const bomRows = bomItems.map((item) => {
@@ -568,8 +571,8 @@ export default function CoPackingCalculator() {
     const costPerUnit = counts.totalUnits > 0 ? totalCost / counts.totalUnits : 0;
     const costPerCase = costPerUnit * unitsPerCase;
 
-    return { pkgRows, tollRows, bomRows, taxRows, packagingCost: totalPackaging, rawPackagingCost: packagingCost, totalIngredientCost, tollingCost, tollingEngineCost: tollingEngine.enabled ? tollingEstimate.totalCost : 0, tollingEnginePrice: tollingEngine.enabled ? tollingEstimate.totalPrice : 0, bomCost, totalBatchingFees, taxCost, totalCost, costPerUnit, costPerCase };
-  }, [packagingItems, tollingItems, bomItems, taxItems, flavors, counts, unitsPerCase, cartonCost, carrierType, getEffectiveIngredientCostPerCan, tollingEngine.enabled, tollingEstimate.totalCost, tollingEstimate.totalPrice]);
+    return { pkgRows, tollRows, bomRows, taxRows, packagingCost: totalPackaging, rawPackagingCost: packagingCost, totalIngredientCost, tollingCost, tollingEngineCost: tollingEstimate.totalCost, tollingEnginePrice: tollingEstimate.totalPrice, bomCost, totalBatchingFees, taxCost, totalCost, costPerUnit, costPerCase };
+  }, [packagingItems, tollingItems, bomItems, taxItems, flavors, counts, unitsPerCase, cartonCost, carrierType, getEffectiveIngredientCostPerCan, tollingEstimate.totalCost, tollingEstimate.totalPrice]);
 
   const breakdown = useMemo(() => {
     const total = costs.totalCost;
@@ -765,6 +768,18 @@ export default function CoPackingCalculator() {
     };
   }
 
+  function handleExportClientQuote() {
+    exportClientQuote({
+      client: runClient.trim(),
+      runName: runName.trim() || 'Production Quote',
+      config: { fillVolume, fillVolumeUnit, packSize, carrierType, abv, unitsPerCase, casesPerPallet, palletsPerTruck, cansPerMinute },
+      counts,
+      costs,
+      breakdown,
+      flavors: counts.flavorRows,
+    });
+  }
+
   function applyRunState(run) {
     const c = run.config || {};
     if (c.fillVolume !== undefined) setFillVolume(c.fillVolume);
@@ -787,14 +802,20 @@ export default function CoPackingCalculator() {
     if (run.tollingItems) setTollingItems(ensureStandardTolling(run.tollingItems));
     if (run.bomItems) setBomItems(ensureStandardBOM(run.bomItems));
     if (run.taxItems) setTaxItems(run.taxItems);
+    setStateVersion((v) => v + 1);
   }
 
   function handleSaveRun() {
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
     const name = runName.trim() || ('Run ' + new Date().toLocaleDateString());
     const run = saveRun({ id: currentRunId, name, client: runClient.trim(), ...collectRunState() });
     setCurrentRunId(run.id);
     setRunName(run.name);
     setSavedRuns(getRuns());
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 1400);
   }
 
   function handleLoadRun(runId) {
@@ -845,6 +866,7 @@ export default function CoPackingCalculator() {
     setTollingItems(ensureStandardTolling(makeDefaultTolling()));
     setBomItems(makeDefaultBOM());
     setTaxItems(makeDefaultTaxes());
+    setStateVersion((v) => v + 1);
   }
 
   function handleDeleteRun(runId) {
@@ -853,6 +875,18 @@ export default function CoPackingCalculator() {
     deleteRun(runId);
     setSavedRuns(getRuns());
     if (currentRunId === runId) { setCurrentRunId(null); setRunName(''); setRunClient(''); }
+  }
+
+  function handleDuplicateRun() {
+    const baseName = (runName.trim() || 'Run').replace(/\s*\(Copy(?:\s+\d+)?\)\s*$/i, '');
+    const existingNames = new Set(savedRuns.map((r) => r.name));
+    let candidate = `${baseName} (Copy)`;
+    let n = 2;
+    while (existingNames.has(candidate)) { candidate = `${baseName} (Copy ${n})`; n += 1; }
+    const run = saveRun({ id: null, name: candidate, client: runClient.trim(), ...collectRunState() });
+    setCurrentRunId(run.id);
+    setRunName(run.name);
+    setSavedRuns(getRuns());
   }
 
   function exportRawMaterialsPO() {
@@ -928,8 +962,9 @@ export default function CoPackingCalculator() {
                 <td style={{ textAlign: 'right' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
                     <span style={{ color: '#6b7280', fontSize: 13 }}>$</span>
-                    <input type="text" inputMode="decimal" defaultValue={row.rate} style={{ width: 80, textAlign: 'right' }}
-                      onBlur={(e) => updateFn(idx, 'rate', e.target.value === '' ? 0 : +e.target.value)} />
+                    <input key={`rate-${row.id}-${stateVersion}`} type="text" inputMode="decimal" defaultValue={row.rate} style={{ width: 80, textAlign: 'right' }}
+                      onChange={(e) => updateFn(idx, 'rate', e.target.value === '' ? 0 : +e.target.value || 0)}
+                      onBlur={(e) => updateFn(idx, 'rate', e.target.value === '' ? 0 : +e.target.value || 0)} />
                   </div>
                 </td>
                 <td style={{ textAlign: 'right' }}>
@@ -1006,12 +1041,16 @@ export default function CoPackingCalculator() {
           )}
           <button className="btn" onClick={handleNewRun}>New</button>
           {currentRunId && (
+            <button className="btn" onClick={handleDuplicateRun} style={{ fontSize: 12 }}>Duplicate</button>
+          )}
+          {currentRunId && (
             <button className="btn btn-danger" onClick={() => handleDeleteRun(currentRunId)} style={{ fontSize: 12 }}>Delete</button>
           )}
+          <button className="btn" onClick={handleExportClientQuote}>Export Quote</button>
           <button className="btn" onClick={() => exportCoPackingToExcel(collectRunState())}>Export Excel</button>
           <button className="btn" onClick={exportRawMaterialsPO}>Export Raw PO</button>
           <button className="btn btn-primary" onClick={handleSaveRun}>
-            {currentRunId ? 'Save' : 'Save Configuration'}
+            {savedFlash ? 'Saved ✓' : (currentRunId ? 'Save' : 'Save Configuration')}
           </button>
         </div>
       </div>
@@ -1206,18 +1245,18 @@ export default function CoPackingCalculator() {
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
                       <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>$</span>
                       <input
-                        type="number"
-                        step="0.0001"
-                        min="0"
-                        value={row.ingredientCostOverride ?? ''}
+                        type="text"
+                        inputMode="decimal"
+                        value={row.ingredientCostOverride === '' || row.ingredientCostOverride === null || row.ingredientCostOverride === undefined ? '' : String(row.ingredientCostOverride)}
                         placeholder={row.formulaId ? getCalculatedIngredientCostPerCan(row).toFixed(4) : '0.0000'}
                         title={row.formulaId ? `Calculated: $${getCalculatedIngredientCostPerCan(row).toFixed(4)}` : 'Manual ingredient cost per can'}
                         style={{ width: 88, textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}
                         onChange={(e) => {
                           const next = e.target.value;
+                          if (next !== '' && !/^\d*\.?\d*$/.test(next)) return;
                           setFlavors((p) => p.map((f, i) => i === idx ? {
                             ...f,
-                            ingredientCostOverride: next === '' ? '' : parseFloat(next) || 0,
+                            ingredientCostOverride: next,
                           } : f));
                         }}
                       />
@@ -1239,8 +1278,9 @@ export default function CoPackingCalculator() {
                   <td style={{ textAlign: 'right' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
                       <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>$</span>
-                      <input type="text" inputMode="decimal" defaultValue={row.batchingFee} style={{ width: 70, textAlign: 'right' }}
-                        onBlur={(e) => setFlavors((p) => p.map((f, i) => i === idx ? { ...f, batchingFee: e.target.value === '' ? 0 : +e.target.value } : f))} />
+                      <input key={`bf-${row.id}-${stateVersion}`} type="text" inputMode="decimal" defaultValue={row.batchingFee} style={{ width: 70, textAlign: 'right' }}
+                        onChange={(e) => setFlavors((p) => p.map((f, i) => i === idx ? { ...f, batchingFee: e.target.value === '' ? 0 : +e.target.value || 0 } : f))}
+                        onBlur={(e) => setFlavors((p) => p.map((f, i) => i === idx ? { ...f, batchingFee: e.target.value === '' ? 0 : +e.target.value || 0 } : f))} />
                     </div>
                   </td>
                   <td style={{ textAlign: 'right', fontWeight: 600 }}>{row.cans.toLocaleString()}</td>
@@ -1496,8 +1536,9 @@ export default function CoPackingCalculator() {
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
                         <span style={{ color: '#6b7280', fontSize: 13 }}>$</span>
-                        <input type="text" inputMode="decimal" defaultValue={row.rate} style={{ width: 80, textAlign: 'right' }}
-                          onBlur={(e) => updatePkg(idx, 'rate', e.target.value === '' ? 0 : +e.target.value)} />
+                        <input key={`pkg-rate-${row.id}-${stateVersion}`} type="text" inputMode="decimal" defaultValue={row.rate} style={{ width: 80, textAlign: 'right' }}
+                          onChange={(e) => updatePkg(idx, 'rate', e.target.value === '' ? 0 : +e.target.value || 0)}
+                          onBlur={(e) => updatePkg(idx, 'rate', e.target.value === '' ? 0 : +e.target.value || 0)} />
                       </div>
                     </td>
                     <td style={{ textAlign: 'right' }}>
@@ -1566,16 +1607,11 @@ export default function CoPackingCalculator() {
         {tollingCalculatorOpen && (
         <div style={{ border: '1px solid var(--border-light)', borderRadius: 'var(--radius)', padding: 14, marginBottom: 14, background: 'var(--surface-alt)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700 }}>
-              <input
-                type="checkbox"
-                checked={tollingEngine.enabled}
-                onChange={(e) => setTollingEngine((current) => ({ ...current, enabled: e.target.checked }))}
-              />
-              Use tolling engine in quote total
-            </label>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 700 }}>
+              Reference only. Quote totals come from the Tolling line items below.
+            </div>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 22, fontWeight: 900, color: tollingEngine.enabled ? 'var(--brand)' : 'var(--text-secondary)', fontFamily: 'monospace' }}>
+              <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--brand)', fontFamily: 'monospace' }}>
                 {tollingEstimate.priceCentsPerCan.toFixed(2)}¢/can
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
