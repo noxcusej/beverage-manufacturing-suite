@@ -77,16 +77,22 @@ function makeDefaultTollingEngine() {
 function normalizeTollingEngine(engine = {}) {
   const defaults = makeDefaultTollingEngine();
   const legacyDailyRate = engine.dailyRate ?? ((engine.hourlyRate ?? 0) > 0 ? engine.hourlyRate * 8 : undefined);
-  const dailyRate = legacyDailyRate ?? defaults.dailyRate;
-  const dailyPrice = engine.dailyPrice ?? engine.priceDailyRate ?? dailyRate;
+  const dailyRate = legacyDailyRate === 2200 ? defaults.dailyRate : legacyDailyRate ?? defaults.dailyRate;
+  const savedDailyPrice = engine.dailyPrice ?? engine.priceDailyRate;
+  const dailyPrice = savedDailyPrice === undefined || savedDailyPrice === 2200 || savedDailyPrice === 2400
+    ? defaults.dailyPrice
+    : savedDailyPrice;
   const changeoverRate = engine.changeoverRate ?? defaults.changeoverRate;
+  const savedChangeoverPrice = engine.changeoverPrice;
   return {
     enabled: engine.enabled ?? defaults.enabled,
     dailyRate,
     dailyPrice,
     casesPerDay: engine.casesPerDay ?? defaults.casesPerDay,
     changeoverRate,
-    changeoverPrice: engine.changeoverPrice ?? changeoverRate,
+    changeoverPrice: savedChangeoverPrice === undefined || savedChangeoverPrice === 350
+      ? defaults.changeoverPrice
+      : savedChangeoverPrice,
     multidayDiscountPct: engine.multidayDiscountPct ?? defaults.multidayDiscountPct,
     complexity: COMPLEXITY_LEVELS[engine.complexity] ? engine.complexity : defaults.complexity,
   };
