@@ -6,6 +6,7 @@ import { exportConsolidatedPOToExcel } from '../utils/exportConsolidatedPO';
 import { exportClientQuote } from '../utils/exportClientQuote';
 import { computeRunResults } from '../utils/runResults';
 import { exportRunComparison } from '../utils/exportRunComparison';
+import { exportRunComparisonSheet } from '../utils/exportRunComparisonSheet';
 
 // ── Constants ──
 
@@ -349,6 +350,8 @@ export default function CoPackingCalculator() {
   const [compareOpen, setCompareOpen] = useState(false);
   const [compareAId, setCompareAId] = useState('');
   const [compareBId, setCompareBId] = useState('');
+  // 'total' = dollar comparison, 'perCase' = case unit-price comparison
+  const [compareBasis, setCompareBasis] = useState('total');
   useEffect(() => {
     const refresh = () => setSavedRuns(getRuns());
     refresh();
@@ -847,7 +850,14 @@ export default function CoPackingCalculator() {
     const runA = getCompareRun(compareAId);
     const runB = getCompareRun(compareBId);
     if (!runA || !runB) return;
-    exportRunComparison(runA, runB);
+    exportRunComparison(runA, runB, compareBasis);
+  }
+
+  function handleExportComparisonSheet() {
+    const runA = getCompareRun(compareAId);
+    const runB = getCompareRun(compareBId);
+    if (!runA || !runB) return;
+    exportRunComparisonSheet(runA, runB, compareBasis);
   }
 
   function applyRunState(run) {
@@ -1090,8 +1100,11 @@ export default function CoPackingCalculator() {
   const fmtMoney = (v, d = 2) => (v || 0).toLocaleString(undefined, { style: 'currency', currency: 'USD', minimumFractionDigits: d, maximumFractionDigits: d });
   const fmtNum = (v, d = 0) => (v || 0).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
   const deltaColor = (v) => (v > 0.005 ? '#b91c1c' : v < -0.005 ? '#15803d' : 'var(--text-muted)');
-  const signedMoney = (v) => `${v > 0 ? '+' : v < 0 ? '-' : ''}${fmtMoney(Math.abs(v))}`;
+  const signedMoney = (v, d = 2) => `${v > 0 ? '+' : v < 0 ? '-' : ''}${fmtMoney(Math.abs(v), d)}`;
   const signedNum = (v) => `${v > 0 ? '+' : v < 0 ? '-' : ''}${fmtNum(Math.abs(v))}`;
+  const perCase = compareBasis === 'perCase';
+  const basisCost = (res, cost) => (perCase ? (res.counts.totalCases > 0 ? cost / res.counts.totalCases : 0) : cost);
+  const moneyDigits = perCase ? 4 : 2;
 
   function buildMetricRows() {
     if (!cmpA || !cmpB) return [];
@@ -1115,10 +1128,10 @@ export default function CoPackingCalculator() {
     [...cmpA.breakdown, ...cmpB.breakdown].forEach((r) => { if (!labels.includes(r.label)) labels.push(r.label); });
     const findCost = (bd, label) => (bd.find((r) => r.label === label)?.cost || 0);
     return labels.map((label) => {
-      const av = findCost(cmpA.breakdown, label);
-      const bv = findCost(cmpB.breakdown, label);
+      const av = basisCost(cmpA, findCost(cmpA.breakdown, label));
+      const bv = basisCost(cmpB, findCost(cmpB.breakdown, label));
       const d = bv - av;
-      return { label, a: fmtMoney(av), b: fmtMoney(bv), deltaStr: signedMoney(d), deltaColor: deltaColor(d) };
+      return { label, a: fmtMoney(av, moneyDigits), b: fmtMoney(bv, moneyDigits), deltaStr: signedMoney(d, moneyDigits), deltaColor: deltaColor(d) };
     });
   }
 
@@ -1200,17 +1213,37 @@ export default function CoPackingCalculator() {
                   ))}
                 </div>
 
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Compare by</span>
+                  <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                    {[['total', 'Dollar Total'], ['perCase', 'Per-Case Price']].map(([val, label]) => (
+                      <button
+                        key={val}
+                        onClick={() => setCompareBasis(val)}
+                        style={{
+                          padding: '7px 14px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer',
+                          background: compareBasis === val ? 'var(--brand)' : 'transparent',
+                          color: compareBasis === val ? '#fff' : 'var(--text-secondary)',
+                        }}
+                      >{label}</button>
+                    ))}
+                  </div>
+                </div>
+
                 <div style={{ marginBottom: 20 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8 }}>Headline Metrics</div>
                   {renderCmpTable(buildMetricRows())}
                 </div>
 
                 <div style={{ marginBottom: 20 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8 }}>Cost Breakdown</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                    Cost Breakdown {compareBasis === 'perCase' ? '(per case)' : '(total $)'}
+                  </div>
                   {renderCmpTable(buildBreakdownRows())}
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                  <button className="btn" onClick={handleExportComparisonSheet}>Export Sheet</button>
                   <button className="btn btn-primary" onClick={handleExportComparison}>Export PDF</button>
                 </div>
               </>

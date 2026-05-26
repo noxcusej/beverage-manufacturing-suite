@@ -5,9 +5,9 @@ const COL_LABEL = 186;
 const COL_VAL = 114;
 const TABLE_W = COL_LABEL + COL_VAL * 3;
 
-function signedMoney(value) {
+function signedMoney(value, digits = 2) {
   const sign = value > 0 ? '+' : value < 0 ? '-' : '';
-  return `${sign}${money(Math.abs(value))}`;
+  return `${sign}${money(Math.abs(value), digits)}`;
 }
 
 function signedNumber(value, digits = 0) {
@@ -49,11 +49,14 @@ function drawCompareTable(pdf, columnsLabels, rows) {
   });
 }
 
-export function exportRunComparison(runA, runB) {
+export function exportRunComparison(runA, runB, basis = 'total') {
   const a = computeRunResults(runA);
   const b = computeRunResults(runB);
   const nameA = runA.name || 'Run A';
   const nameB = runB.name || 'Run B';
+  const perCase = basis === 'perCase';
+  const basisCost = (res, cost) => (perCase ? (res.counts.totalCases > 0 ? cost / res.counts.totalCases : 0) : cost);
+  const moneyDigits = perCase ? 4 : 2;
   const pdf = new PdfDoc();
 
   // Header band
@@ -88,14 +91,14 @@ export function exportRunComparison(runA, runB) {
   ]);
 
   // Cost breakdown (union of category labels)
-  drawSectionTitle(pdf, 'Cost Breakdown');
+  drawSectionTitle(pdf, `Cost Breakdown ${perCase ? '(per case)' : '(total $)'}`);
   const labels = [];
   [...a.breakdown, ...b.breakdown].forEach((r) => { if (!labels.includes(r.label)) labels.push(r.label); });
   const findCost = (bd, label) => (bd.find((r) => r.label === label)?.cost || 0);
   drawCompareTable(pdf, ['Category', 'Run A', 'Run B', 'Difference'], labels.map((label) => {
-    const ca = findCost(a.breakdown, label);
-    const cb = findCost(b.breakdown, label);
-    return { label, a: money(ca), b: money(cb), delta: signedMoney(cb - ca), deltaColor: deltaColor(cb - ca) };
+    const ca = basisCost(a, findCost(a.breakdown, label));
+    const cb = basisCost(b, findCost(b.breakdown, label));
+    return { label, a: money(ca, moneyDigits), b: money(cb, moneyDigits), delta: signedMoney(cb - ca, moneyDigits), deltaColor: deltaColor(cb - ca) };
   }));
 
   // Production scope
