@@ -1457,12 +1457,27 @@ export default function CoPackingCalculator() {
                         }
                         const formula = allFormulas.find((f) => f.id === selectedId);
                         if (formula) {
+                          // Adopt the formula's unit (fill) size so the run, its quantities,
+                          // and exports reflect the actual product (e.g. a 250 mL can, not the
+                          // 12 oz default). Normalize the unit to this page's vocabulary ('mL').
+                          let runFill = fillVolume;
+                          let runUnit = fillVolumeUnit;
+                          if (formula.unitSizeVal) {
+                            runFill = formula.unitSizeVal;
+                            const rawUnit = formula.unitSizeUnit || 'oz';
+                            runUnit = rawUnit === 'ml' ? 'mL' : rawUnit;
+                            setFillVolume(runFill);
+                            setFillVolumeUnit(runUnit);
+                          }
+                          let fillOz = runFill;
+                          if (runUnit === 'mL') fillOz = runFill / 29.5735;
+                          else if (runUnit === 'L') fillOz = runFill * 33.814;
                           setFlavors((p) => p.map((f, i) => i === idx ? {
                             ...f,
                             formulaId: formula.id,
                             name: formula.name,
-                            cases: formula.batchSize && unitsPerCase > 0
-                              ? Math.ceil((formula.batchSize * (formula.batchSizeUnit === 'L' ? 33.814 / fillVolume : 128 / fillVolume)) / unitsPerCase)
+                            cases: formula.batchSize && unitsPerCase > 0 && fillOz > 0
+                              ? Math.ceil((formula.batchSize * (formula.batchSizeUnit === 'L' ? 33.814 / fillOz : 128 / fillOz)) / unitsPerCase)
                               : f.cases,
                           } : f));
                         }
