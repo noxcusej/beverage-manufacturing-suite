@@ -4,6 +4,8 @@ import { getProducts, lookupPrice, NEW_ART_PREP_FEE } from '../data/drayhorsePri
 import { exportCoPackingToExcel } from '../utils/exportExcel';
 import { exportConsolidatedPOToExcel } from '../utils/exportConsolidatedPO';
 import { exportClientQuote } from '../utils/exportClientQuote';
+import { computeRunResults } from '../utils/runResults';
+import { exportRunComparison } from '../utils/exportRunComparison';
 
 // ── Constants ──
 
@@ -342,6 +344,11 @@ export default function CoPackingCalculator() {
   // Bumped on every external state apply (load/new) so uncontrolled inputs remount with fresh defaultValue.
   const [stateVersion, setStateVersion] = useState(0);
   const [savedFlash, setSavedFlash] = useState(false);
+
+  // Run comparison
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [compareAId, setCompareAId] = useState('');
+  const [compareBId, setCompareBId] = useState('');
   useEffect(() => {
     const refresh = () => setSavedRuns(getRuns());
     refresh();
@@ -821,6 +828,28 @@ export default function CoPackingCalculator() {
     });
   }
 
+  function getCompareRun(id) {
+    if (!id) return null;
+    if (id === '__current__') {
+      return { id: '__current__', name: runName.trim() || 'Current working run', client: runClient.trim(), ...collectRunState() };
+    }
+    return savedRuns.find((r) => r.id === id) || null;
+  }
+
+  function handleOpenCompare() {
+    setCompareAId(currentRunId || '__current__');
+    const other = savedRuns.find((r) => r.id !== currentRunId);
+    setCompareBId(other ? other.id : '');
+    setCompareOpen(true);
+  }
+
+  function handleExportComparison() {
+    const runA = getCompareRun(compareAId);
+    const runB = getCompareRun(compareBId);
+    if (!runA || !runB) return;
+    exportRunComparison(runA, runB);
+  }
+
   function applyRunState(run) {
     const c = run.config || {};
     if (c.fillVolume !== undefined) setFillVolume(c.fillVolume);
@@ -1047,10 +1076,149 @@ export default function CoPackingCalculator() {
     );
   }
 
+  // ── Comparison view ──
+
+  const compareOptions = [
+    { id: '__current__', label: `${runName.trim() || 'Current working run'} (working)` },
+    ...savedRuns.map((r) => ({ id: r.id, label: r.name + (r.client ? ` — ${r.client}` : '') })),
+  ];
+  const cmpRunA = compareOpen ? getCompareRun(compareAId) : null;
+  const cmpRunB = compareOpen ? getCompareRun(compareBId) : null;
+  const cmpA = cmpRunA ? computeRunResults(cmpRunA) : null;
+  const cmpB = cmpRunB ? computeRunResults(cmpRunB) : null;
+
+  const fmtMoney = (v, d = 2) => (v || 0).toLocaleString(undefined, { style: 'currency', currency: 'USD', minimumFractionDigits: d, maximumFractionDigits: d });
+  const fmtNum = (v, d = 0) => (v || 0).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+  const deltaColor = (v) => (v > 0.005 ? '#b91c1c' : v < -0.005 ? '#15803d' : 'var(--text-muted)');
+  const signedMoney = (v) => `${v > 0 ? '+' : v < 0 ? '-' : ''}${fmtMoney(Math.abs(v))}`;
+  const signedNum = (v) => `${v > 0 ? '+' : v < 0 ? '-' : ''}${fmtNum(Math.abs(v))}`;
+
+  function buildMetricRows() {
+    if (!cmpA || !cmpB) return [];
+    const m = (label, av, bv, fmt, signed, bold) => {
+      const d = bv - av;
+      return { label, a: fmt(av), b: fmt(bv), deltaStr: signed(d), deltaColor: deltaColor(d), bold };
+    };
+    return [
+      m('Total Production Cost', cmpA.costs.totalCost, cmpB.costs.totalCost, (v) => fmtMoney(v), signedMoney, true),
+      m('Cost per Can', cmpA.costs.costPerUnit, cmpB.costs.costPerUnit, (v) => fmtMoney(v, 4), signedMoney),
+      m('Cost per Case', cmpA.costs.costPerCase, cmpB.costs.costPerCase, (v) => fmtMoney(v), signedMoney),
+      m('Total Cans', cmpA.counts.totalUnits, cmpB.counts.totalUnits, (v) => fmtNum(v), signedNum),
+      m('Total Cases', cmpA.counts.totalCases, cmpB.counts.totalCases, (v) => fmtNum(v), signedNum),
+      m('Total Pallets', cmpA.counts.totalPallets, cmpB.counts.totalPallets, (v) => fmtNum(v), signedNum),
+    ];
+  }
+
+  function buildBreakdownRows() {
+    if (!cmpA || !cmpB) return [];
+    const labels = [];
+    [...cmpA.breakdown, ...cmpB.breakdown].forEach((r) => { if (!labels.includes(r.label)) labels.push(r.label); });
+    const findCost = (bd, label) => (bd.find((r) => r.label === label)?.cost || 0);
+    return labels.map((label) => {
+      const av = findCost(cmpA.breakdown, label);
+      const bv = findCost(cmpB.breakdown, label);
+      const d = bv - av;
+      return { label, a: fmtMoney(av), b: fmtMoney(bv), deltaStr: signedMoney(d), deltaColor: deltaColor(d) };
+    });
+  }
+
+  const cmpTh = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.4 };
+  const cmpTd = { padding: '8px 10px', fontSize: 13, color: 'var(--text-primary)' };
+  const renderCmpTable = (rows) => (
+    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <thead>
+        <tr style={{ background: 'var(--surface)' }}>
+          <th style={cmpTh}>Metric</th>
+          <th style={{ ...cmpTh, textAlign: 'right' }}>Run A</th>
+          <th style={{ ...cmpTh, textAlign: 'right' }}>Run B</th>
+          <th style={{ ...cmpTh, textAlign: 'right' }}>Difference</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => (
+          <tr key={i} style={{ borderTop: '1px solid var(--border-light)' }}>
+            <td style={{ ...cmpTd, fontWeight: r.bold ? 700 : 500 }}>{r.label}</td>
+            <td style={{ ...cmpTd, textAlign: 'right', fontWeight: r.bold ? 700 : 400 }}>{r.a}</td>
+            <td style={{ ...cmpTd, textAlign: 'right', fontWeight: r.bold ? 700 : 400 }}>{r.b}</td>
+            <td style={{ ...cmpTd, textAlign: 'right', fontWeight: 700, color: r.deltaColor }}>{r.deltaStr}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+
   // ── JSX ──
 
   return (
     <div className="container">
+      {/* Run Comparison Modal */}
+      {compareOpen && (
+        <div className="command-palette-overlay" onClick={() => setCompareOpen(false)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ position: 'fixed', top: '4%', left: '50%', transform: 'translateX(-50%)', width: 940, maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto', background: 'white', borderRadius: 12, boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', zIndex: 9001, padding: 24 }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>Compare Runs</h2>
+              <button className="btn btn-small" onClick={() => setCompareOpen(false)}>Close</button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+              {[['Run A', compareAId, setCompareAId, '#0f766e'], ['Run B', compareBId, setCompareBId, '#6d28d9']].map(([label, value, setter, color]) => (
+                <div key={label}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>{label}</div>
+                  <select
+                    value={value}
+                    onChange={(e) => setter(e.target.value)}
+                    style={{ width: '100%', padding: '9px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14, fontFamily: 'inherit' }}
+                  >
+                    <option value="">Select a run...</option>
+                    {compareOptions.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+
+            {(!cmpA || !cmpB) ? (
+              <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 14 }}>
+                {compareOptions.length < 2
+                  ? 'Save at least one run to compare against the current working run.'
+                  : 'Select two runs above to see them side by side.'}
+              </div>
+            ) : (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+                  {[[cmpRunA, cmpA, '#0f766e'], [cmpRunB, cmpB, '#6d28d9']].map(([run, res, color], i) => (
+                    <div key={i} style={{ position: 'relative', border: '1px solid var(--border-light)', borderRadius: 'var(--radius)', padding: '16px 16px 16px 20px', background: 'var(--surface)' }}>
+                      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, background: color, borderTopLeftRadius: 'var(--radius)', borderBottomLeftRadius: 'var(--radius)' }} />
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{i === 0 ? 'Run A' : 'Run B'}</div>
+                      <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text-primary)', marginTop: 2 }}>{run.name}</div>
+                      {run.client && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{run.client}</div>}
+                      <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)', marginTop: 10 }}>{fmtMoney(res.costs.totalCost)}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtMoney(res.costs.costPerUnit, 4)} / can · {fmtNum(res.counts.totalUnits)} cans</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8 }}>Headline Metrics</div>
+                  {renderCmpTable(buildMetricRows())}
+                </div>
+
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8 }}>Cost Breakdown</div>
+                  {renderCmpTable(buildBreakdownRows())}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                  <button className="btn btn-primary" onClick={handleExportComparison}>Export PDF</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Page Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
         <div>
@@ -1086,6 +1254,9 @@ export default function CoPackingCalculator() {
           )}
           {currentRunId && (
             <button className="btn btn-danger" onClick={() => handleDeleteRun(currentRunId)} style={{ fontSize: 12 }}>Delete</button>
+          )}
+          {(savedRuns.length > 0 || currentRunId) && (
+            <button className="btn" onClick={handleOpenCompare}>Compare</button>
           )}
           <button className="btn" onClick={handleExportClientQuote}>Export Quote</button>
           <button className="btn" onClick={() => exportCoPackingToExcel(collectRunState())}>Export Excel</button>
