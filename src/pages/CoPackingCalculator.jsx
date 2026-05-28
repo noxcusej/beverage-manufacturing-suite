@@ -151,17 +151,14 @@ function makeDefaultTolling() {
   ];
 }
 
+// Legacy-id remap for older saved runs; previously this also re-added missing
+// default tolling rows, which made deletes impossible to persist across reloads.
 function ensureStandardTolling(items) {
-  const existing = (items || []).map((item) => (
+  return (items || []).map((item) => (
     item.id === 'toll-production'
       ? { ...item, id: 'toll-price-per-can', name: 'Tolling Price / Can' }
       : item
   ));
-  const byId = new Map(existing.map((item) => [item.id, item]));
-  makeDefaultTolling().forEach((item) => {
-    if (!byId.has(item.id)) byId.set(item.id, item);
-  });
-  return Array.from(byId.values());
 }
 
 function makeDefaultBOM() {
@@ -256,15 +253,6 @@ function resolvePurchaseTier({ inventoryItem, quantity, buyUnit, specificGravity
 
 function makeDefaultFlavor() {
   return { id: 'flv-' + Date.now(), formulaId: '', name: '', cases: 100, batchingFee: 0 };
-}
-
-function ensureStandardBOM(items) {
-  const defaults = makeDefaultBOM();
-  const byId = new Map((items || []).map((item) => [item.id, item]));
-  defaults.forEach((item) => {
-    if (!byId.has(item.id)) byId.set(item.id, item);
-  });
-  return Array.from(byId.values());
 }
 
 function stripLegacyFlavorFields(flavor) {
@@ -880,7 +868,7 @@ export default function CoPackingCalculator() {
     if (run.packagingItems) setPackagingItems(run.packagingItems);
     if (run.tollingEngine) setTollingEngine(normalizeTollingEngine(run.tollingEngine));
     if (run.tollingItems) setTollingItems(ensureStandardTolling(run.tollingItems));
-    if (run.bomItems) setBomItems(ensureStandardBOM(run.bomItems));
+    if (run.bomItems) setBomItems(run.bomItems);
     if (run.taxItems) setTaxItems(run.taxItems);
     setStateVersion((v) => v + 1);
   }
