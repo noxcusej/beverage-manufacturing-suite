@@ -174,18 +174,22 @@ export function writeRunBlock({ ws, startRow, label, run, res, color, sheetName 
     taxes: sectionCells.taxes,
   };
 
-  // Run total = sum of every category cell on this same sheet.
+  // Run total = sum of every category cell on this same sheet. Merge only A:F
+  // so the G value cell is NOT swallowed by the band's merge — cross-sheet
+  // references to this total were resolving to blank when merged into A:G.
   const totalFormula = Object.values(cat).join('+');
-  band(ws, r, 7, 'RUN TOTAL', color, C.white, 12, 22);
-  putF(ws, `G${r}`, totalFormula, res.costs.totalCost, { bold: true, color: C.white, bg: color, align: 'right', numFmt: MONEY });
+  band(ws, r, 6, 'RUN TOTAL', color, C.white, 12, 22);
+  putF(ws, `G${r}`, totalFormula, res.costs.totalCost, { bold: true, color: C.white, bg: color, align: 'right', numFmt: MONEY, border: true });
   const totalCell = `G${r}`;
   r += 1;
-  put(ws, `A${r}`, 'Cost per Can', { color: C.muted });
-  putF(ws, `G${r}`, `IF(${cansCell}>0,${totalCell}/${cansCell},0)`, res.costs.costPerUnit, { align: 'right', numFmt: MONEY4, color: C.ink, bold: true });
+  put(ws, `A${r}`, 'Cost per Can', { color: C.muted, bg: C.zebra, border: true });
+  ['B', 'C', 'D', 'E', 'F'].forEach((c) => put(ws, `${c}${r}`, '', { bg: C.zebra, border: true }));
+  putF(ws, `G${r}`, `IF(${cansCell}>0,${totalCell}/${cansCell},0)`, res.costs.costPerUnit, { align: 'right', numFmt: MONEY4, color: C.ink, bold: true, bg: C.zebra, border: true });
   const perCanCell = `G${r}`;
   r += 1;
-  put(ws, `A${r}`, 'Cost per Case', { color: C.muted });
-  putF(ws, `G${r}`, `IF(${casesCell}>0,${totalCell}/${casesCell},0)`, res.costs.costPerCase, { align: 'right', numFmt: MONEY, color: C.ink, bold: true });
+  put(ws, `A${r}`, 'Cost per Case', { color: C.muted, border: true });
+  ['B', 'C', 'D', 'E', 'F'].forEach((c) => put(ws, `${c}${r}`, '', { border: true }));
+  putF(ws, `G${r}`, `IF(${casesCell}>0,${totalCell}/${casesCell},0)`, res.costs.costPerCase, { align: 'right', numFmt: MONEY, color: C.ink, bold: true, border: true });
   const perCaseCell = `G${r}`;
   r += 1;
 

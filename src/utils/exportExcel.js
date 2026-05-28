@@ -15,7 +15,7 @@
 
 import { computeRunResults } from './runResults';
 import {
-  C, MONEY, MONEY4, INT, PERCENT,
+  C, MONEY, MONEY4, INT,
   put, putF, band, tableHeader,
   filename, loadExcelJS, downloadWorkbook,
 } from './excelStyle';
@@ -26,8 +26,6 @@ import {
 import {
   SHEET_RAW_PO, prepareRawPOData, writeRawPOSheet,
 } from './runWorkbookRawPO';
-
-const INPUT_BG = 'FFFEF3C7';
 
 function buildSummarySheet(ws, res, run, runRefs, poData, poRefs) {
   ws.columns = [{ width: 36 }, { width: 16 }, { width: 16 }, { width: 14 }, { width: 14 }];
@@ -49,8 +47,32 @@ function buildSummarySheet(ws, res, run, runRefs, poData, poRefs) {
   r += 2;
 
   // ─────────────────────────────────────────────────────────────────────
-  // HEADLINE METRICS — both the saved/quoted figures and the live blended
-  // raw-PO cost-per-can/case (Net Subtotal ÷ Total Cans / Cases).
+  // PRODUCTION SCOPE (top — sets context before any numbers)
+  // ─────────────────────────────────────────────────────────────────────
+  band(ws, r, 5, 'PRODUCTION SCOPE', C.teal); r += 1;
+  tableHeader(ws, r, ['Setting', 'Value', '', '', '']); r += 1;
+  const cfg = res.config;
+  const scope = [
+    ['Fill Volume', `${cfg.fillVolume ?? ''} ${cfg.fillVolumeUnit || 'oz'}`.trim()],
+    ['Pack Format', `${cfg.packSize ?? ''}-pk / ${cfg.unitsPerCase ?? ''} per case`],
+    ['Carrier', cfg.carrierType || 'paktech'],
+    ['ABV', `${cfg.abv ?? 0}%`],
+    ['Trucks', res.counts.totalTrucks],
+    ['Flavors / SKUs', res.counts.flavorCount],
+  ];
+  scope.forEach(([label, value]) => {
+    const zebra = (r % 2 === 0) ? C.zebra : null;
+    put(ws, `A${r}`, label, { color: C.ink, bg: zebra, border: true });
+    put(ws, `B${r}`, value, { color: C.ink, bg: zebra, align: 'right', border: true });
+    ['C', 'D', 'E'].forEach((c) => put(ws, `${c}${r}`, '', { bg: zebra, border: true }));
+    r += 1;
+  });
+  r += 1;
+
+  // ─────────────────────────────────────────────────────────────────────
+  // HEADLINE METRICS — saved/quoted figures + (if PO) the blended raw-PO
+  // cost-per-can/case (PO Net ÷ Total Cans / Cases). Blended is THE
+  // consolidated cost-per-can the user asked to surface prominently.
   // ─────────────────────────────────────────────────────────────────────
   band(ws, r, 5, 'HEADLINE METRICS', C.teal); r += 1;
   tableHeader(ws, r, ['Metric', 'Value', '', '', '']); r += 1;
@@ -69,18 +91,10 @@ function buildSummarySheet(ws, res, run, runRefs, poData, poRefs) {
   kpi('Cost per Can', runRefs.perCan, res.costs.costPerUnit, MONEY4);
   kpi('Cost per Case', runRefs.perCase, res.costs.costPerCase, MONEY);
   if (poRefs) {
-    const blendedPerCan = res.counts.totalUnits > 0 ? poData.netSubtotalAll / res.counts.totalUnits : 0;
-    const blendedPerCase = res.counts.totalCases > 0 ? poData.netSubtotalAll / res.counts.totalCases : 0;
-    kpi(
-      'Raw Materials per Can (blended)',
-      `IF(${runRefs.cans}>0,${poRefs.grandNet}/${runRefs.cans},0)`,
-      blendedPerCan, MONEY4,
-    );
-    kpi(
-      'Raw Materials per Case (blended)',
-      `IF(${runRefs.cases}>0,${poRefs.grandNet}/${runRefs.cases},0)`,
-      blendedPerCase, MONEY,
-    );
+    kpi('Raw Materials Cost per Can (blended)', poRefs.blendedPerCan,
+      res.counts.totalUnits > 0 ? poData.netSubtotalAll / res.counts.totalUnits : 0, MONEY4);
+    kpi('Raw Materials Cost per Case (blended)', poRefs.blendedPerCase,
+      res.counts.totalCases > 0 ? poData.netSubtotalAll / res.counts.totalCases : 0, MONEY);
   }
   kpi('Total Cans', runRefs.cans, res.counts.totalUnits, INT);
   kpi('Total Cases', runRefs.cases, res.counts.totalCases, INT);
@@ -88,10 +102,40 @@ function buildSummarySheet(ws, res, run, runRefs, poData, poRefs) {
   r += 1;
 
   // ─────────────────────────────────────────────────────────────────────
-  // COST BREAKDOWN — every category with $/Can, $/Case, % of total, on one
-  // line. This is where the user wants unit economics, not scattered.
+  // COST PER FORMULA — per-formula ingredient cost (allocated PO share).
+  // This is per-recipe, NOT per-finished-good; the finished-good cost is
+  // the COST BREAKDOWN below (all-in: ingredients + packaging + tolling…).
   // ─────────────────────────────────────────────────────────────────────
-  band(ws, r, 5, 'COST BREAKDOWN — unit economics per category', C.teal); r += 1;
+  if (poRefs && Object.keys(poRefs.formulas).length > 0) {
+    band(ws, r, 5, 'COST PER FORMULA — ingredient cost only (PO-allocated)', C.teal); r += 1;
+    tableHeader(ws, r, ['Formula', 'Cases', 'Cans', 'Ingredient Cost', '$/Can']); r += 1;
+    poData.formulaData.forEach((fd) => {
+      const fref = poRefs.formulas[fd.formula.id];
+      if (!fref) return;
+      const zebra = (r % 2 === 0) ? C.zebra : null;
+      put(ws, `A${r}`, fd.formula.name, { color: C.ink, bg: zebra, border: true });
+      putF(ws, `B${r}`, fref.cases, fd.cases, { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
+      putF(ws, `C${r}`, fref.units, fd.totalUnits, { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
+      putF(ws, `D${r}`, fref.cost, fd.allocatedIngredientCost, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
+      putF(ws, `E${r}`, fref.perCan, fd.costPerCan, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY4, border: true });
+      r += 1;
+    });
+    // Blended total
+    put(ws, `A${r}`, 'BLENDED', { bold: true, color: C.white, bg: C.dark, border: true });
+    putF(ws, `B${r}`, poRefs.casesTotal, poData.totalCasesAll, { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: INT, border: true });
+    putF(ws, `C${r}`, poRefs.unitsTotal, poData.totalUnitsAll, { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: INT, border: true });
+    putF(ws, `D${r}`, poRefs.blendedCost, poData.netSubtotalAll, { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: MONEY, border: true });
+    putF(ws, `E${r}`, poRefs.blendedPerCan,
+      poData.totalUnitsAll > 0 ? poData.netSubtotalAll / poData.totalUnitsAll : 0,
+      { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: MONEY4, border: true });
+    r += 2;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // COST BREAKDOWN — the finished-good cost: ingredients + packaging +
+  // tolling + BOM + taxes, with $/Can, $/Case, % of total per category.
+  // ─────────────────────────────────────────────────────────────────────
+  band(ws, r, 5, 'FINISHED GOOD COST BREAKDOWN', C.teal); r += 1;
   tableHeader(ws, r, ['Category', 'Cost', '$/Can', '$/Case', '% of Total']);
   r += 1;
   const totalRef = runRefs.total;
@@ -115,7 +159,6 @@ function buildSummarySheet(ws, res, run, runRefs, poData, poRefs) {
       { color: C.muted, bg: zebra, align: 'right', numFmt: '0.0%', border: true });
     r += 1;
   });
-  // Total row
   put(ws, `A${r}`, 'TOTAL', { bold: true, color: C.white, bg: C.dark, border: true });
   putF(ws, `B${r}`, totalRef, res.costs.totalCost,
     { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: MONEY, border: true });
@@ -127,127 +170,42 @@ function buildSummarySheet(ws, res, run, runRefs, poData, poRefs) {
   r += 2;
 
   // ─────────────────────────────────────────────────────────────────────
-  // RAW MATERIAL PO SUMMARY (if applicable)
+  // RAW MATERIAL PO SUMMARY (no spreadsheet-level Freight/Waste/Tax — those
+  // are already priced in at the formula/ingredient level).
   // ─────────────────────────────────────────────────────────────────────
-  let adjustmentRefs = null;
   if (poRefs) {
     band(ws, r, 5, 'RAW MATERIAL PO SUMMARY', C.teal); r += 1;
-    tableHeader(ws, r, ['Line', 'Net', 'Gross', 'Savings', '']); r += 1;
-    const poLine = (label, netRef, netVal, grossRef, grossVal, savingsRef, savingsVal, bold) => {
+    tableHeader(ws, r, ['Line', 'Amount', '', '', '']); r += 1;
+    const poRow = (label, ref, value, fmt, bold) => {
       const zebra = (r % 2 === 0) ? C.zebra : null;
       put(ws, `A${r}`, label, { bold, color: C.ink, bg: zebra, border: true });
-      if (netRef) putF(ws, `B${r}`, netRef, netVal, { bold, color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
-      else put(ws, `B${r}`, netVal, { bold, color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
-      if (grossRef) putF(ws, `C${r}`, grossRef, grossVal, { bold, color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
-      else put(ws, `C${r}`, grossVal, { color: C.muted, bg: zebra, align: 'right', numFmt: MONEY, border: true });
-      if (savingsRef) putF(ws, `D${r}`, savingsRef, savingsVal, { bold, color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
-      else put(ws, `D${r}`, savingsVal, { color: C.muted, bg: zebra, align: 'right', numFmt: MONEY, border: true });
-      put(ws, `E${r}`, '', { bg: zebra, border: true });
-      r += 1;
-    };
-    poLine('Ingredients (after on-hand applied)', poRefs.grandNet, poData.netSubtotalAll, poRefs.grandGross, poData.grossSubtotalAll, poRefs.grandSavings, poData.grossSubtotalAll - poData.netSubtotalAll, true);
-
-    // Adjustments rows (editable rates, computed amounts).
-    const editPct = (label, defaultPct) => {
-      const zebra = (r % 2 === 0) ? C.zebra : null;
-      put(ws, `A${r}`, `  ${label}`, { color: C.ink, bg: zebra, border: true });
-      put(ws, `B${r}`, defaultPct, { color: C.ink, bg: INPUT_BG, bold: true, align: 'right', numFmt: PERCENT, border: true });
+      if (ref) putF(ws, `B${r}`, ref, value, { bold, color: C.ink, bg: zebra, align: 'right', numFmt: fmt, border: true });
+      else put(ws, `B${r}`, value, { bold, color: C.ink, bg: zebra, align: 'right', numFmt: fmt, border: true });
       ['C', 'D', 'E'].forEach((c) => put(ws, `${c}${r}`, '', { bg: zebra, border: true }));
-      const cell = `$B$${r}`;
       r += 1;
-      return cell;
     };
-    const compRow = (label, formula, result) => {
-      const zebra = (r % 2 === 0) ? C.zebra : null;
-      put(ws, `A${r}`, `  ${label}`, { color: C.ink, bg: zebra, border: true });
-      putF(ws, `B${r}`, formula, result, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
-      ['C', 'D', 'E'].forEach((c) => put(ws, `${c}${r}`, '', { bg: zebra, border: true }));
-      const cell = `$B$${r}`;
-      r += 1;
-      return cell;
-    };
-    const freightPct = editPct('Freight %', 0);
-    const wastePct = editPct('Waste / Shrinkage %', 0);
-    const taxPct = editPct('Tax %', 0);
-    const net = poRefs.grandNet;
-    const freightAmt = compRow('Freight $', `${net}*${freightPct}`, 0);
-    const wasteAmt = compRow('Waste $', `${net}*${wastePct}`, 0);
-    const taxAmt = compRow('Tax $', `(${net}+${freightAmt}+${wasteAmt})*${taxPct}`, 0);
-    put(ws, `A${r}`, 'GRAND TOTAL (Net + Adjustments)', { bold: true, color: C.white, bg: C.dark, border: true });
-    putF(ws, `B${r}`, `${net}+${freightAmt}+${wasteAmt}+${taxAmt}`, poData.netSubtotalAll,
-      { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: MONEY, border: true });
-    ['C', 'D', 'E'].forEach((c) => put(ws, `${c}${r}`, '', { bg: C.dark, border: true }));
-    adjustmentRefs = { grandTotal: `$B$${r}` };
-    r += 2;
+    poRow('Net Total (what you pay for ingredients)', poRefs.grandNet, poData.netSubtotalAll, MONEY, true);
+    poRow('Blended Cost per Can', poRefs.blendedPerCan,
+      poData.totalUnitsAll > 0 ? poData.netSubtotalAll / poData.totalUnitsAll : 0, MONEY4);
+    poRow('Blended Cost per Case', poRefs.blendedPerCase,
+      poData.totalCasesAll > 0 ? poData.netSubtotalAll / poData.totalCasesAll : 0, MONEY);
+    poRow('Vendors', null, Object.keys(poRefs.vendors).length, INT);
+    poRow('Ingredients', null, poData.masterList.length, INT);
+    r += 1;
 
     // ── VENDOR BREAKDOWN ──
     band(ws, r, 5, 'VENDOR BREAKDOWN', C.teal); r += 1;
-    tableHeader(ws, r, ['Vendor', 'Net', 'Gross', 'Savings', '# Items']); r += 1;
+    tableHeader(ws, r, ['Vendor', 'Net Total', '# Items', '', '']); r += 1;
     Object.entries(poRefs.vendors).forEach(([vendor, vref]) => {
       const items = poData.byVendor[vendor];
       const vNet = items.reduce((s, m) => s + m.netLineTotal, 0);
-      const vGross = items.reduce((s, m) => s + m.grossLineTotal, 0);
-      const vSavings = items.reduce((s, m) => s + m.savings, 0);
       const zebra = (r % 2 === 0) ? C.zebra : null;
       put(ws, `A${r}`, vendor, { color: C.ink, bg: zebra, border: true });
       putF(ws, `B${r}`, vref.net, vNet, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
-      putF(ws, `C${r}`, vref.gross, vGross, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
-      putF(ws, `D${r}`, vref.savings, vSavings, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
-      put(ws, `E${r}`, vref.count, { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
+      put(ws, `C${r}`, vref.count, { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
+      ['D', 'E'].forEach((c) => put(ws, `${c}${r}`, '', { bg: zebra, border: true }));
       r += 1;
     });
-    r += 1;
-  }
-
-  // ─────────────────────────────────────────────────────────────────────
-  // PRODUCTION SCOPE
-  // ─────────────────────────────────────────────────────────────────────
-  band(ws, r, 5, 'PRODUCTION SCOPE', C.teal); r += 1;
-  tableHeader(ws, r, ['Setting', 'Value', '', '', '']); r += 1;
-  const cfg = res.config;
-  const scope = [
-    ['Fill Volume', `${cfg.fillVolume ?? ''} ${cfg.fillVolumeUnit || 'oz'}`.trim()],
-    ['Pack Format', `${cfg.packSize ?? ''}-pk / ${cfg.unitsPerCase ?? ''} per case`],
-    ['Carrier', cfg.carrierType || 'paktech'],
-    ['ABV', `${cfg.abv ?? 0}%`],
-    ['Trucks', res.counts.totalTrucks],
-    ['Flavors / SKUs', res.counts.flavorCount],
-  ];
-  scope.forEach(([label, value]) => {
-    const zebra = (r % 2 === 0) ? C.zebra : null;
-    put(ws, `A${r}`, label, { color: C.ink, bg: zebra, border: true });
-    put(ws, `B${r}`, value, { color: C.ink, bg: zebra, align: 'right', border: true });
-    ['C', 'D', 'E'].forEach((c) => put(ws, `${c}${r}`, '', { bg: zebra, border: true }));
-    r += 1;
-  });
-
-  // ─────────────────────────────────────────────────────────────────────
-  // COST PER FINISHED GOOD (per flavor, blended raw-material economics)
-  // ─────────────────────────────────────────────────────────────────────
-  if (poRefs && adjustmentRefs) {
-    const flavorRows = res.counts.flavorRows.filter((f) => (f.cases || 0) > 0);
-    if (flavorRows.length > 0) {
-      r += 1;
-      band(ws, r, 5, 'COST PER FINISHED GOOD', C.teal); r += 1;
-      tableHeader(ws, r, ['Finished Good', 'Cases', 'Cans', 'Quoted $/Can', 'Blended PO $/Can']);
-      r += 1;
-      flavorRows.forEach((f) => {
-        const zebra = (r % 2 === 0) ? C.zebra : null;
-        put(ws, `A${r}`, f.name || 'Flavor', { color: C.ink, bg: zebra, border: true });
-        put(ws, `B${r}`, f.cases, { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
-        put(ws, `C${r}`, f.cans, { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
-        put(ws, `D${r}`, f.ingredientCost || 0, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY4, border: true });
-        // Blended share — what this flavor would cost per can if it absorbed
-        // its proportional slice of the PO grand total (Net + Adjustments).
-        putF(
-          ws, `E${r}`,
-          `IF(${runRefs.cans}>0,${adjustmentRefs.grandTotal}/${runRefs.cans},0)`,
-          res.counts.totalUnits > 0 ? poData.netSubtotalAll / res.counts.totalUnits : 0,
-          { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY4, border: true },
-        );
-        r += 1;
-      });
-    }
   }
 
   ws.views = [{ state: 'frozen', ySplit: 5 }];
