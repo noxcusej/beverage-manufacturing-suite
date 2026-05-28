@@ -969,12 +969,12 @@ export default function CoPackingCalculator() {
     setSavedRuns(getRuns());
   }
 
-  function exportRawMaterialsPO() {
+  async function exportRawMaterialsPO() {
     if (rawMaterialPO.selectedFormulas.length === 0) {
       alert('Select at least one formula flavor with cases before exporting raw materials.');
       return;
     }
-    const ok = exportConsolidatedPOToExcel({
+    const ok = await exportConsolidatedPOToExcel({
       selectedFormulas: rawMaterialPO.selectedFormulas,
       inventoryMap,
       caseCounts: rawMaterialPO.caseCounts,
@@ -1292,7 +1292,7 @@ export default function CoPackingCalculator() {
             <button className="btn" onClick={handleOpenCompare}>Compare</button>
           )}
           <button className="btn" onClick={handleExportClientQuote}>Export Quote</button>
-          <button className="btn" onClick={() => exportCoPackingToExcel(collectRunState())}>Export Excel</button>
+          <button className="btn" onClick={() => exportCoPackingToExcel({ name: runName.trim() || 'Run Quote', client: runClient.trim(), ...collectRunState() })}>Export Excel</button>
           <button className="btn" onClick={exportRawMaterialsPO}>Export Raw PO</button>
           <button className="btn btn-primary" onClick={handleSaveRun}>
             {savedFlash ? 'Saved ✓' : (currentRunId ? 'Save' : 'Save Configuration')}
