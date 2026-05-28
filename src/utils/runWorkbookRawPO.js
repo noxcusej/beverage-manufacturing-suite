@@ -203,12 +203,12 @@ export function writeRawPOSheet({ ws, data, flavorsByFormulaId }) {
   ws.columns = [
     { width: 30 }, { width: 18 }, { width: 12 }, { width: 12 }, { width: 14 },
     { width: 14 }, { width: 12 }, { width: 10 }, { width: 12 }, { width: 12 },
-    { width: 14 },
+    { width: 12 }, { width: 14 },
   ];
 
   let r = 1;
-  band(ws, r, 11, 'Raw Material PO', C.dark, C.white, 16, 28); r += 1;
-  ws.mergeCells(`A${r}:K${r}`);
+  band(ws, r, 12, 'Raw Material PO', C.dark, C.white, 16, 28); r += 1;
+  ws.mergeCells(`A${r}:L${r}`);
   put(ws, `A${r}`, 'Edit yellow cells (on-hand, price) and the flavor cases on the Line Item Details tab — everything recalculates.', { color: C.muted, size: 10 });
   ws.getRow(r).height = 16;
   r += 2;
@@ -219,8 +219,8 @@ export function writeRawPOSheet({ ws, data, flavorsByFormulaId }) {
   // in the PO By Vendor section below, which we haven't written yet. We come
   // back and fill F (and the matching $/Can, $/Case formulas reference F so
   // they'll update automatically) after the PO section is laid out.
-  band(ws, r, 11, 'FORMULA CASES & PER-FORMULA INGREDIENT COST', C.teal); r += 1;
-  tableHeader(ws, r, ['Formula', 'Client', 'Cases', 'Units/Case', 'Total Units', 'Ingredient Cost', '$/Can', '$/Case', '', '', '']);
+  band(ws, r, 12, 'FORMULA CASES & PER-FORMULA INGREDIENT COST', C.teal); r += 1;
+  tableHeader(ws, r, ['Formula', 'Client', 'Cases', 'Units/Case', 'Total Units', 'Ingredient Cost', '$/Can', '$/Case', '', '', '', '']);
   r += 1;
   const caseStart = r;
   const formulaCostRefs = {};
@@ -243,7 +243,7 @@ export function writeRawPOSheet({ ws, data, flavorsByFormulaId }) {
       { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY4, border: true });
     putF(ws, `H${r}`, `IF(C${r}>0,F${r}/C${r},0)`, fd.costPerCase,
       { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
-    ['I', 'J', 'K'].forEach((c) => put(ws, `${c}${r}`, '', { bg: zebra, border: true }));
+    ['I', 'J', 'K', 'L'].forEach((c) => put(ws, `${c}${r}`, '', { bg: zebra, border: true }));
     formulaCostRefs[fd.formula.id] = {
       cost: `F${r}`, perCan: `G${r}`, perCase: `H${r}`, cases: `C${r}`, units: `E${r}`,
     };
@@ -265,7 +265,7 @@ export function writeRawPOSheet({ ws, data, flavorsByFormulaId }) {
     { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: MONEY4, border: true });
   putF(ws, `H${r}`, `IF(C${r}>0,F${r}/C${r},0)`, data.totalCasesAll > 0 ? data.netSubtotalAll / data.totalCasesAll : 0,
     { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: MONEY, border: true });
-  ['I', 'J', 'K'].forEach((c) => put(ws, `${c}${r}`, '', { bg: C.dark, border: true }));
+  ['I', 'J', 'K', 'L'].forEach((c) => put(ws, `${c}${r}`, '', { bg: C.dark, border: true }));
   const casesTotalCell = `C${r}`;
   const unitsTotalCell = `E${r}`;
   const blendedCostCell = `F${r}`;
@@ -276,18 +276,19 @@ export function writeRawPOSheet({ ws, data, flavorsByFormulaId }) {
   const casesRange = `$C$${caseStart}:$C$${caseEnd}`;
 
   // ── PO BY VENDOR (drop Gross/Savings; add Slack instead) ──
-  band(ws, r, 11, 'PO BY VENDOR  —  shared MOQ across all formulas', C.teal); r += 1;
+  band(ws, r, 12, 'PO BY VENDOR  —  shared MOQ across all formulas', C.teal); r += 1;
   tableHeader(ws, r, [
     'Ingredient', 'SKU', 'Total Demand', 'On Hand', 'Net Needed', 'Unit',
-    'MOQ', 'Order Qty', 'Slack', 'Price', 'Line Total',
+    'MOQ', 'Order Qty', 'Slack', 'Slack Cost', 'Price', 'Line Total',
   ]);
   r += 1;
 
   const vendorRefs = {};
-  const vendorSubtotalRows = [];
+  const vendorNetSubtotalRows = [];
+  const vendorSlackSubtotalRows = [];
   const ingredientRowByKey = {}; // master.key -> row number on this sheet
   Object.entries(byVendor).forEach(([vendor, items]) => {
-    band(ws, r, 11, vendor, C.headerBg, C.ink, 11, 18); r += 1;
+    band(ws, r, 12, vendor, C.headerBg, C.ink, 11, 18); r += 1;
     const vStart = r;
     items.forEach((m) => {
       const zebra = (r % 2 === 0) ? C.zebra : null;
@@ -304,30 +305,42 @@ export function writeRawPOSheet({ ws, data, flavorsByFormulaId }) {
       put(ws, `G${r}`, m.moq, { color: C.ink, bg: zebra, align: 'right', numFmt: DEC, border: true });
       putF(ws, `H${r}`, `IF(E${r}<=0,0,IF(G${r}>0,CEILING(E${r}/G${r},1)*G${r},E${r}))`, m.netOrderQty,
         { color: C.ink, bg: zebra, align: 'right', numFmt: DEC, border: true });
-      // Slack = Order Qty - Net Needed (over-purchase from MOQ rounding).
+      // Slack = Order Qty - Net Needed (over-purchase qty from MOQ rounding).
       putF(ws, `I${r}`, `MAX(0,H${r}-E${r})`, m.slack,
         { color: C.muted, bg: zebra, align: 'right', numFmt: DEC, border: true });
-      put(ws, `J${r}`, m.pricePerBuyUnit, { color: C.ink, bg: INPUT_BG, align: 'right', numFmt: MONEY4, border: true });
-      putF(ws, `K${r}`, `H${r}*J${r}`, m.netLineTotal,
+      // Slack Cost = Slack × Price (dollar value of MOQ over-purchase).
+      putF(ws, `J${r}`, `I${r}*K${r}`, m.slack * m.pricePerBuyUnit,
+        { color: C.muted, bg: zebra, align: 'right', numFmt: MONEY, border: true });
+      put(ws, `K${r}`, m.pricePerBuyUnit, { color: C.ink, bg: INPUT_BG, align: 'right', numFmt: MONEY4, border: true });
+      putF(ws, `L${r}`, `H${r}*K${r}`, m.netLineTotal,
         { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
       r += 1;
     });
     const vEnd = r - 1;
     put(ws, `A${r}`, 'Subtotal', { bold: true, color: C.ink, border: true });
-    ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'].forEach((c) => put(ws, `${c}${r}`, '', { border: true }));
+    ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K'].forEach((c) => put(ws, `${c}${r}`, '', { border: true }));
     const vendorNet = items.reduce((s, m) => s + m.netLineTotal, 0);
-    putF(ws, `K${r}`, `SUM(K${vStart}:K${vEnd})`, vendorNet,
+    const vendorSlackCost = items.reduce((s, m) => s + (m.slack * m.pricePerBuyUnit), 0);
+    putF(ws, `J${r}`, `SUM(J${vStart}:J${vEnd})`, vendorSlackCost,
+      { bold: true, color: C.muted, align: 'right', numFmt: MONEY, border: true });
+    putF(ws, `L${r}`, `SUM(L${vStart}:L${vEnd})`, vendorNet,
       { bold: true, color: C.ink, align: 'right', numFmt: MONEY, border: true });
-    vendorRefs[vendor] = { net: `K${r}`, count: items.length };
-    vendorSubtotalRows.push(`K${r}`);
+    vendorRefs[vendor] = { net: `L${r}`, slackCost: `J${r}`, count: items.length };
+    vendorNetSubtotalRows.push(`L${r}`);
+    vendorSlackSubtotalRows.push(`J${r}`);
     r += 2;
   });
 
-  // GRAND TOTAL — band merges A:J so the value cell in K stays visible.
-  band(ws, r, 10, 'GRAND TOTAL (ingredients ordered)', C.teal);
-  putF(ws, `K${r}`, vendorSubtotalRows.length ? `SUM(${vendorSubtotalRows.join(',')})` : '0', data.netSubtotalAll,
+  // GRAND TOTAL — band merges A:I; J=grand slack cost, K=empty (visual), L=grand net.
+  band(ws, r, 9, 'GRAND TOTAL (ingredients ordered)', C.teal);
+  const grandSlackCost = data.masterList.reduce((s, m) => s + (m.slack * m.pricePerBuyUnit), 0);
+  putF(ws, `J${r}`, vendorSlackSubtotalRows.length ? `SUM(${vendorSlackSubtotalRows.join(',')})` : '0', grandSlackCost,
     { bold: true, color: C.white, bg: C.teal, align: 'right', numFmt: MONEY, border: true });
-  const grandNetCell = `K${r}`;
+  put(ws, `K${r}`, '', { bg: C.teal, border: true });
+  putF(ws, `L${r}`, vendorNetSubtotalRows.length ? `SUM(${vendorNetSubtotalRows.join(',')})` : '0', data.netSubtotalAll,
+    { bold: true, color: C.white, bg: C.teal, align: 'right', numFmt: MONEY, border: true });
+  const grandNetCell = `L${r}`;
+  const grandSlackCostCell = `J${r}`;
   r += 1;
 
   // Now that ingredient rows exist, fill in each formula's live Ingredient Cost.
@@ -343,7 +356,7 @@ export function writeRawPOSheet({ ws, data, flavorsByFormulaId }) {
       if (d <= 0) return;
       const ingRow = ingredientRowByKey[m.key];
       if (!ingRow) return;
-      terms.push(`${Number(d.toFixed(8))}*K${ingRow}/C${ingRow}`);
+      terms.push(`${Number(d.toFixed(8))}*L${ingRow}/C${ingRow}`);
     });
     const f = terms.length ? `C${formulaRow}*(${terms.join('+')})` : '0';
     const zebra = (formulaRow % 2 === 0) ? C.zebra : null;
@@ -357,11 +370,12 @@ export function writeRawPOSheet({ ws, data, flavorsByFormulaId }) {
     casesTotal: QUAL_PO + casesTotalCell,
     unitsTotal: QUAL_PO + unitsTotalCell,
     grandNet: QUAL_PO + grandNetCell,
+    grandSlackCost: QUAL_PO + grandSlackCostCell,
     blendedCost: QUAL_PO + blendedCostCell,
     blendedPerCan: QUAL_PO + blendedPerCanCell,
     blendedPerCase: QUAL_PO + blendedPerCaseCell,
     vendors: Object.fromEntries(Object.entries(vendorRefs).map(([k, v]) => [k, {
-      net: QUAL_PO + v.net, count: v.count,
+      net: QUAL_PO + v.net, slackCost: QUAL_PO + v.slackCost, count: v.count,
     }])),
     formulas: Object.fromEntries(Object.entries(formulaCostRefs).map(([k, v]) => [k, {
       cost: QUAL_PO + v.cost, perCan: QUAL_PO + v.perCan, perCase: QUAL_PO + v.perCase,
