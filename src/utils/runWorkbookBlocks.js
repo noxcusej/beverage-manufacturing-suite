@@ -69,6 +69,7 @@ export function writeRunBlock({ ws, startRow, label, run, res, color, sheetName 
   tableHeader(ws, r, ['Flavor', 'Cases', 'Cans', 'Pallets', 'Ingr $/Can', 'Batching Fee', 'Ingredient Cost']);
   r += 1;
   const flvStart = r;
+  const flavorCellsByFormulaId = {}; // formulaId -> [unqualified B cell refs]
   res.counts.flavorRows.forEach((f) => {
     const zebra = (r % 2 === 0) ? C.zebra : null;
     const baseCell = { color: C.ink, bg: zebra, align: 'right', border: true };
@@ -79,6 +80,10 @@ export function writeRunBlock({ ws, startRow, label, run, res, color, sheetName 
     put(ws, `E${r}`, f.ingredientCost || 0, { ...baseCell, numFmt: MONEY4 });
     put(ws, `F${r}`, f.batchingFee || 0, { ...baseCell, numFmt: MONEY });
     putF(ws, `G${r}`, `E${r}*C${r}`, (f.ingredientCost || 0) * (f.cans || 0), { ...baseCell, numFmt: MONEY });
+    if (f.formulaId) {
+      if (!flavorCellsByFormulaId[f.formulaId]) flavorCellsByFormulaId[f.formulaId] = [];
+      flavorCellsByFormulaId[f.formulaId].push(`B${r}`);
+    }
     r += 1;
   });
   if (res.counts.flavorRows.length === 0) {
@@ -192,6 +197,11 @@ export function writeRunBlock({ ws, startRow, label, run, res, color, sheetName 
     cases: QUAL + casesCell,
     cans: QUAL + cansCell,
     pallets: QUAL + palletsCell,
+    // Per-flavor B-cell refs grouped by formulaId, qualified to this sheet.
+    // The Raw Material PO tab uses these so flavor cases drive PO demand live.
+    flavorsByFormulaId: Object.fromEntries(
+      Object.entries(flavorCellsByFormulaId).map(([fid, cells]) => [fid, cells.map((c) => QUAL + c)])
+    ),
   };
   return { nextRow: r, refs };
 }

@@ -1,8 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { getClients, getCurrentBatch, getFormulas, getGlobalSettings, getInventory, getRuns, saveGlobalSettings, saveRun, deleteRun } from '../data/store';
 import { getProducts, lookupPrice, NEW_ART_PREP_FEE } from '../data/drayhorsePricing';
-import { exportCoPackingToExcel } from '../utils/exportExcel';
-import { exportConsolidatedPOToExcel } from '../utils/exportConsolidatedPO';
+import { exportCoPackingToExcel, exportCoPackingToGoogleSheets } from '../utils/exportExcel';
 import { exportClientQuote } from '../utils/exportClientQuote';
 import { computeRunResults } from '../utils/runResults';
 import { exportRunComparison } from '../utils/exportRunComparison';
@@ -957,36 +956,17 @@ export default function CoPackingCalculator() {
     setSavedRuns(getRuns());
   }
 
-  async function exportRawMaterialsPO() {
-    if (rawMaterialPO.selectedFormulas.length === 0) {
-      alert('Select at least one formula flavor with cases before exporting raw materials.');
-      return;
-    }
-    const ok = await exportConsolidatedPOToExcel({
-      selectedFormulas: rawMaterialPO.selectedFormulas,
-      inventoryMap,
-      caseCounts: rawMaterialPO.caseCounts,
-      fgCosts: counts.flavorRows
-        .filter((row) => row.formulaId && row.cases > 0)
-        .map((row) => {
-          const ingredientCost = getEffectiveIngredientCostPerCan(row);
-          return {
-            fgId: row.id,
-            name: row.name || allFormulas.find((f) => f.id === row.formulaId)?.name || 'Flavor',
-            totalUnits: row.cans,
-            totalPacks: packSize > 0 ? Math.ceil(row.cans / packSize) : 0,
-            totalCases: row.cases,
-            totalPallets: row.pallets,
-            nonMoqCost: ingredientCost * row.cans,
-            grossCost: ingredientCost * row.cans,
-            nonMoqPerUnit: ingredientCost,
-            nonMoqPerPack: packSize > 0 ? ingredientCost * packSize : 0,
-            nonMoqPerCase: ingredientCost * unitsPerCase,
-            nonMoqPerPallet: row.cases > 0 ? (ingredientCost * row.cans / row.cases) * casesPerPallet : 0,
-          };
-        }),
-    });
-    if (!ok) alert('No valid formula ingredient requirements were found to export.');
+  // Bundle the run state + (optional) raw-material PO inputs in the shape the
+  // unified workbook export expects.
+  function buildExportArgs() {
+    return {
+      run: { name: runName.trim() || 'Run Quote', client: runClient.trim(), ...collectRunState() },
+      rawPO: rawMaterialPO.selectedFormulas.length > 0 ? {
+        selectedFormulas: rawMaterialPO.selectedFormulas,
+        inventoryMap,
+        caseCounts: rawMaterialPO.caseCounts,
+      } : null,
+    };
   }
 
   // ── Render helper: fee table (shared by services, taxes) ──
@@ -1280,8 +1260,8 @@ export default function CoPackingCalculator() {
             <button className="btn" onClick={handleOpenCompare}>Compare</button>
           )}
           <button className="btn" onClick={handleExportClientQuote}>Export Quote</button>
-          <button className="btn" onClick={() => exportCoPackingToExcel({ name: runName.trim() || 'Run Quote', client: runClient.trim(), ...collectRunState() })}>Export Excel</button>
-          <button className="btn" onClick={exportRawMaterialsPO}>Export Raw PO</button>
+          <button className="btn" onClick={() => exportCoPackingToExcel(buildExportArgs())}>Export Excel</button>
+          <button className="btn" onClick={() => exportCoPackingToGoogleSheets(buildExportArgs())}>Open in Sheets</button>
           <button className="btn btn-primary" onClick={handleSaveRun}>
             {savedFlash ? 'Saved ✓' : (currentRunId ? 'Save' : 'Save Configuration')}
           </button>
@@ -1552,8 +1532,8 @@ export default function CoPackingCalculator() {
               Aggregates all selected formula flavors, then applies on-hand and MOQ once per ingredient.
             </div>
           </div>
-          <button className="btn btn-small" onClick={exportRawMaterialsPO} disabled={rawMaterialPO.rows.length === 0}>
-            Export Raw PO
+          <button className="btn btn-small" onClick={() => exportCoPackingToExcel(buildExportArgs())} disabled={rawMaterialPO.rows.length === 0}>
+            Export Excel
           </button>
         </div>
         {rawMaterialPO.rows.length === 0 ? (
