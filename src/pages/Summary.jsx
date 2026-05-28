@@ -94,7 +94,7 @@ export default function Summary() {
 
     costRows.push({ label: 'Packaging Materials', perFlavor: allocate(packagingTotal), total: packagingTotal });
     costRows.push({ label: 'Tolling', perFlavor: allocate(tollingTotal), total: tollingTotal });
-    costRows.push({ label: 'Bill of Materials', perFlavor: allocate(bomTotal), total: bomTotal });
+    costRows.push({ label: 'Freight & Other', perFlavor: allocate(bomTotal), total: bomTotal });
     costRows.push({ label: 'Taxes & Regulatory', perFlavor: allocate(taxTotal), total: taxTotal });
 
     // Totals

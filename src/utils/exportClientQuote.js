@@ -1,8 +1,10 @@
 import { PAGE_W, M, PdfDoc, money, number, filename, drawSectionTitle, drawTable } from './pdf';
 
 function lineRows(rows = []) {
+  // Synthetic rows (pack groups, cartons) are shown in their own Pack
+  // Configuration table above so the client doesn't see them twice.
   return rows
-    .filter((row) => (row.lineCost || 0) > 0)
+    .filter((row) => (row.lineCost || 0) > 0 && !row.synthetic)
     .map((row) => [
       row.name || 'Line item',
       row.feeType || '',
@@ -13,7 +15,7 @@ function lineRows(rows = []) {
 }
 
 export function exportClientQuote(quote) {
-  const { client, runName, config, counts, costs, breakdown, flavors } = quote;
+  const { client, runName, config, counts, costs, breakdown, flavors, planDerived } = quote;
   const title = runName || 'Production Quote';
   const clientName = client || 'Client';
   const pdf = new PdfDoc();
@@ -76,6 +78,35 @@ export function exportClientQuote(quote) {
     number(flavor.cans || 0),
     number(flavor.pallets || 0, 1),
   ]));
+
+  // Pack Configuration — shown when a packaging plan is configured so the
+  // client sees exactly what gets packed at what price.
+  if (planDerived?.active && planDerived.groups.length > 0) {
+    drawSectionTitle(pdf, 'Pack Configuration');
+    const flavorById = Object.fromEntries((flavors || []).map((f) => [f.id, f]));
+    drawTable(pdf, [
+      { label: 'Description', width: 230 },
+      { label: 'Pack', width: 46, align: 'right' },
+      { label: 'Packs', width: 64, align: 'right' },
+      { label: 'Cases', width: 56, align: 'right' },
+      { label: '$/Pack', width: 64, align: 'right' },
+      { label: 'Line Cost', width: 72, align: 'right', bold: true },
+    ], planDerived.groups.map((g) => {
+      const description = g.label || (g.type === 'straight'
+        ? `${flavorById[g.skuId]?.name || 'Straight'} ${g.packSize}-pack`
+        : `Variety ${g.packSize}-pack (${(g.mix || []).filter((m) => (m.cans || 0) > 0).map((m) => flavorById[m.skuId]?.name || m.skuId).join(' / ') || '—'})`);
+      const rate = Number(g.unitPrice) || 0;
+      const qty = g.packsCount || 0;
+      return [
+        description,
+        `${g.packSize}-pk`,
+        number(qty),
+        number(Math.ceil(g.casesConsumed || 0)),
+        money(rate, 4),
+        money(rate * qty),
+      ];
+    }));
+  }
 
   drawSectionTitle(pdf, 'Quote Summary');
   drawTable(pdf, [

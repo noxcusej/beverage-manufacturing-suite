@@ -217,6 +217,110 @@ function buildLineItemsSheet(ws, res, run) {
   return refs;
 }
 
+// Packaging plan tab — one row per pack group with type, packSize, packsCount,
+// carrier, SKU mix, cans consumed, cases. Includes a per-SKU allocation
+// summary so the variety-mix math is auditable in the spreadsheet.
+function buildPackagingPlanSheet(ws, res) {
+  ws.columns = [
+    { width: 4 }, { width: 24 }, { width: 12 }, { width: 12 }, { width: 12 },
+    { width: 14 }, { width: 12 }, { width: 12 }, { width: 38 },
+  ];
+  const plan = res.planDerived;
+  const flavorById = {};
+  (res.baseCounts?.flavorRows || []).forEach((f) => { flavorById[f.id] = f; });
+
+  let r = 1;
+  band(ws, r, 9, 'PACKAGING PLAN', C.dark, C.white, 16, 28); r += 1;
+  ws.mergeCells(`A${r}:I${r}`);
+  put(ws, `A${r}`,
+    plan.active
+      ? `${plan.totalPacks.toLocaleString()} packs across ${plan.groups.length} group(s) · ${plan.totalCases.toLocaleString()} cases · ${plan.totalVarietyPacks.toLocaleString()} variety packs`
+      : 'No packaging plan configured — using the run-level single pack size.',
+    { color: C.muted, size: 10 });
+  r += 2;
+
+  // Per-SKU allocation summary
+  band(ws, r, 9, 'PER-SKU ALLOCATION', C.teal); r += 1;
+  tableHeader(ws, r, ['', 'SKU', 'Produced', 'Allocated', 'Remaining', '', '', '', '']); r += 1;
+  (res.baseCounts?.flavorRows || []).forEach((f) => {
+    const allocated = plan.cansAllocatedPerSku?.[f.id] || 0;
+    const remaining = (f.cans || 0) - allocated;
+    const zebra = (r % 2 === 0) ? C.zebra : null;
+    put(ws, `A${r}`, '', { bg: zebra, border: true });
+    put(ws, `B${r}`, f.name || '(unnamed)', { color: C.ink, bg: zebra, border: true });
+    put(ws, `C${r}`, f.cans || 0, { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
+    put(ws, `D${r}`, allocated, { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
+    put(ws, `E${r}`, remaining, {
+      color: remaining < 0 ? 'FFB91C1C' : C.ink, bold: remaining !== 0,
+      bg: zebra, align: 'right', numFmt: INT, border: true,
+    });
+    ['F', 'G', 'H', 'I'].forEach((c) => put(ws, `${c}${r}`, '', { bg: zebra, border: true }));
+    r += 1;
+  });
+  r += 1;
+
+  // Pack groups
+  band(ws, r, 9, 'PACK GROUPS', C.teal); r += 1;
+  tableHeader(ws, r, ['#', 'Label', 'Type', 'Pack size', 'Packs', 'Cans', 'Cases', 'Carrier', 'SKU / Mix']); r += 1;
+  if (plan.groups.length === 0) {
+    ws.mergeCells(`A${r}:I${r}`);
+    put(ws, `A${r}`, 'No pack groups configured.', { color: C.muted, align: 'center', border: true });
+    r += 1;
+  } else {
+    plan.groups.forEach((g, idx) => {
+      const zebra = (r % 2 === 0) ? C.zebra : null;
+      const mixText = g.type === 'straight'
+        ? (flavorById[g.skuId]?.name || g.skuId || '—')
+        : (g.mix || [])
+            .filter((m) => (m.cans || 0) > 0)
+            .map((m) => `${flavorById[m.skuId]?.name || m.skuId}: ${m.cans}`)
+            .join(', ') || '—';
+      put(ws, `A${r}`, idx + 1, { color: C.muted, bg: zebra, align: 'right', border: true });
+      put(ws, `B${r}`, g.label || (g.type === 'variety' ? `Variety ${g.packSize}-pk` : `${flavorById[g.skuId]?.name || 'Straight'} ${g.packSize}-pk`), { color: C.ink, bg: zebra, border: true });
+      put(ws, `C${r}`, g.type === 'variety' ? 'Variety' : 'Straight', { color: C.ink, bg: zebra, border: true });
+      put(ws, `D${r}`, g.packSize, { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
+      put(ws, `E${r}`, g.packsCount || 0, { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
+      put(ws, `F${r}`, g.cansConsumed || 0, { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
+      put(ws, `G${r}`, Math.ceil(g.casesConsumed || 0), { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
+      put(ws, `H${r}`, g.carrierType || 'paktech', { color: C.ink, bg: zebra, border: true });
+      put(ws, `I${r}`, mixText, { color: C.muted, bg: zebra, border: true });
+      r += 1;
+    });
+
+    // Totals
+    put(ws, `A${r}`, '', { bold: true, color: C.white, bg: C.dark, border: true });
+    put(ws, `B${r}`, 'TOTAL', { bold: true, color: C.white, bg: C.dark, border: true });
+    put(ws, `C${r}`, '', { bold: true, color: C.white, bg: C.dark, border: true });
+    put(ws, `D${r}`, '', { bold: true, color: C.white, bg: C.dark, border: true });
+    put(ws, `E${r}`, plan.totalPacks, { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: INT, border: true });
+    put(ws, `F${r}`, plan.totalCansAllocated, { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: INT, border: true });
+    put(ws, `G${r}`, plan.totalCases, { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: INT, border: true });
+    put(ws, `H${r}`, '', { bold: true, color: C.white, bg: C.dark, border: true });
+    put(ws, `I${r}`, '', { bold: true, color: C.white, bg: C.dark, border: true });
+    r += 2;
+  }
+
+  // Carrier totals
+  band(ws, r, 9, 'CARRIER TOTALS', C.teal); r += 1;
+  tableHeader(ws, r, ['', 'Metric', 'Packs', '', '', '', '', '', '']); r += 1;
+  const carrierRows = [
+    ['PakTech packs', plan.totalPaktechPacks || 0],
+    ['Carton packs', plan.totalCartonPacks || 0],
+    ['Variety packs', plan.totalVarietyPacks || 0],
+    ['Straight packs', plan.totalStraightPacks || 0],
+  ];
+  carrierRows.forEach(([label, val]) => {
+    const zebra = (r % 2 === 0) ? C.zebra : null;
+    put(ws, `A${r}`, '', { bg: zebra, border: true });
+    put(ws, `B${r}`, label, { color: C.ink, bg: zebra, border: true });
+    put(ws, `C${r}`, val, { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
+    ['D', 'E', 'F', 'G', 'H', 'I'].forEach((c) => put(ws, `${c}${r}`, '', { bg: zebra, border: true }));
+    r += 1;
+  });
+
+  ws.views = [{ state: 'frozen', ySplit: 4 }];
+}
+
 // Build the workbook. Returns the ExcelJS workbook instance.
 async function buildWorkbook({ run, rawPO }) {
   const ExcelJS = await loadExcelJS();
@@ -232,6 +336,11 @@ async function buildWorkbook({ run, rawPO }) {
 
   // Build line items first so the Summary can reference its cells.
   const runRefs = buildLineItemsSheet(wsLines, res, run);
+
+  // Packaging plan tab — always include so a run with no plan still has the
+  // sheet (it shows "not configured"). Helps QA the math against the plan.
+  const wsPlan = wb.addWorksheet('Packaging Plan', { properties: { tabColor: { argb: C.amber } } });
+  buildPackagingPlanSheet(wsPlan, res);
 
   // Build Raw PO if there are any formulas with cases.
   let poData = null;

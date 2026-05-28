@@ -1,16 +1,22 @@
 import { getProducts, lookupPrice, NEW_ART_PREP_FEE } from '../data/drayhorsePricing';
+import { computePlanDerived } from '../pages/runQuoting/packagingPlan';
 
 // Recomputes a saved run's counts / costs / breakdown from its stored state, so any
 // two saved runs can be compared (or exported) without the live calculator component.
 //
-// Mirrors the calculations in pages/CoPackingCalculator.jsx. Ingredient cost is read
-// from each flavor's stored per-can `ingredientCost` (captured when the run was saved)
-// rather than recomputed from the live formula/inventory data, so a comparison reflects
-// the numbers as quoted.
+// Mirrors the calculations in pages/CoPackingCalculator.jsx, including the
+// packaging-plan-driven pack/case/pallet/carton math when a plan is present.
+// Ingredient cost is read from each flavor's stored per-can `ingredientCost`
+// (captured when the run was saved) rather than recomputed from the live
+// formula/inventory data, so a comparison reflects the numbers as quoted.
 
 function getFeeAutoQty(feeType, counts) {
   if (feeType === 'per-unit') return counts.totalUnits;
   if (feeType === 'per-pack') return counts.totalPacks;
+  if (feeType === 'per-paktech-pack') return counts.totalPaktechPacks || 0;
+  if (feeType === 'per-carton-pack') return counts.totalCartonPacks || 0;
+  if (feeType === 'per-variety-pack') return counts.totalVarietyPacks || 0;
+  if (feeType === 'per-variety-case') return counts.totalVarietyCases || 0;
   if (feeType === 'per-case') return counts.totalCases;
   if (feeType === 'per-pallet') return counts.totalPallets;
   if (feeType === 'per-proof-gallon') return counts.proofGallons;
@@ -63,16 +69,88 @@ function computeCounts(config, flavors) {
   return { flavorRows, flavorCount, totalGallons, totalUnits, totalPacks, totalCases, totalPallets, totalTrucks, totalShifts, proofGallons };
 }
 
-function computeCartonCost(carton, carrierType, packSize, totalUnits) {
-  if (carrierType !== 'carton') return { totalCost: 0 };
+function deriveEffectiveCounts(counts, planDerived, carrierType, palletsPerTruck) {
+  if (!planDerived.active) {
+    return {
+      ...counts,
+      totalPaktechPacks: carrierType === 'paktech' ? counts.totalPacks : 0,
+      totalCartonPacks: carrierType === 'carton' ? counts.totalPacks : 0,
+      totalVarietyPacks: 0,
+      totalVarietyCases: 0,
+      totalStraightPacks: counts.totalPacks,
+    };
+  }
+  const totalTrucks = palletsPerTruck > 0 ? Math.ceil(planDerived.totalPallets / palletsPerTruck) : 0;
+  return {
+    ...counts,
+    totalPacks: planDerived.totalPacks,
+    totalCases: planDerived.totalCases,
+    totalPallets: planDerived.totalPallets,
+    totalTrucks,
+    totalPaktechPacks: planDerived.totalPaktechPacks,
+    totalCartonPacks: planDerived.totalCartonPacks,
+    totalVarietyPacks: planDerived.totalVarietyPacks,
+    totalVarietyCases: planDerived.totalVarietyCases || 0,
+    totalStraightPacks: planDerived.totalStraightPacks,
+  };
+}
+
+function computeCartonCost(carton, carrierType, packSize, totalUnits, planDerived) {
   const cartonProduct = carton?.cartonProduct || 'sleek-4pk';
+  const storedSkuCount = carton?.skuCount || 1;
+  const skuCountManual = !!carton?.skuCountManual;
+  // Effective SKU count parallels CoPackingCalculator.jsx: in plan mode
+  // default to # of carton groups, unless the user manually overrode it.
+  let effectiveSkuCount = storedSkuCount;
+  if (!skuCountManual && planDerived?.active) {
+    const cartonGroupCount = (planDerived.cartonGroups || []).length;
+    if (cartonGroupCount > 0) effectiveSkuCount = cartonGroupCount;
+  }
+  const artFee = carton?.includeNewArt ? NEW_ART_PREP_FEE : 0;
+  const empty = { totalCost: 0, groupBreakdown: [] };
+
+  if (planDerived.active) {
+    const cartonGroups = planDerived.cartonGroups;
+    if (cartonGroups.length === 0) return empty;
+    const groupBreakdown = [];
+    let totalCost = 0;
+    cartonGroups.forEach((g) => {
+      const cartonQty = g.packsCount || 0;
+      if (cartonQty <= 0) return;
+      const tier = lookupPrice(cartonProduct, cartonQty, effectiveSkuCount);
+      const autoRate = tier?.pricePerCarton || 0;
+      const pricePerCarton = g.cartonRateManual
+        ? (Number(g.cartonRateOverride) || 0)
+        : autoRate;
+      const groupTotal = pricePerCarton * cartonQty;
+      totalCost += groupTotal;
+      groupBreakdown.push({
+        groupId: g.id,
+        groupLabel: g.label || `${g.type === 'variety' ? 'Variety' : 'Straight'} ${g.packSize}-pk`,
+        cartonQty,
+        pricePerCarton,
+        autoRate,
+        rateManual: !!g.cartonRateManual,
+        totalCost: groupTotal,
+      });
+    });
+    if (groupBreakdown.length === 0) return empty;
+    return { totalCost: totalCost + artFee, groupBreakdown, artFee };
+  }
+
+  if (carrierType !== 'carton') return empty;
   const product = getProducts().find((p) => p.id === cartonProduct);
   const ps = product?.packSize || packSize;
   const cartonQty = ps > 0 ? Math.ceil(totalUnits / ps) : 0;
-  const result = lookupPrice(cartonProduct, cartonQty, carton?.skuCount || 1);
-  if (!result) return { totalCost: 0 };
-  const artFee = carton?.includeNewArt ? NEW_ART_PREP_FEE : 0;
-  return { totalCost: result.totalCost + artFee };
+  const result = lookupPrice(cartonProduct, cartonQty, effectiveSkuCount);
+  if (!result) return empty;
+  return {
+    totalCost: result.totalCost + artFee,
+    pricePerCarton: result.pricePerCarton,
+    cartonQty,
+    groupBreakdown: [],
+    artFee,
+  };
 }
 
 export function computeRunResults(run) {
@@ -80,22 +158,77 @@ export function computeRunResults(run) {
   const carrierType = config.carrierType || 'paktech';
   const packSize = config.packSize || 4;
   const unitsPerCase = config.unitsPerCase || 24;
+  const casesPerPallet = config.casesPerPallet || 80;
+  const palletsPerTruck = config.palletsPerTruck || 20;
 
   const counts = computeCounts(config, run.flavors);
-  const cartonCost = computeCartonCost(run.carton, carrierType, packSize, counts.totalUnits);
+  const planDerived = computePlanDerived(
+    run.packagingPlan || { groups: [] },
+    counts.flavorRows,
+    { unitsPerCase, casesPerPallet },
+  );
+  const effectiveCounts = deriveEffectiveCounts(counts, planDerived, carrierType, palletsPerTruck);
+  const cartonCost = computeCartonCost(run.carton, carrierType, packSize, counts.totalUnits, planDerived);
 
   const sumLines = (items) => (items || []).map((item) => {
-    if (item.category === 'carriers' && carrierType === 'carton') {
+    // Legacy suppression: only when no plan exists and the run is single-carrier carton.
+    if (!planDerived.active && item.category === 'carriers' && carrierType === 'carton') {
       return { ...item, qty: 0, lineCost: 0, inactive: true };
     }
-    const qty = resolveQty(item, counts);
+    const qty = resolveQty(item, effectiveCounts);
     return { ...item, qty, lineCost: (item.rate || 0) * qty, inactive: false };
   });
 
-  const pkgRows = sumLines(run.packagingItems);
+  const pkgRowsFromItems = sumLines(run.packagingItems);
   const tollRows = sumLines(run.tollingItems);
   const bomRows = sumLines(run.bomItems);
   const taxRows = sumLines(run.taxItems);
+
+  // Pack-group rows — parity with the live calculator. Honors per-group
+  // overrides (label, category, feeType, qtyOverride/qtyManual, unitPrice).
+  const packGroupRows = [];
+  if (planDerived.active) {
+    const flavorByIdLocal = Object.fromEntries(counts.flavorRows.map((f) => [f.id, f]));
+    planDerived.groups.forEach((g) => {
+      const description = g.label || (g.type === 'straight'
+        ? `${flavorByIdLocal[g.skuId]?.name || 'Straight'} ${g.packSize}-pk`
+        : `Variety ${g.packSize}-pk (${(g.mix || []).filter((m) => (m.cans || 0) > 0).map((m) => flavorByIdLocal[m.skuId]?.name || m.skuId).join(' / ') || '—'})`);
+      const rate = Number(g.unitPrice) || 0;
+      const category = g.category || (g.type === 'variety' ? 'carriers' : 'cases');
+      const feeType = g.feeType || 'per-pack';
+      const groupCounts = {
+        ...effectiveCounts,
+        totalPacks: g.packsCount || 0,
+        totalCases: g.casesConsumed || 0,
+        totalUnits: g.cansConsumed || 0,
+      };
+      const autoQty = getFeeAutoQty(feeType, groupCounts);
+      const qty = g.qtyManual ? (g.qtyOverride ?? autoQty) : autoQty;
+      packGroupRows.push({
+        id: `pack-${g.id}`, name: g.label || description,
+        category, feeType,
+        rate, qty,
+        lineCost: rate * qty,
+        inactive: false, synthetic: true, packGroup: true, packGroupId: g.id,
+      });
+    });
+  }
+
+  // Plan mode: pack-group rows already carry the per-pack price (which
+  // includes cartons when applicable). Legacy mode (no plan): keep the
+  // Drayhorse synthetic row so cartons still appear in the BOM.
+  const cartonRows = [];
+  if (!planDerived.active && cartonCost.totalCost > 0) {
+    cartonRows.push({
+      id: 'carton-legacy', name: 'Cartons (Drayhorse)',
+      category: 'cases', feeType: 'per-carton-pack',
+      rate: cartonCost.pricePerCarton || 0,
+      qty: cartonCost.cartonQty || 0,
+      lineCost: cartonCost.totalCost,
+      inactive: false, synthetic: true,
+    });
+  }
+  const pkgRows = [...packGroupRows, ...cartonRows, ...pkgRowsFromItems];
 
   const rawPackagingCost = pkgRows.reduce((s, r) => s + r.lineCost, 0);
   const tollingCost = tollRows.reduce((s, r) => s + r.lineCost, 0);
@@ -111,7 +244,8 @@ export function computeRunResults(run) {
     totalIngredientCost += perCan * fr.cans;
   });
 
-  const packagingCost = rawPackagingCost + cartonCost.totalCost;
+  // Cartons are inside rawPackagingCost; don't add cartonCost again.
+  const packagingCost = rawPackagingCost;
   const totalCost = packagingCost + totalIngredientCost + tollingCost + bomCost + totalBatchingFees + taxCost;
   const costPerUnit = counts.totalUnits > 0 ? totalCost / counts.totalUnits : 0;
   const costPerCase = costPerUnit * unitsPerCase;
@@ -125,10 +259,9 @@ export function computeRunResults(run) {
 
   const total = totalCost;
   const breakdownRows = [{ label: 'Packaging Materials', cost: rawPackagingCost }];
-  if (carrierType === 'carton') breakdownRows.push({ label: 'Cartons (Drayhorse)', cost: cartonCost.totalCost });
   if (totalIngredientCost > 0) breakdownRows.push({ label: 'Ingredients (optimized PO)', cost: totalIngredientCost });
   breakdownRows.push({ label: 'Tolling', cost: tollingCost });
-  breakdownRows.push({ label: 'Bill of Materials', cost: bomCost });
+  breakdownRows.push({ label: 'Freight & Other', cost: bomCost });
   if (totalBatchingFees > 0) breakdownRows.push({ label: 'Batching Fees', cost: totalBatchingFees });
   breakdownRows.push({ label: 'Taxes & Regulatory', cost: taxCost });
   const breakdown = breakdownRows.map((r) => ({
@@ -137,5 +270,5 @@ export function computeRunResults(run) {
     pct: total > 0 ? (r.cost / total) * 100 : 0,
   }));
 
-  return { config, counts, costs, breakdown };
+  return { config, counts: effectiveCounts, baseCounts: counts, planDerived, cartonCostDetail: cartonCost, costs, breakdown };
 }

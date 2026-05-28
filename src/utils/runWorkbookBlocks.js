@@ -14,12 +14,13 @@ export const SHEET_LINE_ITEMS = 'Line Item Details';
 // Canonical category order used by every "cost breakdown" view in the app.
 // Each entry is [display label, key], with the key matching the field on the
 // `cat` ref object returned by writeRunBlock.
+// Cartons used to be a separate category; they're now line items inside
+// Packaging Materials so the breakdown stays clean and audit-friendly.
 export const CATEGORIES = [
   ['Packaging Materials', 'packaging'],
-  ['Cartons (Drayhorse)', 'carton'],
   ['Ingredients (optimized PO)', 'ingredients'],
   ['Tolling', 'tolling'],
-  ['Bill of Materials', 'bom'],
+  ['Freight & Other', 'bom'],
   ['Batching Fees', 'batching'],
   ['Taxes & Regulatory', 'taxes'],
 ];
@@ -34,7 +35,10 @@ export const LINE_ITEMS_COLUMNS = [
 ];
 
 function feeRows(rows) {
-  return (rows || []).filter((row) => !row.inactive);
+  // Synthetic rows (pack groups, cartons) appear in their own Pack
+  // Configuration section above; filtering them out here prevents the
+  // line-items table from double-listing them.
+  return (rows || []).filter((row) => !row.inactive && !row.synthetic);
 }
 
 // Writes a single run's block starting at `startRow`. Returns
@@ -113,12 +117,58 @@ export function writeRunBlock({ ws, startRow, label, run, res, color, sheetName 
   const ingredientsCell = `G${r}`;
   r += 2;
 
-  // Fee sections — Line Cost = Rate * Qty, with rate & qty kept as raw inputs.
+  // Pack configuration — one row per pack group with the per-pack price
+  // (manual override) and resulting line cost. The TOTAL cell of this
+  // section is referenced from the Packaging Materials subtotal formula so
+  // editing pack rates in this sheet rolls up cleanly into the run total.
+  let packConfigTotalCell = null;
+  if (res.planDerived?.active && res.planDerived.groups.length > 0) {
+    sectionHeader('Pack Configuration');
+    tableHeader(ws, r, ['Description', 'Pack Size', 'Packs', 'Cases', '$/Pack', 'Line Cost', 'Carrier']);
+    r += 1;
+    const flavorById = Object.fromEntries((res.counts.flavorRows || []).map((f) => [f.id, f]));
+    const lineCellsForSum = [];
+    let packTotalCost = 0;
+    res.planDerived.groups.forEach((g) => {
+      const zebra = (r % 2 === 0) ? C.zebra : null;
+      const description = g.label || (g.type === 'straight'
+        ? `${flavorById[g.skuId]?.name || 'Straight'} ${g.packSize}-pk`
+        : `Variety ${g.packSize}-pk (${(g.mix || []).filter((m) => (m.cans || 0) > 0).map((m) => flavorById[m.skuId]?.name || m.skuId).join(' / ') || '—'})`);
+      const rate = Number(g.unitPrice) || 0;
+      const qty = g.packsCount || 0;
+      const lineCost = rate * qty;
+      packTotalCost += lineCost;
+      put(ws, `A${r}`, description, { color: C.ink, bg: zebra, border: true });
+      put(ws, `B${r}`, g.packSize, { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
+      put(ws, `C${r}`, qty, { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
+      put(ws, `D${r}`, Math.ceil(g.casesConsumed || 0), { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
+      put(ws, `E${r}`, rate, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY4, border: true });
+      putF(ws, `F${r}`, `C${r}*E${r}`, lineCost, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
+      put(ws, `G${r}`, g.carrierType || 'paktech', { color: C.muted, bg: zebra, border: true });
+      lineCellsForSum.push(`F${r}`);
+      r += 1;
+    });
+    // Totals row — formula-driven so edits to the per-group cells roll up.
+    put(ws, `A${r}`, 'TOTAL', { bold: true, color: C.ink, border: true });
+    put(ws, `B${r}`, '', { border: true });
+    put(ws, `C${r}`, res.planDerived.totalPacks, { bold: true, color: C.ink, align: 'right', numFmt: INT, border: true });
+    put(ws, `D${r}`, res.planDerived.totalCases, { bold: true, color: C.ink, align: 'right', numFmt: INT, border: true });
+    put(ws, `E${r}`, '', { border: true });
+    putF(ws, `F${r}`, lineCellsForSum.length ? lineCellsForSum.join('+') : '0', packTotalCost,
+      { bold: true, color: C.ink, align: 'right', numFmt: MONEY, border: true });
+    put(ws, `G${r}`, '', { border: true });
+    packConfigTotalCell = `F${r}`;
+    r += 2;
+  }
+
+  // Fee sections — Line Cost = Rate * Qty, with rate & qty kept as raw
+  // inputs. Synthetic rows (pack groups, cartons) are filtered out here and
+  // accounted for via packConfigTotalCell to avoid double-counting.
   const sectionCells = {};
   const feeSections = [
     ['Packaging Materials', 'packaging', res.costs.pkgRows, res.costs.rawPackagingCost],
     ['Tolling', 'tolling', res.costs.tollRows, res.costs.tollingCost],
-    ['Bill of Materials', 'bom', res.costs.bomRows, res.costs.bomCost],
+    ['Freight & Other', 'bom', res.costs.bomRows, res.costs.bomCost],
     ['Taxes & Regulatory', 'taxes', res.costs.taxRows, res.costs.taxCost],
   ];
   feeSections.forEach(([title, key, rows, subtotalVal]) => {
@@ -146,27 +196,26 @@ export function writeRunBlock({ ws, startRow, label, run, res, color, sheetName 
     const dataEnd = r - 1;
     put(ws, `A${r}`, 'Subtotal', { bold: true, color: C.ink, border: true });
     ['B', 'C', 'D', 'E', 'F'].forEach((c) => put(ws, `${c}${r}`, '', { border: true }));
-    putF(
-      ws, `G${r}`,
-      data.length ? `SUM(G${dataStart}:G${dataEnd})` : '0',
-      subtotalVal,
-      { bold: true, color: C.ink, align: 'right', numFmt: MONEY, border: true },
-    );
+    // For Packaging Materials, fold the Pack Configuration TOTAL into the
+    // subtotal so synthetic pack-group / carton costs aren't lost.
+    let subtotalFormula = data.length ? `SUM(G${dataStart}:G${dataEnd})` : '0';
+    if (key === 'packaging' && packConfigTotalCell) {
+      subtotalFormula = `${subtotalFormula}+${packConfigTotalCell}`;
+    }
+    putF(ws, `G${r}`, subtotalFormula, subtotalVal,
+      { bold: true, color: C.ink, align: 'right', numFmt: MONEY, border: true });
     sectionCells[key] = `G${r}`;
     r += 2;
   });
 
-  // Cartons — a priced lookup, not a rate*qty line.
-  sectionHeader('Cartons (Drayhorse)');
-  put(ws, `A${r}`, 'Carton cost', { color: C.ink, border: true });
-  ['B', 'C', 'D', 'E', 'F'].forEach((c) => put(ws, `${c}${r}`, '', { border: true }));
-  put(ws, `G${r}`, res.costs.cartonCost || 0, { color: C.ink, align: 'right', numFmt: MONEY, border: true });
-  sectionCells.carton = `G${r}`;
-  r += 2;
-
+  // Cartons live inside the Packaging Materials subtotal now. Don't add a
+  // separate carton entry to `cat` or the RUN TOTAL formula will double-
+  // count packaging (cat.packaging + cat.carton both pointing at the same
+  // cell). For backward compat with the Summary sheet's per-key references
+  // we expose `carton` via a separate lookup that's NOT iterated for the
+  // total.
   const cat = {
     packaging: sectionCells.packaging,
-    carton: sectionCells.carton,
     ingredients: ingredientsCell,
     tolling: sectionCells.tolling,
     bom: sectionCells.bom,

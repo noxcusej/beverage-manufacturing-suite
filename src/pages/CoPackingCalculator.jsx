@@ -6,6 +6,8 @@ import { exportClientQuote } from '../utils/exportClientQuote';
 import { computeRunResults } from '../utils/runResults';
 import { exportRunComparison } from '../utils/exportRunComparison';
 import { exportRunComparisonSheet } from '../utils/exportRunComparisonSheet';
+import PackagingPlanModal from './runQuoting/PackagingPlanModal';
+import { createEmptyPlan, computePlanDerived } from './runQuoting/packagingPlan';
 
 // ── Constants ──
 
@@ -30,6 +32,10 @@ const PACKAGING_CATEGORIES = [
 const FEE_TYPES = [
   { value: 'per-unit', label: 'Per Unit' },
   { value: 'per-pack', label: 'Per Pack' },
+  { value: 'per-paktech-pack', label: 'Per PakTech Pack' },
+  { value: 'per-carton-pack', label: 'Per Carton Pack' },
+  { value: 'per-variety-pack', label: 'Per Variety Pack' },
+  { value: 'per-variety-case', label: 'Per Variety Case' },
   { value: 'per-case', label: 'Per Case' },
   { value: 'per-pallet', label: 'Per Pallet' },
   { value: 'per-batch', label: 'Per Batch' },
@@ -50,6 +56,10 @@ const categoryColors = {
 const feeTypeColors = {
   'per-unit': { bg: '#e0f2fe', color: '#0369a1' },
   'per-pack': { bg: '#fce7f3', color: '#be185d' },
+  'per-paktech-pack': { bg: '#fce7f3', color: '#be185d' },
+  'per-carton-pack': { bg: '#fee2e2', color: '#b91c1c' },
+  'per-variety-pack': { bg: '#fef3c7', color: '#92400e' },
+  'per-variety-case': { bg: '#fde68a', color: '#78350f' },
   'per-case': { bg: '#dcfce7', color: '#15803d' },
   'per-pallet': { bg: '#fef9c3', color: '#a16207' },
   'per-batch': { bg: '#ede9fe', color: '#6d28d9' },
@@ -137,7 +147,7 @@ function makeDefaultPackaging() {
     { id: 'pkg-can-print', name: 'Can Printing', category: 'cans', printType: 'sleeve', feeType: 'per-unit', rate: 0.12, qty: 0, qtyManual: false },
     { id: 'pkg-can-ends', name: 'Can Ends (Silver)', category: 'ends', feeType: 'per-unit', rate: 0.035, qty: 0, qtyManual: false },
     { id: 'pkg-trays', name: 'Trays', category: 'cases', feeType: 'per-case', rate: 1.10, qty: 0, qtyManual: false },
-    { id: 'pkg-carriers', name: 'PakTech Carriers', category: 'carriers', feeType: 'per-pack', rate: 0.12, qty: 0, qtyManual: false },
+    { id: 'pkg-carriers', name: 'PakTech Carriers', category: 'carriers', feeType: 'per-paktech-pack', rate: 0.12, qty: 0, qtyManual: false },
     { id: 'pkg-wrap', name: 'Stretch Wrap', category: 'wrap', feeType: 'per-pallet', rate: 4.00, qty: 0, qtyManual: false },
   ];
 }
@@ -146,18 +156,25 @@ function makeDefaultTolling() {
   return [
     { id: 'toll-price-per-can', name: 'Tolling Price / Can', feeType: 'per-unit', rate: 0.08, qty: 0, qtyManual: false },
     { id: 'toll-case-pack', name: 'Case & Carton Packing', feeType: 'per-case', rate: 0.75, qty: 0, qtyManual: false },
-    { id: 'toll-variety', name: 'Variety Pack Assembly', feeType: 'per-case', rate: 0.35, qty: 0, qtyManual: false },
+    { id: 'toll-variety', name: 'Variety Pack Assembly', feeType: 'per-variety-case', rate: 0.50, qty: 0, qtyManual: false },
   ];
 }
 
 // Legacy-id remap for older saved runs; previously this also re-added missing
 // default tolling rows, which made deletes impossible to persist across reloads.
 function ensureStandardTolling(items) {
-  return (items || []).map((item) => (
-    item.id === 'toll-production'
-      ? { ...item, id: 'toll-price-per-can', name: 'Tolling Price / Can' }
-      : item
-  ));
+  return (items || []).map((item) => {
+    if (item.id === 'toll-production') {
+      return { ...item, id: 'toll-price-per-can', name: 'Tolling Price / Can' };
+    }
+    // Variety Pack Assembly used to default to per-variety-pack; now per-
+    // variety-case. Migrate older rows so loaded runs pick up the new
+    // semantics. Rate is preserved — user can adjust if needed.
+    if (item.id === 'toll-variety' && item.feeType === 'per-variety-pack') {
+      return { ...item, feeType: 'per-variety-case' };
+    }
+    return item;
+  });
 }
 
 function makeDefaultBOM() {
@@ -267,6 +284,10 @@ function stripLegacyFlavorFields(flavor) {
 function getFeeAutoQty(feeType, counts) {
   if (feeType === 'per-unit') return counts.totalUnits;
   if (feeType === 'per-pack') return counts.totalPacks;
+  if (feeType === 'per-paktech-pack') return counts.totalPaktechPacks || 0;
+  if (feeType === 'per-carton-pack') return counts.totalCartonPacks || 0;
+  if (feeType === 'per-variety-pack') return counts.totalVarietyPacks || 0;
+  if (feeType === 'per-variety-case') return counts.totalVarietyCases || 0;
   if (feeType === 'per-case') return counts.totalCases;
   if (feeType === 'per-pallet') return counts.totalPallets;
   if (feeType === 'per-proof-gallon') return counts.proofGallons;
@@ -313,6 +334,7 @@ export default function CoPackingCalculator() {
   // Drayhorse carton pricing
   const [cartonProduct, setCartonProduct] = useState('sleek-4pk');
   const [skuCount, setSkuCount] = useState(1);
+  const [skuCountManual, setSkuCountManual] = useState(false);
   const [includeNewArt, setIncludeNewArt] = useState(false);
 
   // Line items
@@ -320,8 +342,48 @@ export default function CoPackingCalculator() {
   const [tollingItems, setTollingItems] = useState(() => ensureStandardTolling(makeDefaultTolling()));
   const [tollingEngine, setTollingEngine] = useState(normalizeTollingEngine);
   const [tollingCalculatorOpen, setTollingCalculatorOpen] = useState(false);
+
+  // Self-heal: if a saved run had Variety Pack Assembly stored as the old
+  // per-variety-pack fee type, migrate it to per-variety-case on mount.
+  // This catches the case where a run was already loaded in-memory before
+  // the migration code shipped.
+  useEffect(() => {
+    setTollingItems((prev) => {
+      const needsFix = prev.some((item) => item.id === 'toll-variety' && item.feeType === 'per-variety-pack');
+      return needsFix ? ensureStandardTolling(prev) : prev;
+    });
+  }, []);
   const [bomItems, setBomItems] = useState(makeDefaultBOM);
   const [taxItems, setTaxItems] = useState(makeDefaultTaxes);
+
+  // Packaging plan — how produced cans are split into straight/variety pack groups.
+  // Empty plan == legacy single-pack-size math (backward compat).
+  const [packagingPlan, setPackagingPlan] = useState(createEmptyPlan);
+  const [packagingPlanOpen, setPackagingPlanOpen] = useState(false);
+
+  function updatePackGroupPrice(groupId, rate) {
+    const safeRate = Math.max(0, Number(rate) || 0);
+    setPackagingPlan((prev) => ({
+      ...prev,
+      groups: (prev.groups || []).map((g) => (g.id === groupId ? { ...g, unitPrice: safeRate } : g)),
+    }));
+  }
+
+  // Generic per-pack-group field update for label, category, feeType, qty
+  // overrides, etc. Used by the editable rows inside Packaging Materials.
+  function updatePackGroupField(groupId, field, value) {
+    setPackagingPlan((prev) => ({
+      ...prev,
+      groups: (prev.groups || []).map((g) => (g.id === groupId ? { ...g, [field]: value } : g)),
+    }));
+  }
+
+  function removePackGroup(groupId) {
+    setPackagingPlan((prev) => ({
+      ...prev,
+      groups: (prev.groups || []).filter((g) => g.id !== groupId),
+    }));
+  }
 
   // Run management
   const [savedRuns, setSavedRuns] = useState([]);
@@ -382,6 +444,55 @@ export default function CoPackingCalculator() {
     const flavorCount = flavors.length;
     return { flavorRows, flavorCount, totalGallons, totalUnits, totalPacks, totalCases, totalPallets, totalTrucks, totalShifts, proofGallons };
   }, [flavors, fillVolume, fillVolumeUnit, packSize, unitsPerCase, casesPerPallet, palletsPerTruck, cansPerMinute, abv]);
+
+  // Effective Drayhorse SKU count: in plan mode, defaults to the count of
+  // distinct carton groups (each pack group = one carton artwork SKU)
+  // unless the user manually overrides via `skuCountManual`.
+  const effectiveSkuCount = useMemo(() => {
+    if (skuCountManual) return skuCount;
+    if (packagingPlan?.allocationMode || (packagingPlan?.groups || []).length > 0) {
+      const cartonGroups = (packagingPlan.groups || []).filter((g) => g.carrierType === 'carton');
+      if (cartonGroups.length > 0) return cartonGroups.length;
+    }
+    return skuCount;
+  }, [skuCountManual, skuCount, packagingPlan]);
+
+  // Derive everything packaging-related from the plan when one exists; fall
+  // back to the legacy single-pack-size totals so old saved runs are unchanged.
+  // effectiveCounts is what every downstream auto-quantity / carton cost / fee
+  // calculation reads — `counts` stays the unaltered production-side numbers.
+  const planDerived = useMemo(
+    () => computePlanDerived(packagingPlan, counts.flavorRows, { unitsPerCase, casesPerPallet }),
+    [packagingPlan, counts.flavorRows, unitsPerCase, casesPerPallet],
+  );
+
+  const effectiveCounts = useMemo(() => {
+    if (!planDerived.active) {
+      // Legacy: pack-specific counts derive from the single packSize.
+      return {
+        ...counts,
+        totalPaktechPacks: carrierType === 'paktech' ? counts.totalPacks : 0,
+        totalCartonPacks: carrierType === 'carton' ? counts.totalPacks : 0,
+        totalVarietyPacks: 0,
+        totalVarietyCases: 0,
+        totalStraightPacks: counts.totalPacks,
+      };
+    }
+    // Plan-driven: pack/case/pallet totals come from the plan.
+    const totalTrucks = palletsPerTruck > 0 ? Math.ceil(planDerived.totalPallets / palletsPerTruck) : 0;
+    return {
+      ...counts,
+      totalPacks: planDerived.totalPacks,
+      totalCases: planDerived.totalCases,
+      totalPallets: planDerived.totalPallets,
+      totalTrucks,
+      totalPaktechPacks: planDerived.totalPaktechPacks,
+      totalCartonPacks: planDerived.totalCartonPacks,
+      totalVarietyPacks: planDerived.totalVarietyPacks,
+      totalVarietyCases: planDerived.totalVarietyCases || 0,
+      totalStraightPacks: planDerived.totalStraightPacks,
+    };
+  }, [counts, planDerived, carrierType, palletsPerTruck]);
 
   const clientOptions = useMemo(() => {
     const names = new Set();
@@ -457,50 +568,102 @@ export default function CoPackingCalculator() {
     };
   }, [counts, cansPerMinute, tollingEngine, globalSettings.tollingTankCapacityLiters]);
 
-  // Auto-populate packaging quantities
+  // Auto-populate packaging quantities — read effective (plan-aware) counts.
   useEffect(() => {
     setPackagingItems((prev) => prev.map((item) =>
-      item.qtyManual ? item : { ...item, qty: getFeeAutoQty(item.feeType, counts) }
+      item.qtyManual ? item : { ...item, qty: getFeeAutoQty(item.feeType, effectiveCounts) }
     ));
-  }, [counts]);
+  }, [effectiveCounts]);
 
   // Auto-populate tolling quantities
   useEffect(() => {
     setTollingItems((prev) => prev.map((item) =>
-      item.qtyManual ? item : { ...item, qty: getFeeAutoQty(item.feeType, counts) }
+      item.qtyManual ? item : { ...item, qty: getFeeAutoQty(item.feeType, effectiveCounts) }
     ));
-  }, [counts]);
+  }, [effectiveCounts]);
 
   // Auto-populate BOM quantities (with inbound freight estimate)
   useEffect(() => {
     setBomItems((prev) => prev.map((item) => {
       if (item.qtyManual) return item;
       const qty = item.id === 'bom-freight-in'
-        ? Math.max(1, Math.ceil(counts.totalPallets * 0.75))
-        : getFeeAutoQty(item.feeType, counts);
+        ? Math.max(1, Math.ceil(effectiveCounts.totalPallets * 0.75))
+        : getFeeAutoQty(item.feeType, effectiveCounts);
       return { ...item, qty };
     }));
-  }, [counts]);
+  }, [effectiveCounts]);
 
   // Auto-populate tax quantities
   useEffect(() => {
     setTaxItems((prev) => prev.map((item) =>
-      item.qtyManual ? item : { ...item, qty: getFeeAutoQty(item.feeType, counts) }
+      item.qtyManual ? item : { ...item, qty: getFeeAutoQty(item.feeType, effectiveCounts) }
     ));
-  }, [counts]);
+  }, [effectiveCounts]);
 
   // ── Drayhorse carton cost ──
+  // Plan-aware: when carton groups exist in the plan, price each group's
+  // packsCount as cartons (carton qty == pack count), look up tiered price for
+  // each, and sum. Falls back to the legacy single-carrier behavior otherwise.
 
   const cartonCost = useMemo(() => {
-    if (carrierType !== 'carton') return { totalCost: 0, pricePerM: 0, pricePerCarton: 0, cartonQty: 0 };
+    const empty = { totalCost: 0, pricePerM: 0, pricePerCarton: 0, cartonQty: 0, groupBreakdown: [] };
+    const artFee = includeNewArt ? NEW_ART_PREP_FEE : 0;
+
+    if (planDerived.active) {
+      const cartonGroups = planDerived.cartonGroups;
+      if (cartonGroups.length === 0) return empty;
+      const groupBreakdown = [];
+      let totalCost = 0;
+      let totalCartonQty = 0;
+      cartonGroups.forEach((g) => {
+        const cartonQty = g.packsCount || 0;
+        if (cartonQty <= 0) return;
+        // Each carton group is one artwork SKU; tier depends on the total
+        // number of carton SKUs being ordered. User can override the per-
+        // carton price per group via `cartonRateOverride` / `cartonRateManual`.
+        const tier = lookupPrice(cartonProduct, cartonQty, effectiveSkuCount);
+        const autoRate = tier?.pricePerCarton || 0;
+        const pricePerCarton = g.cartonRateManual
+          ? (Number(g.cartonRateOverride) || 0)
+          : autoRate;
+        const groupTotal = pricePerCarton * cartonQty;
+        totalCost += groupTotal;
+        totalCartonQty += cartonQty;
+        groupBreakdown.push({
+          groupId: g.id,
+          groupLabel: g.label || `${g.type === 'variety' ? 'Variety' : 'Straight'} ${g.packSize}-pk`,
+          cartonQty,
+          pricePerCarton,
+          autoRate,
+          rateManual: !!g.cartonRateManual,
+          totalCost: groupTotal,
+        });
+      });
+      if (groupBreakdown.length === 0) return empty;
+      const pricePerCarton = totalCartonQty > 0 ? totalCost / totalCartonQty : 0;
+      return {
+        totalCost: totalCost + artFee,
+        pricePerM: pricePerCarton * 1000,
+        pricePerCarton,
+        cartonQty: totalCartonQty,
+        groupBreakdown,
+        artFee,
+      };
+    }
+
+    // Legacy single-carrier behavior
+    if (carrierType !== 'carton') return empty;
     const product = getProducts().find((p) => p.id === cartonProduct);
     const ps = product?.packSize || packSize;
     const cartonQty = ps > 0 ? Math.ceil(counts.totalUnits / ps) : 0;
     const result = lookupPrice(cartonProduct, cartonQty, skuCount);
-    if (!result) return { totalCost: 0, pricePerM: 0, pricePerCarton: 0, cartonQty: 0 };
-    const artFee = includeNewArt ? NEW_ART_PREP_FEE : 0;
-    return { totalCost: result.totalCost + artFee, pricePerM: result.pricePerM, pricePerCarton: result.pricePerCarton, cartonQty, tierQty: result.tierQty, artFee };
-  }, [carrierType, cartonProduct, skuCount, counts.totalUnits, packSize, includeNewArt]);
+    if (!result) return empty;
+    return {
+      totalCost: result.totalCost + artFee, pricePerM: result.pricePerM,
+      pricePerCarton: result.pricePerCarton, cartonQty,
+      tierQty: result.tierQty, artFee, groupBreakdown: [],
+    };
+  }, [carrierType, cartonProduct, skuCount, effectiveSkuCount, counts.totalUnits, packSize, includeNewArt, planDerived]);
 
   const inventoryMap = useMemo(() => {
     const map = {};
@@ -655,15 +818,77 @@ export default function CoPackingCalculator() {
   const costs = useMemo(() => {
     const totalBatchingFees = flavors.reduce((s, f) => s + (f.batchingFee || 0), 0);
 
+    // Legacy zero-out rule: when no packaging plan exists and the run is
+    // single-carrier carton, suppress carrier line items. With a plan in play
+    // carrier line items use carrier-specific fee types (per-paktech-pack /
+    // per-carton-pack), so they self-zero when their carrier has no packs.
     let packagingCost = 0;
-    const pkgRows = packagingItems.map((item) => {
-      if (item.category === 'carriers' && carrierType === 'carton') {
+    const pkgRowsFromItems = packagingItems.map((item) => {
+      const legacySuppress = !planDerived.active && item.category === 'carriers' && carrierType === 'carton';
+      if (legacySuppress) {
         return { ...item, lineCost: 0, inactive: true };
       }
       const lineCost = (item.rate || 0) * (item.qty || 0);
       packagingCost += lineCost;
       return { ...item, lineCost, inactive: false };
     });
+
+    // Pack-group rows — one per pack group in the active plan. Each row is
+    // an editable Packaging Materials line item: name, category, feeType,
+    // rate, qty (with manual override). Pre-filled from the plan but fully
+    // editable; edits write back to packagingPlan.groups[*].
+    const packGroupRows = [];
+    if (planDerived.active) {
+      const flavorById = Object.fromEntries(counts.flavorRows.map((f) => [f.id, f]));
+      planDerived.groups.forEach((g) => {
+        const description = g.label || (g.type === 'straight'
+          ? `${flavorById[g.skuId]?.name || 'Straight'} ${g.packSize}-pk`
+          : `Variety ${g.packSize}-pk (${(g.mix || []).filter((m) => (m.cans || 0) > 0).map((m) => flavorById[m.skuId]?.name || m.skuId).join(' / ') || '—'})`);
+        const rate = Number(g.unitPrice) || 0;
+        const category = g.category || (g.type === 'variety' ? 'carriers' : 'cases');
+        const feeType = g.feeType || 'per-pack';
+        // Group-scoped count basis so per-pack/per-case/per-unit fee types
+        // resolve to THIS group's totals (not the run-wide totals).
+        const groupCounts = {
+          ...effectiveCounts,
+          totalPacks: g.packsCount || 0,
+          totalCases: g.casesConsumed || 0,
+          totalUnits: g.cansConsumed || 0,
+        };
+        const autoQty = getFeeAutoQty(feeType, groupCounts);
+        const qty = g.qtyManual ? (g.qtyOverride ?? autoQty) : autoQty;
+        packGroupRows.push({
+          id: `pack-${g.id}`, name: g.label || description,
+          category, feeType,
+          rate, qty,
+          lineCost: rate * qty,
+          inactive: false, synthetic: true, packGroup: true, packGroupId: g.id,
+          qtyManual: !!g.qtyManual,
+          // Description for screen-reader / fallback when label is empty
+          autoDescription: description,
+        });
+      });
+    }
+    packGroupRows.forEach((r) => { packagingCost += r.lineCost; });
+
+    // In plan mode the pack-group row's $/pack is the single source of
+    // truth for carton pricing — the Drayhorse Carton Pricing block on the
+    // page still shows what the tier lookup would charge as a reference,
+    // but it does NOT add a separate line item to the BOM.
+    //
+    // Legacy single-carrier-carton mode (no plan) still gets a synthetic
+    // row so cartons aren't lost in pre-plan runs.
+    const cartonRows = [];
+    if (!planDerived.active && cartonCost.totalCost > 0) {
+      cartonRows.push({
+        id: 'carton-legacy', name: 'Cartons (Drayhorse)',
+        category: 'cases', feeType: 'per-carton-pack',
+        rate: cartonCost.pricePerCarton || 0, qty: cartonCost.cartonQty || 0,
+        lineCost: cartonCost.totalCost, inactive: false, synthetic: true,
+      });
+    }
+    cartonRows.forEach((r) => { packagingCost += r.lineCost; });
+    const pkgRows = [...packGroupRows, ...cartonRows, ...pkgRowsFromItems];
 
     // Ingredient costs come from the consolidated raw-material PO allocation.
     // Stabilization is handled as a standard BOM line item.
@@ -696,21 +921,24 @@ export default function CoPackingCalculator() {
       return { ...item, lineCost };
     });
 
-    const totalPackaging = packagingCost + cartonCost.totalCost;
+    // Cartons are now included in packagingCost via the synthetic rows above
+    // — do NOT add cartonCost.totalCost again or we double-count.
+    const totalPackaging = packagingCost;
     const totalCost = totalPackaging + totalIngredientCost + tollingCost + bomCost + totalBatchingFees + taxCost;
     const costPerUnit = counts.totalUnits > 0 ? totalCost / counts.totalUnits : 0;
     const costPerCase = costPerUnit * unitsPerCase;
 
     return { pkgRows, tollRows, bomRows, taxRows, packagingCost: totalPackaging, rawPackagingCost: packagingCost, totalIngredientCost, tollingCost, tollingEngineCost: tollingEstimate.totalCost, tollingEnginePrice: tollingEstimate.totalPrice, bomCost, totalBatchingFees, taxCost, totalCost, costPerUnit, costPerCase };
-  }, [packagingItems, tollingItems, bomItems, taxItems, flavors, counts, unitsPerCase, cartonCost, carrierType, getEffectiveIngredientCostPerCan, tollingEstimate.totalCost, tollingEstimate.totalPrice]);
+  }, [packagingItems, tollingItems, bomItems, taxItems, flavors, counts, unitsPerCase, cartonCost, carrierType, planDerived, effectiveCounts, getEffectiveIngredientCostPerCan, tollingEstimate.totalCost, tollingEstimate.totalPrice]);
 
   const breakdown = useMemo(() => {
     const total = costs.totalCost;
+    // Packaging Materials now includes cartons as synthetic line items, so
+    // there's no separate "Cartons (Drayhorse)" line in the breakdown.
     const rows = [{ label: 'Packaging Materials', cost: costs.rawPackagingCost }];
-    if (carrierType === 'carton') rows.push({ label: 'Cartons (Drayhorse)', cost: cartonCost.totalCost });
     if (costs.totalIngredientCost > 0) rows.push({ label: 'Ingredients (optimized PO)', cost: costs.totalIngredientCost });
     rows.push({ label: 'Tolling', cost: costs.tollingCost });
-    rows.push({ label: 'Bill of Materials', cost: costs.bomCost });
+    rows.push({ label: 'Freight & Other', cost: costs.bomCost });
     if (costs.totalBatchingFees > 0) rows.push({ label: 'Batching Fees', cost: costs.totalBatchingFees });
     rows.push({ label: 'Taxes & Regulatory', cost: costs.taxCost });
     return rows.map((r) => ({
@@ -718,7 +946,7 @@ export default function CoPackingCalculator() {
       perUnit: counts.totalUnits > 0 ? r.cost / counts.totalUnits : 0,
       pct: total > 0 ? (r.cost / total) * 100 : 0,
     }));
-  }, [costs, counts, carrierType, cartonCost]);
+  }, [costs, counts]);
 
   // ── Handlers ──
 
@@ -727,7 +955,7 @@ export default function CoPackingCalculator() {
       setter((prev) => prev.map((item, i) => {
         if (i !== idx) return item;
         const u = { ...item, [field]: value };
-        if (field === 'feeType' && !item.qtyManual) u.qty = getFeeAutoQty(value, counts);
+        if (field === 'feeType' && !item.qtyManual) u.qty = getFeeAutoQty(value, effectiveCounts);
         if (field === 'qty') u.qtyManual = true;
         return u;
       }));
@@ -737,7 +965,7 @@ export default function CoPackingCalculator() {
   function resetItemQty(setter) {
     return (idx) => setter((prev) => prev.map((item, i) => {
       if (i !== idx) return item;
-      return { ...item, qty: getFeeAutoQty(item.feeType, counts), qtyManual: false };
+      return { ...item, qty: getFeeAutoQty(item.feeType, effectiveCounts), qtyManual: false };
     }));
   }
 
@@ -797,12 +1025,13 @@ export default function CoPackingCalculator() {
         ingredientCost: getEffectiveIngredientCostPerCan(flavor),
         calculatedIngredientCost: getCalculatedIngredientCostPerCan(flavor),
       })),
-      carton: { cartonProduct, skuCount, includeNewArt },
+      carton: { cartonProduct, skuCount, skuCountManual, includeNewArt },
       packagingItems,
       tollingEngine,
       tollingItems,
       bomItems,
       taxItems,
+      packagingPlan,
     };
   }
 
@@ -811,10 +1040,11 @@ export default function CoPackingCalculator() {
       client: runClient.trim(),
       runName: runName.trim() || 'Production Quote',
       config: { fillVolume, fillVolumeUnit, packSize, carrierType, abv, unitsPerCase, casesPerPallet, palletsPerTruck, cansPerMinute },
-      counts,
+      counts: effectiveCounts,
       costs,
       breakdown,
       flavors: counts.flavorRows,
+      planDerived,
     });
   }
 
@@ -862,6 +1092,7 @@ export default function CoPackingCalculator() {
     if (run.carton) {
       setCartonProduct(run.carton.cartonProduct || 'sleek-4pk');
       setSkuCount(run.carton.skuCount || 1);
+      setSkuCountManual(!!run.carton.skuCountManual);
       setIncludeNewArt(run.carton.includeNewArt || false);
     }
     if (run.packagingItems) setPackagingItems(run.packagingItems);
@@ -869,6 +1100,10 @@ export default function CoPackingCalculator() {
     if (run.tollingItems) setTollingItems(ensureStandardTolling(run.tollingItems));
     if (run.bomItems) setBomItems(run.bomItems);
     if (run.taxItems) setTaxItems(run.taxItems);
+    // Plan may legitimately be {groups: []} after a user clears it, so only
+    // skip when the field is entirely absent (legacy run never had it).
+    if (run.packagingPlan) setPackagingPlan(run.packagingPlan);
+    else setPackagingPlan(createEmptyPlan());
     setStateVersion((v) => v + 1);
   }
 
@@ -927,12 +1162,13 @@ export default function CoPackingCalculator() {
     setFillVolume(12); setFillVolumeUnit('oz'); setPackSize(4); setCarrierType('paktech');
     setAbv(0); setUnitsPerCase(24); setCasesPerPallet(80); setPalletsPerTruck(20); setCansPerMinute(400);
     setFlavors([makeDefaultFlavor()]);
-    setCartonProduct('sleek-4pk'); setSkuCount(1); setIncludeNewArt(false);
+    setCartonProduct('sleek-4pk'); setSkuCount(1); setSkuCountManual(false); setIncludeNewArt(false);
     setPackagingItems(makeDefaultPackaging());
     setTollingEngine(normalizeTollingEngine());
     setTollingItems(ensureStandardTolling(makeDefaultTolling()));
     setBomItems(makeDefaultBOM());
     setTaxItems(makeDefaultTaxes());
+    setPackagingPlan(createEmptyPlan());
     setStateVersion((v) => v + 1);
   }
 
@@ -1133,6 +1369,18 @@ export default function CoPackingCalculator() {
   return (
     <div className="container">
       {/* Run Comparison Modal */}
+      {packagingPlanOpen && (
+        <PackagingPlanModal
+          onClose={() => setPackagingPlanOpen(false)}
+          onApply={(nextPlan) => setPackagingPlan(nextPlan)}
+          initialPlan={packagingPlan}
+          flavorRows={counts.flavorRows}
+          unitsPerCase={unitsPerCase}
+          casesPerPallet={casesPerPallet}
+          defaultPackSize={packSize}
+        />
+      )}
+
       {compareOpen && (
         <div className="command-palette-overlay" onClick={() => setCompareOpen(false)}>
           <div
@@ -1316,7 +1564,7 @@ export default function CoPackingCalculator() {
         <div className="cost-card">
           <div className="cost-card-label">Total Production Cost</div>
           <div className="cost-card-value">${costs.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-          <div className="cost-card-subtitle">Based on {counts.totalPallets} pallets, {counts.totalShifts.toFixed(1)} shifts</div>
+          <div className="cost-card-subtitle">Based on {effectiveCounts.totalPallets} pallets, {counts.totalShifts.toFixed(1)} shifts</div>
         </div>
         <div className="cost-card hero">
           <div className="cost-card-label">Total Cost Per Case</div>
@@ -1372,6 +1620,44 @@ export default function CoPackingCalculator() {
               <input type="number" value={cansPerMinute} style={{ width: 50, textAlign: 'right' }} onChange={(e) => setCansPerMinute(parseInt(e.target.value) || 1)} />
               <span style={{ color: 'var(--text-muted)' }}>cpm</span>
             </label>
+          </div>
+
+          {/* Packaging plan bar — modal entry point + compact summary. */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: 12, padding: '8px 16px',
+            background: planDerived.active && !planDerived.valid ? '#fef2f2' : 'var(--surface)',
+            border: `1px solid ${planDerived.active && !planDerived.valid ? '#fecaca' : 'var(--border-light)'}`,
+            borderRadius: 'var(--radius)', marginBottom: 20, fontSize: 13,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ color: 'var(--text-muted)', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>Packaging plan</span>
+              {planDerived.active ? (
+                <>
+                  <span><strong>{planDerived.totalPacks.toLocaleString()}</strong> packs</span>
+                  <span style={{ color: 'var(--border)' }}>·</span>
+                  <span><strong>{planDerived.totalCases.toLocaleString()}</strong> cases</span>
+                  <span style={{ color: 'var(--border)' }}>·</span>
+                  <span><strong>{planDerived.totalVarietyPacks.toLocaleString()}</strong> variety</span>
+                  <span style={{ color: 'var(--border)' }}>·</span>
+                  <span style={{
+                    color: planDerived.totalCansRemaining < 0 ? '#b91c1c'
+                      : (planDerived.totalCansRemaining === 0 ? '#15803d' : 'var(--text-secondary)'),
+                    fontWeight: 600,
+                  }}>
+                    {planDerived.totalCansRemaining.toLocaleString()} cans unallocated
+                    {!planDerived.valid ? ' ⚠' : (planDerived.totalCansRemaining === 0 ? ' ✓' : '')}
+                  </span>
+                </>
+              ) : (
+                <span style={{ color: 'var(--text-muted)' }}>
+                  Not configured — using the {packSize}-pk single pack size for all {counts.totalUnits.toLocaleString()} cans.
+                </span>
+              )}
+            </div>
+            <button className="btn btn-small" onClick={() => setPackagingPlanOpen(true)}>
+              {planDerived.active ? 'Edit packaging…' : 'Configure packaging…'}
+            </button>
           </div>
 
           {/* Flavor Lineup */}
@@ -1620,8 +1906,9 @@ export default function CoPackingCalculator() {
         )}
       </div>
 
-      {/* Carton Pricing — only when carrier type is carton */}
-      {carrierType === 'carton' && (
+      {/* Carton Pricing — shown when the run uses cartons (legacy single
+          carrier OR any plan group with carton carrier). */}
+      {(carrierType === 'carton' || (planDerived.active && planDerived.cartonGroups.length > 0)) && (
         <div className="section" style={{ marginBottom: 20 }}>
           <div className="section-header">
             <div className="section-title">Carton Pricing (Drayhorse)</div>
@@ -1643,10 +1930,35 @@ export default function CoPackingCalculator() {
                 </select>
               </div>
               <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label"># of SKUs</label>
-                <select value={skuCount} onChange={(e) => setSkuCount(parseInt(e.target.value))}>
-                  {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n} SKU{n > 1 ? 's' : ''}</option>)}
-                </select>
+                <label className="form-label">
+                  # of SKUs
+                  {effectiveSkuCount !== skuCount && !skuCountManual && (
+                    <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: 11, marginLeft: 6 }}>
+                      (auto: {effectiveSkuCount})
+                    </span>
+                  )}
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <select
+                    value={effectiveSkuCount}
+                    onChange={(e) => {
+                      setSkuCountManual(true);
+                      setSkuCount(parseInt(e.target.value));
+                    }}
+                  >
+                    {[1, 2, 3, 4, 5, 6, 8, 10, 12].map((n) => <option key={n} value={n}>{n} SKU{n > 1 ? 's' : ''}</option>)}
+                  </select>
+                  {skuCountManual && (
+                    <button
+                      type="button" className="btn btn-small"
+                      onClick={() => setSkuCountManual(false)}
+                      style={{ fontSize: 10, padding: '2px 6px' }}
+                      title="Reset to auto (one per carton pack group)"
+                    >
+                      auto
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="form-group" style={{ margin: 0 }}>
                 <label className="form-label">&nbsp;</label>
@@ -1656,6 +1968,67 @@ export default function CoPackingCalculator() {
                 </label>
               </div>
             </div>
+            {/* Per-group Drayhorse breakdown — only when plan-driven. Each
+                row shows the group's tier lookup so the user can see why
+                the pricing landed where it did. */}
+            {planDerived.active && planDerived.groups.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+                  Per-group tier lookup ({effectiveSkuCount} SKU{effectiveSkuCount > 1 ? 's' : ''})
+                </div>
+                <table style={{ width: '100%', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ color: 'var(--text-muted)' }}>
+                      <th style={{ textAlign: 'left', padding: '4px 6px', fontWeight: 600 }}>Pack Group</th>
+                      <th style={{ textAlign: 'left', padding: '4px 6px', fontWeight: 600 }}>Carrier</th>
+                      <th style={{ textAlign: 'right', padding: '4px 6px', fontWeight: 600 }}>Cartons</th>
+                      <th style={{ textAlign: 'right', padding: '4px 6px', fontWeight: 600 }}>$/Carton</th>
+                      <th style={{ textAlign: 'right', padding: '4px 6px', fontWeight: 600 }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {planDerived.groups.map((g) => {
+                      const flavorById = Object.fromEntries(counts.flavorRows.map((f) => [f.id, f]));
+                      const label = g.label || (g.type === 'straight'
+                        ? `${flavorById[g.skuId]?.name || 'Straight'} ${g.packSize}-pk`
+                        : `Variety ${g.packSize}-pk`);
+                      const gb = (cartonCost.groupBreakdown || []).find((b) => b.groupId === g.id);
+                      const isCarton = g.carrierType === 'carton';
+                      return (
+                        <tr key={g.id} style={{ borderTop: '1px solid var(--border-light)', opacity: isCarton ? 1 : 0.55 }}>
+                          <td style={{ padding: '4px 6px' }}>{label}</td>
+                          <td style={{ padding: '4px 6px' }}>
+                            <select
+                              value={g.carrierType || 'paktech'}
+                              onChange={(e) => updatePackGroupField(g.id, 'carrierType', e.target.value)}
+                              style={{ fontSize: 11, padding: '1px 4px' }}
+                              title="Change a group's carrier to add or remove it from carton tier pricing"
+                            >
+                              <option value="paktech">PakTech</option>
+                              <option value="carton">Carton</option>
+                              <option value="shrink">Shrink-wrap</option>
+                              <option value="none">None</option>
+                            </select>
+                          </td>
+                          <td style={{ padding: '4px 6px', textAlign: 'right' }}>
+                            {isCarton ? (g.packsCount || 0).toLocaleString() : '—'}
+                          </td>
+                          <td style={{ padding: '4px 6px', textAlign: 'right' }}>
+                            {isCarton && gb ? `$${gb.pricePerCarton.toFixed(4)}` : '—'}
+                          </td>
+                          <td style={{ padding: '4px 6px', textAlign: 'right', fontWeight: 700 }}>
+                            {isCarton && gb ? `$${gb.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-muted)' }}>
+                  Only Carton-carrier groups are tier-priced. Switch a row's carrier above to include it.
+                </div>
+              </div>
+            )}
             {cartonCost.cartonQty > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginTop: 16 }}>
                 <div style={{ padding: 12, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6, textAlign: 'center' }}>
@@ -1689,6 +2062,7 @@ export default function CoPackingCalculator() {
         <div className="section-header">
           <div className="section-title">Packaging Materials</div>
         </div>
+
         <div style={{ overflowX: 'auto' }}>
           <table>
             <thead>
@@ -1704,7 +2078,13 @@ export default function CoPackingCalculator() {
               </tr>
             </thead>
             <tbody>
-              {costs.pkgRows.map((row, idx) => {
+              {/* Editable rows are real `packagingItems` only. Synthetic
+                  pack-group and carton rows are surfaced read-only in the
+                  Pack Groups block above, so editing here can't accidentally
+                  hit a synthetic row by index. */}
+              {costs.pkgRows.filter((r) => !r.synthetic).map((row) => {
+                const realIdx = packagingItems.findIndex((p) => p.id === row.id);
+                const idx = realIdx;
                 const catStyle = categoryColors[row.category] || categoryColors.other;
                 const ftColors = feeTypeColors[row.feeType] || feeTypeColors.fixed;
                 const isOver = dragState.list === 'pkg' && dragState.overIdx === idx && dragState.fromIdx !== idx;
@@ -1765,6 +2145,139 @@ export default function CoPackingCalculator() {
                   </tr>
                 );
               })}
+              {/* Pack-group rows — pre-filled from the plan, fully editable
+                  inline. Edits write back to packagingPlan.groups[*]. */}
+              {costs.pkgRows.filter((r) => r.synthetic && r.packGroup).map((row) => {
+                const catStyle = categoryColors[row.category] || categoryColors.other;
+                const ftColors = feeTypeColors[row.feeType] || feeTypeColors.fixed;
+                return (
+                  <tr key={row.id}>
+                    <td><span style={{ ...dragHandleStyle, opacity: 0.3, cursor: 'not-allowed' }} title="Pack groups are ordered by the plan">≡</span></td>
+                    <td>
+                      <input
+                        type="text"
+                        value={row.name}
+                        placeholder={row.autoDescription || 'Pack group'}
+                        style={{ width: '100%', minWidth: 120 }}
+                        onChange={(e) => updatePackGroupField(row.packGroupId, 'label', e.target.value)}
+                      />
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>From plan</div>
+                    </td>
+                    <td>
+                      <select
+                        value={row.category}
+                        style={chipStyle(catStyle)}
+                        onChange={(e) => updatePackGroupField(row.packGroupId, 'category', e.target.value)}
+                      >
+                        {PACKAGING_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                      </select>
+                    </td>
+                    <td>
+                      <select
+                        value={row.feeType}
+                        style={chipStyle(ftColors)}
+                        onChange={(e) => {
+                          updatePackGroupField(row.packGroupId, 'feeType', e.target.value);
+                          // Clear manual qty override on fee type change so
+                          // the new auto-resolved qty kicks in.
+                          updatePackGroupField(row.packGroupId, 'qtyManual', false);
+                        }}
+                      >
+                        {FEE_TYPES.map((ft) => <option key={ft.value} value={ft.value}>{ft.label}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
+                        <span style={{ color: '#6b7280', fontSize: 13 }}>$</span>
+                        <input
+                          key={`pack-rate-${row.id}-${stateVersion}`}
+                          type="text" inputMode="decimal" defaultValue={row.rate}
+                          style={{
+                            width: 80, textAlign: 'right',
+                            background: row.rate === 0 ? '#fef9c3' : undefined,
+                          }}
+                          onChange={(e) => updatePackGroupPrice(row.packGroupId, e.target.value === '' ? 0 : +e.target.value || 0)}
+                          onBlur={(e) => updatePackGroupPrice(row.packGroupId, e.target.value === '' ? 0 : +e.target.value || 0)}
+                          title={row.rate === 0 ? 'No per-pack price set — click to enter one' : 'Pack rate'}
+                        />
+                      </div>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
+                        <input
+                          type="number" value={row.qty} min="0"
+                          style={{ width: 80, textAlign: 'right' }}
+                          onChange={(e) => {
+                            const v = parseInt(e.target.value) || 0;
+                            updatePackGroupField(row.packGroupId, 'qtyOverride', v);
+                            updatePackGroupField(row.packGroupId, 'qtyManual', true);
+                          }}
+                        />
+                        {row.qtyManual && (
+                          <button className="btn btn-small"
+                            onClick={() => updatePackGroupField(row.packGroupId, 'qtyManual', false)}
+                            title="Reset to auto (derived from plan)"
+                            style={{ padding: '2px 5px', fontSize: 10, lineHeight: 1 }}>auto</button>
+                        )}
+                      </div>
+                    </td>
+                    <td style={{ textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                      ${row.lineCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                    <td>
+                      <button
+                        className="btn btn-small btn-danger"
+                        onClick={() => removePackGroup(row.packGroupId)}
+                        title="Remove pack group from the plan"
+                      >x</button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {/* Carton synthetic rows (Drayhorse-priced). Rate defaults to
+                  the tier lookup but is editable per pack group; an "auto"
+                  pill appears when the rate is manually overridden. Qty is
+                  the group's carton count (= packs), still derived. */}
+              {costs.pkgRows.filter((r) => r.synthetic && !r.packGroup).map((row) => (
+                <tr key={row.id}>
+                  <td></td>
+                  <td style={{ fontWeight: 600 }}>
+                    {row.name}
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Drayhorse tier · editable</div>
+                  </td>
+                  <td><span style={chipStyle(categoryColors[row.category] || categoryColors.other)}>{row.category}</span></td>
+                  <td><span style={chipStyle(feeTypeColors[row.feeType] || feeTypeColors.fixed)}>{row.feeType}</span></td>
+                  <td style={{ textAlign: 'right' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
+                      <span style={{ color: '#6b7280', fontSize: 13 }}>$</span>
+                      <input
+                        key={`carton-rate-${row.id}-${row.rate}-${row.rateManual}`}
+                        type="text" inputMode="decimal" defaultValue={Number(row.rate || 0).toFixed(4)}
+                        style={{ width: 80, textAlign: 'right' }}
+                        onBlur={(e) => {
+                          const v = e.target.value === '' ? 0 : +e.target.value || 0;
+                          updatePackGroupField(row.cartonGroupId, 'cartonRateOverride', v);
+                          updatePackGroupField(row.cartonGroupId, 'cartonRateManual', true);
+                        }}
+                        title="Per-carton price (manual override). Click 'auto' to reset to Drayhorse tier."
+                      />
+                      {row.rateManual && (
+                        <button
+                          className="btn btn-small"
+                          onClick={() => updatePackGroupField(row.cartonGroupId, 'cartonRateManual', false)}
+                          title={`Reset to Drayhorse tier ($${(row.autoRate || 0).toFixed(4)})`}
+                          style={{ padding: '2px 5px', fontSize: 10, lineHeight: 1 }}
+                        >auto</button>
+                      )}
+                    </div>
+                  </td>
+                  <td style={{ textAlign: 'right' }}>{(row.qty || 0).toLocaleString()}</td>
+                  <td style={{ textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                    ${row.lineCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td></td>
+                </tr>
+              ))}
             </tbody>
             <tfoot>
               <tr>
@@ -1776,7 +2289,7 @@ export default function CoPackingCalculator() {
               </tr>
               <tr>
                 <td colSpan={8} style={{ padding: '8px 12px' }}>
-                  <button className="btn btn-small" onClick={() => setPackagingItems((p) => [...p, { id: 'pkg-' + Date.now(), name: '', category: 'other', feeType: 'per-unit', rate: 0, qty: getFeeAutoQty('per-unit', counts), qtyManual: false }])} style={{ fontSize: 12 }}>
+                  <button className="btn btn-small" onClick={() => setPackagingItems((p) => [...p, { id: 'pkg-' + Date.now(), name: '', category: 'other', feeType: 'per-unit', rate: 0, qty: getFeeAutoQty('per-unit', effectiveCounts), qtyManual: false }])} style={{ fontSize: 12 }}>
                     + Add Packaging Item
                   </button>
                 </td>
@@ -1949,22 +2462,22 @@ export default function CoPackingCalculator() {
           {renderFeeTable(
             costs.tollRows, updateToll, resetTollQty,
             (idx) => setTollingItems((p) => p.filter((_, i) => i !== idx)),
-            () => setTollingItems((p) => [...p, { id: 'toll-' + Date.now(), name: '', feeType: 'per-unit', rate: 0, qty: getFeeAutoQty('per-unit', counts), qtyManual: false }]),
+            () => setTollingItems((p) => [...p, { id: 'toll-' + Date.now(), name: '', feeType: 'per-unit', rate: 0, qty: getFeeAutoQty('per-unit', effectiveCounts), qtyManual: false }]),
             'Add Tolling Item', costs.tollingCost, tollDrag
           )}
         </div>
       </div>
 
-      {/* Bill of Materials */}
+      {/* Freight & Other */}
       <div className="section" style={{ marginBottom: 20 }}>
         <div className="section-header">
-          <div className="section-title">Bill of Materials</div>
+          <div className="section-title">Freight & Other</div>
         </div>
         <div>
           {renderFeeTable(
             costs.bomRows, updateBom, resetBomQty,
             (idx) => setBomItems((p) => p.filter((_, i) => i !== idx)),
-            () => setBomItems((p) => [...p, { id: 'bom-' + Date.now(), name: '', feeType: 'per-unit', rate: 0, qty: getFeeAutoQty('per-unit', counts), qtyManual: false }]),
+            () => setBomItems((p) => [...p, { id: 'bom-' + Date.now(), name: '', feeType: 'per-unit', rate: 0, qty: getFeeAutoQty('per-unit', effectiveCounts), qtyManual: false }]),
             'Add BOM Item', costs.bomCost, bomDrag
           )}
         </div>
@@ -1979,7 +2492,7 @@ export default function CoPackingCalculator() {
           {renderFeeTable(
             costs.taxRows, updateTax, resetTaxQty,
             (idx) => setTaxItems((p) => p.filter((_, i) => i !== idx)),
-            () => setTaxItems((p) => [...p, { id: 'tax-' + Date.now(), name: '', feeType: 'per-unit', rate: 0, qty: getFeeAutoQty('per-unit', counts), qtyManual: false }]),
+            () => setTaxItems((p) => [...p, { id: 'tax-' + Date.now(), name: '', feeType: 'per-unit', rate: 0, qty: getFeeAutoQty('per-unit', effectiveCounts), qtyManual: false }]),
             'Add Tax / Fee', costs.taxCost, taxDrag
           )}
         </div>
@@ -1994,7 +2507,7 @@ export default function CoPackingCalculator() {
           <div className="projection-row"><span className="label">Packaging Materials</span><span className="value">${costs.packagingCost.toFixed(2)}</span></div>
           {costs.totalIngredientCost > 0 && <div className="projection-row"><span className="label">Ingredients (optimized PO)</span><span className="value">${costs.totalIngredientCost.toFixed(2)}</span></div>}
           <div className="projection-row"><span className="label">Tolling</span><span className="value">${costs.tollingCost.toFixed(2)}</span></div>
-          <div className="projection-row"><span className="label">Bill of Materials</span><span className="value">${costs.bomCost.toFixed(2)}</span></div>
+          <div className="projection-row"><span className="label">Freight & Other</span><span className="value">${costs.bomCost.toFixed(2)}</span></div>
           {costs.totalBatchingFees > 0 && <div className="projection-row"><span className="label">Batching Fees</span><span className="value">${costs.totalBatchingFees.toFixed(2)}</span></div>}
           <div className="projection-row"><span className="label">Taxes & Regulatory</span><span className="value">${costs.taxCost.toFixed(2)}</span></div>
           {abv > 0 && <div className="projection-row"><span className="label">Proof Gallons</span><span className="value">{counts.proofGallons.toLocaleString()} PG</span></div>}
