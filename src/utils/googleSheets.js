@@ -134,6 +134,67 @@ async function uploadAsSheet(accessToken, filename, blob) {
   return res.json();
 }
 
+// Parse an A1 range like "A123:E123" into Sheets-API GridRange indices
+// (0-based, end-exclusive). Returns null for unsupported shapes.
+function a1RangeToGridRange(a1, sheetId) {
+  const m = a1.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+  if (!m) return null;
+  const [, c1, r1, c2, r2] = m;
+  const colIdx = (col) => col.split('').reduce((n, ch) => n * 26 + (ch.charCodeAt(0) - 64), 0) - 1;
+  return {
+    sheetId,
+    startRowIndex: Number(r1) - 1,
+    endRowIndex: Number(r2),
+    startColumnIndex: colIdx(c1),
+    endColumnIndex: colIdx(c2) + 1,
+  };
+}
+
+// Add per-sheet protected ranges. Each input entry: { sheetTitle, a1Range,
+// description }. We restrict editor access to the file owner (the user
+// who just uploaded it), so collaborators with edit access can't modify
+// the locked range. Best-effort — failure here doesn't break the open.
+async function addProtectedRanges(accessToken, spreadsheetId, protectedRanges) {
+  if (!Array.isArray(protectedRanges) || protectedRanges.length === 0) return;
+  try {
+    const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties(sheetId,title)`;
+    const metaRes = await fetch(metaUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (!metaRes.ok) return;
+    const meta = await metaRes.json();
+    const titleToId = Object.fromEntries((meta.sheets || []).map((s) => [s.properties.title, s.properties.sheetId]));
+    const requests = protectedRanges
+      .map(({ sheetTitle, a1Range, description }) => {
+        const sheetId = titleToId[sheetTitle];
+        if (sheetId == null) return null;
+        const range = a1RangeToGridRange(a1Range, sheetId);
+        if (!range) return null;
+        return {
+          addProtectedRange: {
+            protectedRange: {
+              range,
+              description: description || 'Protected range',
+              // requestingUserCanEdit: only the file owner (who just
+              // ran the export) can modify. Other collaborators with
+              // edit access on the file are blocked from this range.
+              editors: { users: [], groups: [], domainUsersCanEdit: false },
+              warningOnly: false,
+            },
+          },
+        };
+      })
+      .filter(Boolean);
+    if (requests.length === 0) return;
+    await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requests }),
+    });
+  } catch (e) {
+    // Non-fatal — the sheet still opens; range just won't be locked.
+    console.warn('[googleSheets] addProtectedRanges failed:', e);
+  }
+}
+
 // Hide gridlines on every sheet in the newly-created spreadsheet. Google
 // Sheets ignores the Excel-level showGridLines attribute on import, so we
 // have to set the per-tab `hideGridlines` flag via the Sheets API. Best-
@@ -170,7 +231,7 @@ async function hideGridlines(accessToken, spreadsheetId) {
 // Handles the case where a cached token has expired on the server side
 // (rare, but possible if the user revoked access) — clears the cache
 // and retries ONCE with a fresh popup.
-export async function uploadXlsxToSheets({ blob, filename, clientId }) {
+export async function uploadXlsxToSheets({ blob, filename, clientId, protectedRanges }) {
   let token = await requestAccessToken(clientId);
   let file;
   try {
@@ -185,6 +246,7 @@ export async function uploadXlsxToSheets({ blob, filename, clientId }) {
     }
   }
   await hideGridlines(token, file.id);
+  await addProtectedRanges(token, file.id, protectedRanges);
   return {
     fileId: file.id,
     url: `https://docs.google.com/spreadsheets/d/${file.id}/edit`,

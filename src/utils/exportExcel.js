@@ -209,17 +209,55 @@ function buildSummarySheet(ws, res, run, runRefs, poData, poRefs) {
     });
   }
 
-  // ── Confidentiality footer ────────────────────────────────────────────
+  // ── Confidentiality footer (locked cell) ──────────────────────────────
+  // Footer must be in a locked cell to prevent the recipient from
+  // deleting / altering the legal notice. We unlock every other Summary
+  // cell first, then lock the footer + protect the sheet — so the rest
+  // of the tab stays interactive while the notice is read-only.
   r += 2;
+  const footerRow = r;
   ws.mergeCells(`A${r}:E${r}`);
-  put(
+  const footerCell = put(
     ws, `A${r}`,
     `Confidential and Proprietary. Copyright ${new Date().getFullYear()} Drayhorse Manufacturing and Supply, LLC. Do not disseminate without prior written consent. Protected under NDA.`,
     { color: C.muted, size: 9, italic: true, align: 'center' },
   );
   ws.getRow(r).height = 24;
 
+  // Unlock everything we wrote on the Summary tab so only the footer
+  // ends up locked once we protect() the sheet.
+  ws.eachRow({ includeEmpty: false }, (row) => {
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      cell.protection = { ...(cell.protection || {}), locked: false };
+    });
+  });
+  footerCell.protection = { locked: true };
+  // Sheet protection enforces the cell-level locked flag. The options
+  // below leave everything except editing the locked footer permitted,
+  // so the recipient can still copy/sort/format the rest of the tab.
+  // Empty password = no password needed to unprotect (the lock is
+  // intent-signalling, not security).
+  ws.protect('', {
+    selectLockedCells: true,
+    selectUnlockedCells: true,
+    formatCells: true,
+    formatColumns: true,
+    formatRows: true,
+    insertColumns: true,
+    insertRows: true,
+    insertHyperlinks: true,
+    deleteColumns: true,
+    deleteRows: true,
+    sort: true,
+    autoFilter: true,
+    pivotTables: true,
+  });
+
   ws.views = [{ state: 'frozen', ySplit: 5 }];
+  // Surface the footer cell so the Google Sheets exporter can add a
+  // matching protected range (cell-lock metadata doesn't survive the
+  // Drive xlsx → Google Sheets conversion).
+  return { footerRow, footerRange: `A${footerRow}:E${footerRow}` };
 }
 
 function buildLineItemsSheet(ws, res, run) {
@@ -737,7 +775,7 @@ async function buildWorkbook({ run, rawPO }) {
     }
   }
 
-  buildSummarySheet(wsSummary, res, run, runRefs, poData, poRefs);
+  const summaryMeta = buildSummarySheet(wsSummary, res, run, runRefs, poData, poRefs);
 
   // SKU GTM — added LAST so it sits at the end of the tab order. Mirrors
   // the in-app Summary page (KPI strip, per-SKU cost matrix, Channel
@@ -755,7 +793,7 @@ async function buildWorkbook({ run, rawPO }) {
     }
   });
 
-  return wb;
+  return { wb, summaryMeta };
 }
 
 function workbookName(run) {
@@ -764,7 +802,7 @@ function workbookName(run) {
 }
 
 export async function exportCoPackingToExcel({ run, rawPO } = {}) {
-  const wb = await buildWorkbook({ run, rawPO });
+  const { wb } = await buildWorkbook({ run, rawPO });
   await downloadWorkbook(wb, workbookName(run));
 }
 
@@ -787,20 +825,26 @@ export async function exportCoPackingToGoogleSheets({ run, rawPO } = {}) {
   const clientId = getGoogleClientId();
 
   if (!clientId) {
-    const wb = await buildWorkbook({ run, rawPO });
+    const { wb } = await buildWorkbook({ run, rawPO });
     await downloadWorkbook(wb, workbookName(run));
     return { mode: 'fallback' };
   }
 
-  const wb = await buildWorkbook({ run, rawPO });
+  const { wb, summaryMeta } = await buildWorkbook({ run, rawPO });
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
+  // Pass the footer cell address through so uploadXlsxToSheets can add
+  // a matching protected range on the Summary tab (xlsx cell-protection
+  // metadata doesn't survive Drive's Google Sheets conversion).
   const { url } = await uploadXlsxToSheets({
     blob,
     filename: workbookName(run),
     clientId,
+    protectedRanges: summaryMeta?.footerRange
+      ? [{ sheetTitle: 'Summary', a1Range: summaryMeta.footerRange, description: 'Confidentiality notice — do not modify' }]
+      : [],
   });
   return { mode: 'oauth', url };
 }
