@@ -2,6 +2,17 @@ import { useState, useMemo, useEffect } from 'react';
 import { getRuns } from '../data/store';
 import { computeRunResults } from '../utils/runResults';
 
+// Industry-typical margin defaults by segment. Sources: BevNET / Craft
+// Brewery Finance / American Spirits Exchange / LibDib / Vividly (2024-26).
+const SEGMENT_PRESETS = [
+  { id: 'rtd-malt',    label: 'Hard seltzer / RTD (malt)', dist: 30, retail: 35 },
+  { id: 'rtd-spirits', label: 'RTD spirits / cocktails',   dist: 32, retail: 35 },
+  { id: 'non-alc',     label: 'Non-alc (DSD / warehouse)', dist: 30, retail: 35 },
+  { id: 'beer',        label: 'Beer (craft)',              dist: 30, retail: 28 },
+  { id: 'wine',        label: 'Wine',                      dist: 28, retail: 35 },
+  { id: 'spirits',     label: 'Spirits',                   dist: 32, retail: 33 },
+];
+
 // Summary delegates ALL math to computeRunResults so totals reconcile
 // with the live Calculator, Excel export, and Client PDF. Per-SKU costs
 // come straight from the saved run's flavor-level ingredient cost
@@ -30,12 +41,19 @@ export default function Summary() {
 
   // Pricing calculator state
   const [fobPrice, setFobPrice] = useState(0);
-  // Industry defaults for beverage off-premise pricing (~RTD / hard seltzer):
-  // 30% distributor margin, 35% retail margin. Matches the malt-RTD beer-
-  // channel band (28–33%) and the middle of the off-premise alcohol retail
-  // range (30–40%). User can override per-run.
+  // Industry defaults by segment. Picking a preset updates both inputs;
+  // the user can still override either field afterward.
+  const [marginPresetId, setMarginPresetId] = useState('rtd-malt');
   const [distributorMargin, setDistributorMargin] = useState(30);
   const [retailMargin, setRetailMargin] = useState(35);
+
+  function applyMarginPreset(id) {
+    const preset = SEGMENT_PRESETS.find((p) => p.id === id);
+    if (!preset) return;
+    setMarginPresetId(id);
+    setDistributorMargin(preset.dist);
+    setRetailMargin(preset.retail);
+  }
 
   // Single source of truth: computeRunResults. Anywhere this number
   // ends up — KPI strip, matrix, pricing, insights, comparisons — it
@@ -308,16 +326,27 @@ export default function Summary() {
             <div className="section-title">Channel Pricing</div>
           </div>
           <div className="section-body">
+            <div className="form-group" style={{ marginBottom: 12 }}>
+              <label className="form-label">Segment preset</label>
+              <select value={marginPresetId} onChange={(e) => applyMarginPreset(e.target.value)}
+                style={{ width: '100%' }}>
+                {SEGMENT_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label} ({p.dist}% / {p.retail}%)
+                  </option>
+                ))}
+              </select>
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
               <div className="form-group" style={{ margin: 0 }}>
                 <label className="form-label">Distributor Margin %</label>
-                <input type="text" inputMode="decimal" defaultValue={distributorMargin}
+                <input key={`dist-${marginPresetId}-${distributorMargin}`} type="text" inputMode="decimal" defaultValue={distributorMargin}
                   style={{ width: '100%' }}
                   onBlur={(e) => setDistributorMargin(e.target.value === '' ? 0 : +e.target.value)} />
               </div>
               <div className="form-group" style={{ margin: 0 }}>
                 <label className="form-label">Retail Margin %</label>
-                <input type="text" inputMode="decimal" defaultValue={retailMargin}
+                <input key={`retail-${marginPresetId}-${retailMargin}`} type="text" inputMode="decimal" defaultValue={retailMargin}
                   style={{ width: '100%' }}
                   onBlur={(e) => setRetailMargin(e.target.value === '' ? 0 : +e.target.value)} />
               </div>

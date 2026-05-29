@@ -443,20 +443,62 @@ function buildSkuGtmSheet(ws, res, run, runRefs) {
   // Light instructions so the user knows the workflow.
   ws.mergeCells(`A${r}:${lastCol}${r}`);
   put(ws, `A${r}`,
-    'How to use: enter your FOB Price per case (what you quote the distributor). The pricing table works forward through Distributor → Retail using the margin defaults below — 30% / 35% are industry-typical for off-premise RTD. Override any yellow cell to model a specific channel.',
+    'How to use: pick a Segment to auto-fill margins (industry-typical for off-premise). Enter your FOB Price per case (what you quote the distributor). The table works forward through Distributor → Retail. Override any yellow cell to model a specific channel — typing a value replaces the segment formula.',
     { color: C.muted, size: 9, italic: true });
-  ws.getRow(r).height = 30;
+  ws.getRow(r).height = 36;
   r += 1;
 
-  // Margin inputs row — user-editable cells.
+  // Segment presets — small lookup table written off to the right at
+  // columns that won't be visible in normal viewing. VLOOKUP drives the
+  // margin cells.
+  const segments = [
+    ['Hard seltzer / RTD (malt)', 0.30, 0.35],
+    ['RTD spirits / cocktails',   0.32, 0.35],
+    ['Non-alc (DSD / warehouse)', 0.30, 0.35],
+    ['Beer (craft)',              0.30, 0.28],
+    ['Wine',                      0.28, 0.35],
+    ['Spirits',                   0.32, 0.33],
+  ];
+  // Place the lookup table at columns K-M starting at row 1 (well to the
+  // right of the visible content for any reasonable flavor count). Mark
+  // narrow so it stays unobtrusive even if scrolled to.
+  const LK_COL_NAME = 'K';
+  const LK_COL_DIST = 'L';
+  const LK_COL_RETAIL = 'M';
+  const LK_START = 1;
+  segments.forEach((row, i) => {
+    const lr = LK_START + i;
+    put(ws, `${LK_COL_NAME}${lr}`, row[0], { color: C.muted, size: 9 });
+    put(ws, `${LK_COL_DIST}${lr}`, row[1], { color: C.muted, size: 9, numFmt: '0.0%' });
+    put(ws, `${LK_COL_RETAIL}${lr}`, row[2], { color: C.muted, size: 9, numFmt: '0.0%' });
+  });
+  const LK_END = LK_START + segments.length - 1;
+  const LK_RANGE = `${LK_COL_NAME}${LK_START}:${LK_COL_RETAIL}${LK_END}`;
+
+  // Segment dropdown row.
+  put(ws, `A${r}`, 'Segment', { bold: true, color: C.ink, border: true });
+  put(ws, `B${r}`, segments[0][0], { bold: true, color: C.ink, bg: '#FFF8E1', align: 'left', border: true });
+  const segmentCell = `B${r}`;
+  ws.getCell(segmentCell).dataValidation = {
+    type: 'list',
+    allowBlank: false,
+    formulae: [`"${segments.map((s) => s[0]).join(',')}"`],
+  };
+  for (let i = 2; i <= totalColIdx; i += 1) put(ws, `${colLetter(i)}${r}`, '', { border: true });
+  r += 1;
+
+  // Margin inputs — driven by VLOOKUP against the lookup table by default;
+  // user can override by typing a literal into the cell.
   put(ws, `A${r}`, 'Distributor Margin', { bold: true, color: C.ink, border: true });
-  put(ws, `B${r}`, 0.30, { bold: true, color: C.ink, bg: '#FFF8E1', align: 'right', numFmt: '0.0%', border: true });
+  putF(ws, `B${r}`, `VLOOKUP(${segmentCell},${LK_RANGE},2,FALSE)`, segments[0][1],
+    { bold: true, color: C.ink, bg: '#FFF8E1', align: 'right', numFmt: '0.0%', border: true });
   const distMarginCell = `B${r}`;
   for (let i = 2; i <= totalColIdx; i += 1) put(ws, `${colLetter(i)}${r}`, '', { border: true });
   r += 1;
 
   put(ws, `A${r}`, 'Retail Margin', { bold: true, color: C.ink, border: true });
-  put(ws, `B${r}`, 0.35, { bold: true, color: C.ink, bg: '#FFF8E1', align: 'right', numFmt: '0.0%', border: true });
+  putF(ws, `B${r}`, `VLOOKUP(${segmentCell},${LK_RANGE},3,FALSE)`, segments[0][2],
+    { bold: true, color: C.ink, bg: '#FFF8E1', align: 'right', numFmt: '0.0%', border: true });
   const retailMarginCell = `B${r}`;
   for (let i = 2; i <= totalColIdx; i += 1) put(ws, `${colLetter(i)}${r}`, '', { border: true });
   r += 1;
@@ -543,7 +585,7 @@ function buildSkuGtmSheet(ws, res, run, runRefs) {
   // Margin caption
   ws.mergeCells(`A${r}:${lastCol}${r}`);
   put(ws, `A${r}`,
-    'Margin = (price − cost) / price. Edit the yellow cells (Distributor Margin, Retail Margin, FOB Price, Pack Size) to recalculate channel pricing.',
+    'Margin = (price − cost) / price. Edit the yellow cells (Segment, Distributor Margin, Retail Margin, FOB Price, Pack Size) to recalculate. Segment uses VLOOKUP against the small reference table in columns K-M.',
     { color: C.muted, size: 9, italic: true });
   ws.getRow(r).height = 16;
 
