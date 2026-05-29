@@ -23,6 +23,38 @@ const GIS_SRC = 'https://accounts.google.com/gsi/client';
 // API can act on the file too via the same scope.
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 
+// Token cache — sessionStorage so refresh keeps the consent but a closed
+// tab requires a fresh login. Access tokens live ~1 hour; we trim a safety
+// margin so we never use a token within ~60s of expiry.
+const STORAGE_KEY = 'bms_google_token';
+const SAFETY_MARGIN_MS = 60_000;
+
+function loadCachedToken() {
+  try {
+    const raw = (typeof sessionStorage !== 'undefined') ? sessionStorage.getItem(STORAGE_KEY) : null;
+    if (!raw) return null;
+    const { token, expiresAt } = JSON.parse(raw);
+    if (!token || typeof expiresAt !== 'number') return null;
+    if (Date.now() >= expiresAt) return null;
+    return token;
+  } catch { return null; }
+}
+
+function saveCachedToken(token, expiresInSeconds) {
+  const expiresAt = Date.now() + (Number(expiresInSeconds) || 3600) * 1000 - SAFETY_MARGIN_MS;
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ token, expiresAt }));
+    }
+  } catch { /* ignore quota / private mode */ }
+}
+
+function clearCachedToken() {
+  try {
+    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(STORAGE_KEY);
+  } catch { /* ignore */ }
+}
+
 let gisLoaded = false;
 let gisLoading = null;
 
@@ -47,9 +79,13 @@ function loadGis() {
   return gisLoading;
 }
 
-// Returns the OAuth access token (popup flow). Rejects if the user
-// cancels or the client ID is invalid.
-async function requestAccessToken(clientId) {
+// Returns an OAuth access token. Uses the cached one when still valid;
+// only triggers the popup on the first call per session (or after expiry).
+async function requestAccessToken(clientId, { forceRefresh = false } = {}) {
+  if (!forceRefresh) {
+    const cached = loadCachedToken();
+    if (cached) return cached;
+  }
   await loadGis();
   return new Promise((resolve, reject) => {
     if (!window.google?.accounts?.oauth2) {
@@ -64,10 +100,13 @@ async function requestAccessToken(clientId) {
           reject(new Error(response.error_description || response.error));
           return;
         }
+        saveCachedToken(response.access_token, response.expires_in);
         resolve(response.access_token);
       },
       error_callback: (err) => reject(new Error(err?.message || 'OAuth popup closed')),
     });
+    // prompt: '' means "no consent UI unless required" — silent if the
+    // user has already granted consent in this browser profile.
     tokenClient.requestAccessToken({ prompt: '' });
   });
 }
@@ -128,9 +167,23 @@ async function hideGridlines(accessToken, spreadsheetId) {
 
 // Public entry point: uploads + converts + hides gridlines in one call.
 // Caller is responsible for opening the resulting URL in a window.
+// Handles the case where a cached token has expired on the server side
+// (rare, but possible if the user revoked access) — clears the cache
+// and retries ONCE with a fresh popup.
 export async function uploadXlsxToSheets({ blob, filename, clientId }) {
-  const token = await requestAccessToken(clientId);
-  const file = await uploadAsSheet(token, filename, blob);
+  let token = await requestAccessToken(clientId);
+  let file;
+  try {
+    file = await uploadAsSheet(token, filename, blob);
+  } catch (e) {
+    if (/\b401\b|unauthorized/i.test(String(e?.message || e))) {
+      clearCachedToken();
+      token = await requestAccessToken(clientId, { forceRefresh: true });
+      file = await uploadAsSheet(token, filename, blob);
+    } else {
+      throw e;
+    }
+  }
   await hideGridlines(token, file.id);
   return {
     fileId: file.id,
