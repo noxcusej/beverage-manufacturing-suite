@@ -101,7 +101,7 @@ export default function BatchCalculator() {
       if (batch.unitSizeUnit !== undefined) setUnitSizeUnitState(batch.unitSizeUnit);
       if (batch.unitsPerCase !== undefined) setUnitsPerCase(batch.unitsPerCase);
       if (batch.lossPercent !== undefined) setLossPercent(batch.lossPercent);
-      if (batch.ingredients) setIngredients(batch.ingredients);
+      if (batch.ingredients) setIngredients(batch.ingredients.map((ing) => ing._uid ? ing : { ...ing, _uid: makeIngredientUid() }));
       if (batch.sizeMode) setSizeMode(batch.sizeMode);
       const savedCases = batch.targetCases || 0;
       if (savedCases > 0) {
@@ -139,7 +139,7 @@ export default function BatchCalculator() {
     setUnitSizeUnitState(newUnitSizeUnit);
     setUnitsPerCase(newUnitsPerCase);
     setLossPercent(newLossPercent);
-    if (formula.ingredients) setIngredients(formula.ingredients);
+    if (formula.ingredients) setIngredients(formula.ingredients.map((ing) => ing._uid ? ing : { ...ing, _uid: makeIngredientUid() }));
     const savedCases = formula.targetCases || 0;
     if (savedCases > 0) {
       const lossMultiplier = 1 + newLossPercent / 100;
@@ -437,11 +437,19 @@ export default function BatchCalculator() {
     setIngredients((prev) => prev.filter((_, i) => i !== index));
   }
 
+  // Stable row key. Without this, `key={idx}` made React reuse the same DOM
+  // when a middle row was deleted; the UI looked like the LAST row vanished
+  // instead of the clicked row, so delete appeared broken.
+  function makeIngredientUid() {
+    return 'ing-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  }
+
   function addIngredientFromInventory(item) {
     const tier = item.priceTiers?.[0];
     setIngredients((prev) => [
       ...prev,
       {
+        _uid: makeIngredientUid(),
         inventoryId: item.id,
         type: item.type || 'liquid',
         recipeAmount: 0,
@@ -472,6 +480,7 @@ export default function BatchCalculator() {
     setIngredients((prev) => [
       ...prev,
       {
+        _uid: makeIngredientUid(),
         inventoryId: '',
         draftName: 'New Ingredient',
         type: 'liquid',
@@ -564,7 +573,7 @@ export default function BatchCalculator() {
     setUnitSizeUnitState(newUnitSizeUnit);
     setUnitsPerCase(newUnitsPerCase);
     setLossPercent(newLossPercent);
-    if (formula.ingredients) setIngredients(formula.ingredients);
+    if (formula.ingredients) setIngredients(formula.ingredients.map((ing) => ing._uid ? ing : { ...ing, _uid: makeIngredientUid() }));
 
     // Recalculate batchSize from saved targetCases if available, else reset to base yield
     const savedCases = formula.targetCases || 0;
@@ -913,6 +922,7 @@ export default function BatchCalculator() {
       } else {
         const tier = invMatch?.priceTiers?.[0];
         newIngredients.push({
+          _uid: makeIngredientUid(),
           inventoryId: invMatch?.id || '',
           draftName: invMatch ? undefined : (parsed.name || 'Pasted Ingredient'),
           type: parsed.type || invMatch?.type || 'liquid',
@@ -1125,7 +1135,7 @@ export default function BatchCalculator() {
                 </thead>
                 <tbody>
                   {ingredients.map((ing, idx) => (
-                      <tr key={idx}>
+                      <tr key={ing._uid || `idx-${idx}`}>
                         <td style={{ position: 'sticky', left: 0, zIndex: 1, background: 'var(--surface)', boxShadow: '2px 0 4px rgba(0,0,0,0.06)' }}>
                           {ing.inventoryId && !ing.inventoryId.startsWith('DRAFT-') ? (
                             <select

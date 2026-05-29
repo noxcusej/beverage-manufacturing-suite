@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getInventory, saveInventory, addInventoryItem, deleteInventoryItem, getVendors } from '../data/store';
+import { getInventory, saveInventory, addInventoryItem, deleteInventoryItem, getVendors, saveVendors } from '../data/store';
 import { nextId } from '../utils/ids';
 
 const UNIT_MAP = {
@@ -20,7 +20,7 @@ function normalizeUnit(u) {
 
 export default function Inventory() {
   const [inventory, setInventory] = useState(getInventory());
-  const vendors = getVendors();
+  const [vendors, setVendors] = useState(getVendors());
   const vendorById = Object.fromEntries((vendors || []).map((v) => [v.id, v.name]));
   const vendorLabel = (item) => {
     // Migrate old free-text `vendor` keys + look up by `vendorId`.
@@ -28,6 +28,15 @@ export default function Inventory() {
     if (item.vendor) return item.vendor; // legacy free-text row
     return 'No vendor';
   };
+  function addNewVendor(itemId) {
+    const name = prompt('Vendor name:');
+    if (!name?.trim()) return;
+    const newVendor = { id: nextId('VND-', vendors || []), name: name.trim() };
+    const next = [...(vendors || []), newVendor];
+    setVendors(next);
+    saveVendors(next);
+    updateField(itemId, 'vendorId', newVendor.id);
+  }
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [importResult, setImportResult] = useState(null);
@@ -475,6 +484,30 @@ export default function Inventory() {
                   onBlur={(e) => updateField(selectedItem.id, 'name', e.target.value)}
                   key={`name-${selectedItem.id}`}
                 />
+              </div>
+            </div>
+
+            <div className="detail-section">
+              <div className="detail-label">Vendor</div>
+              <div className="detail-value" style={{ display: 'flex', gap: 8 }}>
+                <select
+                  value={selectedItem.vendorId || ''}
+                  onChange={(e) => {
+                    if (e.target.value === '__add__') {
+                      addNewVendor(selectedItem.id);
+                    } else {
+                      updateField(selectedItem.id, 'vendorId', e.target.value);
+                    }
+                  }}
+                  style={{ flex: 1 }}
+                  aria-label="Vendor"
+                >
+                  <option value="">— No vendor —</option>
+                  {(vendors || []).map((v) => (
+                    <option key={v.id} value={v.id}>{v.name}</option>
+                  ))}
+                  <option value="__add__">+ Add new vendor…</option>
+                </select>
               </div>
             </div>
 
