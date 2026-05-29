@@ -39,8 +39,10 @@ export default function Summary() {
   const run = runs.find((r) => r.id === selectedRunId);
   const compareRun = compareRunId ? runs.find((r) => r.id === compareRunId) : null;
 
-  // Pricing calculator state
-  const [fobPrice, setFobPrice] = useState(0);
+  // Pricing calculator state. `null` = user hasn't typed anything; FOB
+  // falls back to costPerCase. Typed 0 stays 0 so the user can model
+  // negative margins / break-even scenarios explicitly.
+  const [fobPrice, setFobPrice] = useState(null);
   // Industry defaults by segment. Picking a preset updates both inputs;
   // the user can still override either field afterward.
   const [marginPresetId, setMarginPresetId] = useState('rtd-malt');
@@ -91,7 +93,8 @@ export default function Summary() {
 
   // Pricing — labels are MARGIN, math is margin (price - cost)/price = m,
   // so price = cost / (1 - m).
-  const fob = fobPrice || costPerCase;
+  // Null sentinel: undefined input → fall back to costPerCase. Typed 0 stays 0.
+  const fob = fobPrice == null ? costPerCase : fobPrice;
   const distributorPrice = fob / (1 - distributorMargin / 100);
   const retailPrice = distributorPrice / (1 - retailMargin / 100);
   const grossMargin = fob > 0 ? ((fob - costPerCase) / fob) * 100 : 0;
@@ -206,28 +209,39 @@ export default function Summary() {
               </tr>
             </thead>
             <tbody>
-              {costRows.map((row) => {
-                const cmpRow = compareData?.costRows.find((r) => r.label === row.label);
-                const cmpDelta = cmpRow ? row.total - cmpRow.total : null;
-                return (
-                  <tr key={row.label}>
-                    <td style={{ fontWeight: 600 }}>{row.label}</td>
-                    {row.perFlavor.map((cost, i) => (
-                      <td key={i} style={{ textAlign: 'right' }}>
-                        ${cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {/* Union the category keys from both runs so categories
+                  present only in the compare run aren't silently dropped
+                  from the matrix (H1). */}
+              {(() => {
+                const unionRows = [...costRows];
+                (compareData?.costRows || []).forEach((cmpR) => {
+                  if (!unionRows.find((r) => r.key === cmpR.key)) {
+                    unionRows.push({ key: cmpR.key, label: cmpR.label, perFlavor: flavorData.map(() => 0), total: 0 });
+                  }
+                });
+                return unionRows.map((row) => {
+                  const cmpRow = compareData?.costRows.find((r) => r.key === row.key);
+                  const cmpDelta = cmpRow ? row.total - cmpRow.total : null;
+                  return (
+                    <tr key={row.key || row.label}>
+                      <td style={{ fontWeight: 600 }}>{row.label}</td>
+                      {row.perFlavor.map((cost, i) => (
+                        <td key={i} style={{ textAlign: 'right' }}>
+                          ${cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                      ))}
+                      <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                        ${row.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
-                    ))}
-                    <td style={{ textAlign: 'right', fontWeight: 600 }}>
-                      ${row.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </td>
-                    {compareData && (
-                      <td style={{ textAlign: 'right', color: deltaColor(cmpDelta) }}>
-                        {cmpDelta === null ? '—' : `${cmpDelta >= 0 ? '+' : ''}$${cmpDelta.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                      </td>
-                    )}
-                  </tr>
-                );
-              })}
+                      {compareData && (
+                        <td style={{ textAlign: 'right', color: deltaColor(cmpDelta) }}>
+                          {cmpDelta === null ? '—' : `${cmpDelta >= 0 ? '+' : ''}$${cmpDelta.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                });
+              })()}
             </tbody>
             <tfoot>
               <tr style={{ borderTop: '2px solid var(--border)' }}>
@@ -302,9 +316,9 @@ export default function Summary() {
             <div className="projection-total">${fob.toFixed(2)}</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{ fontSize: 14 }}>$</span>
-              <input type="text" inputMode="decimal" defaultValue={fobPrice || ''} placeholder={costPerCase.toFixed(2)}
+              <input type="text" inputMode="decimal" defaultValue={fobPrice == null ? '' : fobPrice} placeholder={costPerCase.toFixed(2)}
                 style={{ fontSize: 18, fontWeight: 700, width: 100, background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: 'white', borderRadius: 6, padding: '4px 8px' }}
-                onBlur={(e) => setFobPrice(e.target.value === '' ? 0 : +e.target.value)} />
+                onBlur={(e) => setFobPrice(e.target.value === '' ? null : +e.target.value)} />
             </div>
           </div>
           <div className="projection-row">
@@ -473,17 +487,17 @@ function deriveSummary(run) {
   const costRows = (breakdown || [])
     .filter((row) => (row.cost || 0) !== 0)
     .map((row) => {
-      const label = row.label;
       const total = row.cost || 0;
       let perFlavor;
-      if (label.startsWith('Ingredients')) {
+      // Switch on stable key, not label string (which can drift).
+      if (row.key === 'ingredients') {
         perFlavor = flavorData.map((f) => (f.ingredientCost || 0) * f.cans);
-      } else if (label.startsWith('Batching')) {
+      } else if (row.key === 'batching') {
         perFlavor = flavorData.map((f) => f.batchingFee || 0);
       } else {
         perFlavor = allocateProRata(total);
       }
-      return { label, perFlavor, total };
+      return { key: row.key, label: row.label, perFlavor, total };
     });
 
   const grandTotal = costs.totalCost || 0;

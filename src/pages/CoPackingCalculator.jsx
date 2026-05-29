@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { getClients, getCurrentBatch, getFormulas, getGlobalSettings, getInventory, getRuns, saveGlobalSettings, saveRun, deleteRun } from '../data/store';
-import { getProducts, lookupPrice, NEW_ART_PREP_FEE } from '../data/drayhorsePricing';
+import { getProducts, lookupPrice, findTierUpOption, getQuantityTiers, NEW_ART_PREP_FEE } from '../data/drayhorsePricing';
 import { exportCoPackingToExcel, exportCoPackingToGoogleSheets } from '../utils/exportExcel';
 import { getGoogleClientId } from '../utils/googleSheets';
 import { exportClientQuote } from '../utils/exportClientQuote';
@@ -628,9 +628,6 @@ export default function CoPackingCalculator() {
       cartonGroups.forEach((g) => {
         const cartonQty = g.packsCount || 0;
         if (cartonQty <= 0) return;
-        // Each carton group is one artwork SKU. Pricing is the Drayhorse
-        // tier; per-group rate overrides live on the pack-group row's
-        // unitPrice/unitPriceManual, not here.
         const tier = lookupPrice(cartonProduct, cartonQty, effectiveSkuCount);
         const autoRate = tier?.pricePerCarton || 0;
         const groupTotal = autoRate * cartonQty;
@@ -643,6 +640,11 @@ export default function CoPackingCalculator() {
           pricePerCarton: autoRate,
           autoRate,
           totalCost: groupTotal,
+          // Surfaced for the Carton Pricing block's warnings + tier-up UX.
+          belowTier: !!tier?.belowTier,
+          aboveMaxTier: !!tier?.aboveMaxTier,
+          skuExtrapolated: !!tier?.skuExtrapolated,
+          tierQty: tier?.tierQty,
         });
       });
       if (groupBreakdown.length === 0) return empty;
@@ -884,7 +886,12 @@ export default function CoPackingCalculator() {
         // Every count scoped to THIS group. Pallets pro-rate from the group's
         // cases; proof gallons pro-rate by the group's cans share; per-batch
         // is 1 (the group itself).
-        const groupPallets = casesPerPallet > 0 ? Math.ceil((g.casesConsumed || 0) / casesPerPallet) : 0;
+        // Derive from raw cans → single Math.ceil. Reading from g.casesConsumed
+        // double-rounds (cases already ceil'd) so two groups of 1 case each
+        // would otherwise read as 2 pallets when the truth is 1.
+        const groupPallets = (casesPerPallet > 0 && unitsPerCase > 0)
+          ? Math.ceil((g.cansConsumed || 0) / (unitsPerCase * casesPerPallet))
+          : 0;
         const groupProofGallons = counts.totalUnits > 0
           ? Math.round(((g.cansConsumed || 0) / counts.totalUnits) * (counts.proofGallons || 0) * 100) / 100
           : 0;
@@ -984,12 +991,12 @@ export default function CoPackingCalculator() {
     const total = costs.totalCost;
     // Packaging Materials now includes cartons as synthetic line items, so
     // there's no separate "Cartons (Drayhorse)" line in the breakdown.
-    const rows = [{ label: 'Packaging Materials', cost: costs.rawPackagingCost }];
-    if (costs.totalIngredientCost > 0) rows.push({ label: 'Ingredients (optimized PO)', cost: costs.totalIngredientCost });
-    rows.push({ label: 'Tolling', cost: costs.tollingCost });
-    rows.push({ label: 'Freight & Other', cost: costs.bomCost });
-    if (costs.totalBatchingFees > 0) rows.push({ label: 'Batching Fees', cost: costs.totalBatchingFees });
-    rows.push({ label: 'Taxes & Regulatory', cost: costs.taxCost });
+    const rows = [{ key: 'packaging', label: 'Packaging Materials', cost: costs.rawPackagingCost }];
+    if (costs.totalIngredientCost > 0) rows.push({ key: 'ingredients', label: 'Ingredients (optimized PO)', cost: costs.totalIngredientCost });
+    rows.push({ key: 'tolling', label: 'Tolling', cost: costs.tollingCost });
+    rows.push({ key: 'bom', label: 'Freight & Other', cost: costs.bomCost });
+    if (costs.totalBatchingFees > 0) rows.push({ key: 'batching', label: 'Batching Fees', cost: costs.totalBatchingFees });
+    rows.push({ key: 'taxes', label: 'Taxes & Regulatory', cost: costs.taxCost });
     return rows.map((r) => ({
       ...r,
       perUnit: counts.totalUnits > 0 ? r.cost / counts.totalUnits : 0,
@@ -2206,32 +2213,62 @@ export default function CoPackingCalculator() {
                         : `Variety ${g.packSize}-pk`);
                       const gb = (cartonCost.groupBreakdown || []).find((b) => b.groupId === g.id);
                       const isCarton = g.carrierType === 'carton';
+                      const tierUp = (isCarton && gb)
+                        ? findTierUpOption(cartonProduct, gb.cartonQty, effectiveSkuCount)
+                        : null;
                       return (
-                        <tr key={g.id} style={{ borderTop: '1px solid var(--border-light)', opacity: isCarton ? 1 : 0.55 }}>
-                          <td style={{ padding: '4px 6px' }}>{label}</td>
-                          <td style={{ padding: '4px 6px' }}>
-                            <select
-                              value={g.carrierType || 'paktech'}
-                              onChange={(e) => updatePackGroupCarrier(g.id, e.target.value)}
-                              style={{ fontSize: 11, padding: '1px 4px' }}
-                              title="Change a group's carrier to add or remove it from carton tier pricing"
-                            >
-                              <option value="paktech">PakTech</option>
-                              <option value="carton">Carton</option>
-                              <option value="shrink">Shrink-wrap</option>
-                              <option value="none">None</option>
-                            </select>
-                          </td>
-                          <td style={{ padding: '4px 6px', textAlign: 'right' }}>
-                            {isCarton ? (g.packsCount || 0).toLocaleString() : '—'}
-                          </td>
-                          <td style={{ padding: '4px 6px', textAlign: 'right' }}>
-                            {isCarton && gb ? `$${gb.pricePerCarton.toFixed(4)}` : '—'}
-                          </td>
-                          <td style={{ padding: '4px 6px', textAlign: 'right', fontWeight: 700 }}>
-                            {isCarton && gb ? `$${gb.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
-                          </td>
-                        </tr>
+                        <React.Fragment key={g.id}>
+                          <tr style={{ borderTop: '1px solid var(--border-light)', opacity: isCarton ? 1 : 0.55 }}>
+                            <td style={{ padding: '4px 6px' }}>
+                              {label}
+                              {isCarton && gb?.belowTier && (
+                                <span style={{ marginLeft: 6, padding: '1px 6px', background: '#fef3c7', color: '#92400e', borderRadius: 4, fontSize: 10, fontWeight: 700 }}
+                                  title={`Below smallest tier (${(getQuantityTiers()[0] || 10000).toLocaleString()}). Using tier-0 (cheapest-volume = highest $/M).`}>
+                                  Below tier
+                                </span>
+                              )}
+                              {isCarton && gb?.skuExtrapolated && (
+                                <span style={{ marginLeft: 6, padding: '1px 6px', background: '#fee2e2', color: '#b91c1c', borderRadius: 4, fontSize: 10, fontWeight: 700 }}
+                                  title="Drayhorse publishes 1-4 SKU pricing; 5+ SKUs are linearly extrapolated. Verify with Drayhorse for a binding quote.">
+                                  5+ SKU est'd
+                                </span>
+                              )}
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <select
+                                value={g.carrierType || 'paktech'}
+                                onChange={(e) => updatePackGroupCarrier(g.id, e.target.value)}
+                                style={{ fontSize: 11, padding: '1px 4px' }}
+                                title="Change a group's carrier to add or remove it from carton tier pricing"
+                              >
+                                <option value="paktech">PakTech</option>
+                                <option value="carton">Carton</option>
+                                <option value="shrink">Shrink-wrap</option>
+                                <option value="none">None</option>
+                              </select>
+                            </td>
+                            <td style={{ padding: '4px 6px', textAlign: 'right' }}>
+                              {isCarton ? (g.packsCount || 0).toLocaleString() : '—'}
+                            </td>
+                            <td style={{ padding: '4px 6px', textAlign: 'right' }}>
+                              {isCarton && gb ? `$${gb.pricePerCarton.toFixed(4)}` : '—'}
+                            </td>
+                            <td style={{ padding: '4px 6px', textAlign: 'right', fontWeight: 700 }}>
+                              {isCarton && gb ? `$${gb.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                            </td>
+                          </tr>
+                          {isCarton && tierUp && tierUp.savings > 0 && (
+                            <tr style={{ background: '#ecfdf5' }}>
+                              <td colSpan={5} style={{ padding: '4px 8px 6px 8px', fontSize: 11, color: '#065f46' }}>
+                                💡 Stock up to <strong>{tierUp.nextTierQty.toLocaleString()}</strong> cartons
+                                (<strong>+{tierUp.extraCartons.toLocaleString()}</strong>) and pay <strong>${tierUp.nextTierTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                                instead of <strong>${tierUp.currentTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                                — <strong style={{ color: '#16a34a' }}>save ${tierUp.savings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                                {' '}(${tierUp.nextPricePerM.toFixed(2)}/M at the next tier). Extra cartons go to inventory.
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       );
                     })}
                   </tbody>

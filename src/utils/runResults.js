@@ -128,6 +128,10 @@ function computeCartonCost(carton, carrierType, packSize, totalUnits, planDerive
         pricePerCarton: autoRate,
         autoRate,
         totalCost: groupTotal,
+        belowTier: !!tier?.belowTier,
+        aboveMaxTier: !!tier?.aboveMaxTier,
+        skuExtrapolated: !!tier?.skuExtrapolated,
+        tierQty: tier?.tierQty,
       });
     });
     if (groupBreakdown.length === 0) return empty;
@@ -213,7 +217,9 @@ export function computeRunResults(run) {
       const isPaktech = g.carrierType === 'paktech';
       const isCarton = g.carrierType === 'carton';
       const isVariety = g.type === 'variety';
-      const groupPallets = casesPerPallet > 0 ? Math.ceil((g.casesConsumed || 0) / casesPerPallet) : 0;
+      const groupPallets = (casesPerPallet > 0 && unitsPerCase > 0)
+        ? Math.ceil((g.cansConsumed || 0) / (unitsPerCase * casesPerPallet))
+        : 0;
       const groupProofGallons = counts.totalUnits > 0
         ? Math.round(((g.cansConsumed || 0) / counts.totalUnits) * (counts.proofGallons || 0) * 100) / 100
         : 0;
@@ -287,12 +293,15 @@ export function computeRunResults(run) {
   };
 
   const total = totalCost;
-  const breakdownRows = [{ label: 'Packaging Materials', cost: rawPackagingCost }];
-  if (totalIngredientCost > 0) breakdownRows.push({ label: 'Ingredients (optimized PO)', cost: totalIngredientCost });
-  breakdownRows.push({ label: 'Tolling', cost: tollingCost });
-  breakdownRows.push({ label: 'Freight & Other', cost: bomCost });
-  if (totalBatchingFees > 0) breakdownRows.push({ label: 'Batching Fees', cost: totalBatchingFees });
-  breakdownRows.push({ label: 'Taxes & Regulatory', cost: taxCost });
+  // Every breakdown row carries a stable `key` so consumers (Summary,
+  // exports, comparisons) switch on key instead of pattern-matching the
+  // label string — labels can drift; keys can't.
+  const breakdownRows = [{ key: 'packaging', label: 'Packaging Materials', cost: rawPackagingCost }];
+  if (totalIngredientCost > 0) breakdownRows.push({ key: 'ingredients', label: 'Ingredients (optimized PO)', cost: totalIngredientCost });
+  breakdownRows.push({ key: 'tolling', label: 'Tolling', cost: tollingCost });
+  breakdownRows.push({ key: 'bom', label: 'Freight & Other', cost: bomCost });
+  if (totalBatchingFees > 0) breakdownRows.push({ key: 'batching', label: 'Batching Fees', cost: totalBatchingFees });
+  breakdownRows.push({ key: 'taxes', label: 'Taxes & Regulatory', cost: taxCost });
   const breakdown = breakdownRows.map((r) => ({
     ...r,
     perUnit: counts.totalUnits > 0 ? r.cost / counts.totalUnits : 0,

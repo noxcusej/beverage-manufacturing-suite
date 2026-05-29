@@ -170,33 +170,124 @@ const products = [
 
 const NEW_ART_PREP_FEE = 296;
 
+// Maximum SKU columns we'll surface in the UI (1–12). Drayhorse's published
+// pricing covers 1–4 SKUs directly; 5+ SKUs are LINEARLY EXTRAPOLATED from
+// the visible 1→4 deltas (deltas are tightly clustered, so extrapolation
+// is reasonable for estimating purposes). lookupPrice() returns a
+// `skuExtrapolated: true` flag whenever skuCount > 4 so callers can warn
+// the user to verify with Drayhorse for a binding quote.
+const MAX_SKU_COLS = 12;
+
+function extendRowToMaxSkus(row) {
+  // row is the published 4-column row [1sku, 2sku, 3sku, 4sku].
+  // Linear extrapolate: deltaPerSku = (row[3] - row[0]) / 3.
+  if (!row || row.length < 4) return row;
+  const delta = (row[3] - row[0]) / 3;
+  const extended = [...row];
+  for (let n = 4; n < MAX_SKU_COLS; n += 1) {
+    extended.push(row[3] + delta * (n - 3));
+  }
+  return extended;
+}
+
+// Lazily cache extended grids so we extrapolate once per product.
+const extendedGridCache = new Map();
+function getExtendedGrid(product) {
+  const cached = extendedGridCache.get(product.id);
+  if (cached) return cached;
+  const extended = product.grid.map(extendRowToMaxSkus);
+  extendedGridCache.set(product.id, extended);
+  return extended;
+}
+
 /**
  * Look up the price per thousand cartons.
  * @param {string} productId - e.g. 'sleek-4pk'
  * @param {number} quantity - number of cartons ordered
- * @param {number} skuCount - number of SKUs (1-4)
- * @returns {{ pricePerM: number, tierQty: number, totalCost: number, pricePerCarton: number } | null}
+ * @param {number} skuCount - number of SKUs (1–MAX_SKU_COLS)
+ * @returns {{
+ *   pricePerM: number, tierQty: number, totalCost: number,
+ *   pricePerCarton: number,
+ *   belowTier: boolean,           // qty < smallest tier (10k) — used cheapest tier anyway
+ *   aboveMaxTier: boolean,        // qty > largest tier (100k) — used most-discounted tier
+ *   skuExtrapolated: boolean,     // skuCount > 4 — used linear extrapolation
+ * } | null}
  */
 export function lookupPrice(productId, quantity, skuCount) {
   const product = products.find((p) => p.id === productId);
   if (!product) return null;
 
-  const skuIdx = Math.max(0, Math.min(3, (skuCount || 1) - 1));
+  const requestedSkus = Math.max(1, Math.min(MAX_SKU_COLS, Math.floor(skuCount || 1)));
+  const skuIdx = requestedSkus - 1;
+  const skuExtrapolated = requestedSkus > 4;
+  const grid = getExtendedGrid(product);
 
-  // Find the matching quantity tier (use the highest tier that doesn't exceed quantity)
+  // Find the matching quantity tier (use the highest tier that doesn't exceed quantity).
   let tierIdx = 0;
-  for (let i = 0; i < quantityTiers.length; i++) {
-    if (quantity >= quantityTiers[i]) {
-      tierIdx = i;
-    }
+  for (let i = 0; i < quantityTiers.length; i += 1) {
+    if (quantity >= quantityTiers[i]) tierIdx = i;
   }
+  const belowTier = quantity < quantityTiers[0];
+  const aboveMaxTier = quantity > quantityTiers[quantityTiers.length - 1];
 
-  const pricePerM = product.grid[tierIdx][skuIdx];
+  const pricePerM = grid[tierIdx][skuIdx];
   const tierQty = quantityTiers[tierIdx];
   const totalCost = (quantity / 1000) * pricePerM;
   const pricePerCarton = pricePerM / 1000;
 
-  return { pricePerM, tierQty, totalCost, pricePerCarton };
+  return {
+    pricePerM, tierQty, totalCost, pricePerCarton,
+    belowTier, aboveMaxTier, skuExtrapolated,
+  };
+}
+
+/**
+ * Tier-up suggestion: would the user save money by ordering MORE cartons
+ * to hit the next quantity tier? Returns the option, or null if already
+ * at the top tier or no savings.
+ *
+ * @returns {{
+ *   nextTierQty: number,
+ *   extraCartons: number,
+ *   currentTotal: number,
+ *   nextTierTotal: number,
+ *   savings: number,          // negative = no savings; positive = save by ordering extra
+ *   nextPricePerM: number,
+ * } | null}
+ */
+export function findTierUpOption(productId, quantity, skuCount) {
+  const product = products.find((p) => p.id === productId);
+  if (!product) return null;
+  const requestedSkus = Math.max(1, Math.min(MAX_SKU_COLS, Math.floor(skuCount || 1)));
+  const skuIdx = requestedSkus - 1;
+  const grid = getExtendedGrid(product);
+
+  // Determine current tier idx by the same rule as lookupPrice.
+  let currentTierIdx = 0;
+  for (let i = 0; i < quantityTiers.length; i += 1) {
+    if (quantity >= quantityTiers[i]) currentTierIdx = i;
+  }
+  // If already at the top tier, no tier-up option.
+  if (currentTierIdx >= quantityTiers.length - 1) return null;
+
+  const nextTierIdx = currentTierIdx + 1;
+  const nextTierQty = quantityTiers[nextTierIdx];
+  // If the current quantity is already >= the next tier (shouldn't happen
+  // given how we picked currentTierIdx, but defensive), no option.
+  if (quantity >= nextTierQty) return null;
+
+  const currentPricePerM = grid[currentTierIdx][skuIdx];
+  const nextPricePerM = grid[nextTierIdx][skuIdx];
+  const currentTotal = (quantity / 1000) * currentPricePerM;
+  const nextTierTotal = (nextTierQty / 1000) * nextPricePerM;
+  const extraCartons = nextTierQty - quantity;
+  const savings = currentTotal - nextTierTotal;
+
+  return {
+    nextTierQty, extraCartons,
+    currentTotal, nextTierTotal,
+    savings, nextPricePerM,
+  };
 }
 
 /**
@@ -211,6 +302,13 @@ export function getProducts() {
  */
 export function getQuantityTiers() {
   return quantityTiers;
+}
+
+/**
+ * Maximum SKU columns supported (1–N). Beyond column 4 is extrapolated.
+ */
+export function getMaxSkuCols() {
+  return MAX_SKU_COLS;
 }
 
 export { NEW_ART_PREP_FEE };

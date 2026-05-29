@@ -142,7 +142,8 @@ function buildSummarySheet(ws, res, run, runRefs, poData, poRefs) {
   const cansRef = runRefs.cans;
   const casesRef = runRefs.cases;
   CATEGORIES.forEach(([label, key]) => {
-    const cost = res.breakdown.find((x) => x.label === label)?.cost || 0;
+    // Look up by stable `key`, fall back to label match for safety.
+    const cost = (res.breakdown.find((x) => x.key === key) || res.breakdown.find((x) => x.label === label))?.cost || 0;
     if (!ALWAYS_CATEGORIES.has(key) && cost <= 0) return;
     const ref = runRefs.cat[key];
     const zebra = (r % 2 === 0) ? C.zebra : null;
@@ -251,22 +252,14 @@ function buildSkuGtmSheet(ws, res, run, runRefs) {
   const flavorCount = flavorRows.length;
 
   // Categories shown in the matrix (same canonical list as the breakdown,
-  // skipping any with zero cost). Maps category label to runRefs.cat key
-  // for formula references.
-  const labelToKey = {
-    'Packaging Materials': 'packaging',
-    'Ingredients (optimized PO)': 'ingredients',
-    'Tolling': 'tolling',
-    'Freight & Other': 'bom',
-    'Batching Fees': 'batching',
-    'Taxes & Regulatory': 'taxes',
-  };
+  // skipping any with zero cost). breakdown rows carry a stable `key`
+  // that maps directly to runRefs.cat for formula references.
   const matrixRows = (res.breakdown || [])
     .filter((row) => (row.cost || 0) !== 0)
     .map((row) => ({
       label: row.label,
       total: row.cost || 0,
-      key: labelToKey[row.label] || null,
+      key: row.key || null,
     }));
 
   // Column layout: A=label, B..=per-flavor, then Run Total
@@ -356,9 +349,9 @@ function buildSkuGtmSheet(ws, res, run, runRefs) {
   matrixRows.forEach((mr) => {
     const zebra = (r % 2 === 0) ? C.zebra : null;
     let perFlavor;
-    if (mr.label.startsWith('Ingredients')) {
+    if (mr.key === 'ingredients') {
       perFlavor = flavorRows.map((f) => f.ingredientCost * f.cans);
-    } else if (mr.label.startsWith('Batching')) {
+    } else if (mr.key === 'batching') {
       perFlavor = flavorRows.map((f) => f.batchingFee);
     } else {
       perFlavor = allocateProRata(mr.total);
@@ -394,8 +387,8 @@ function buildSkuGtmSheet(ws, res, run, runRefs) {
     const colEnd = totalRowR - 1;
     putF(ws, `${col}${r}`, `SUM(${col}${colStart}:${col}${colEnd})`,
       matrixRows.reduce((s, mr) => {
-        if (mr.label.startsWith('Ingredients')) return s + flavorRows[i].ingredientCost * flavorRows[i].cans;
-        if (mr.label.startsWith('Batching')) return s + flavorRows[i].batchingFee;
+        if (mr.key === 'ingredients') return s + flavorRows[i].ingredientCost * flavorRows[i].cans;
+        if (mr.key === 'batching') return s + flavorRows[i].batchingFee;
         return s + (totalCans > 0 ? (flavorRows[i].cans / totalCans) * mr.total : 0);
       }, 0),
       { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: MONEY, border: true });
@@ -411,8 +404,8 @@ function buildSkuGtmSheet(ws, res, run, runRefs) {
     const col = colLetter(i + 1);
     putF(ws, `${col}${r}`, `IF(${f.cans}>0,${col}${totalRowR}/${f.cans},0)`,
       f.cans > 0 ? (matrixRows.reduce((s, mr) => {
-        if (mr.label.startsWith('Ingredients')) return s + f.ingredientCost * f.cans;
-        if (mr.label.startsWith('Batching')) return s + f.batchingFee;
+        if (mr.key === 'ingredients') return s + f.ingredientCost * f.cans;
+        if (mr.key === 'batching') return s + f.batchingFee;
         return s + (totalCans > 0 ? (f.cans / totalCans) * mr.total : 0);
       }, 0)) / f.cans : 0,
       { color: C.muted, align: 'right', numFmt: MONEY4, border: true });
@@ -427,8 +420,8 @@ function buildSkuGtmSheet(ws, res, run, runRefs) {
     const col = colLetter(i + 1);
     putF(ws, `${col}${r}`, `IF(${f.cases}>0,${col}${totalRowR}/${f.cases},0)`,
       f.cases > 0 ? (matrixRows.reduce((s, mr) => {
-        if (mr.label.startsWith('Ingredients')) return s + f.ingredientCost * f.cans;
-        if (mr.label.startsWith('Batching')) return s + f.batchingFee;
+        if (mr.key === 'ingredients') return s + f.ingredientCost * f.cans;
+        if (mr.key === 'batching') return s + f.batchingFee;
         return s + (totalCans > 0 ? (f.cans / totalCans) * mr.total : 0);
       }, 0)) / f.cases : 0,
       { color: C.muted, align: 'right', numFmt: MONEY, border: true });
