@@ -197,7 +197,10 @@ export function computeRunResults(run) {
     planDerived.groups.forEach((g) => {
       const description = g.label || (g.type === 'straight'
         ? `${flavorByIdLocal[g.skuId]?.name || 'Straight'} ${g.packSize}-pk`
-        : `Variety ${g.packSize}-pk (${(g.mix || []).filter((m) => (m.cans || 0) > 0).map((m) => flavorByIdLocal[m.skuId]?.name || m.skuId).join(' / ') || '—'})`);
+        : (() => {
+          const names = (g.mix || []).filter((m) => (m.cans || 0) > 0).map((m) => flavorByIdLocal[m.skuId]?.name || m.skuId).join(' / ');
+          return names ? `Variety ${g.packSize}-pk (${names})` : `Variety ${g.packSize}-pk`;
+        })());
       const cartonAuto = cartonAutoByGroup[g.id] || 0;
       const rate = g.unitPriceManual
         ? (Number(g.unitPrice) || 0)

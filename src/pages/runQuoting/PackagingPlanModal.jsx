@@ -30,15 +30,17 @@ export default function PackagingPlanModal({
   unitsPerCase,
   casesPerPallet,
   defaultPackSize = 4,
+  escSuppressed = false,
 }) {
   const [draft, setDraft] = useState(() => initialPlan || createEmptyPlan());
 
-  // Esc to close
+  // Esc to close, unless another modal is on top of us (escSuppressed).
   useEffect(() => {
+    if (escSuppressed) return undefined;
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, escSuppressed]);
 
   const flavorById = useMemo(() => {
     const map = {};

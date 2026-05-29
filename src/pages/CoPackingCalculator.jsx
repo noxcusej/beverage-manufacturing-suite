@@ -458,10 +458,8 @@ export default function CoPackingCalculator() {
   // unless the user manually overrides via `skuCountManual`.
   const effectiveSkuCount = useMemo(() => {
     if (skuCountManual) return skuCount;
-    if (packagingPlan?.allocationMode || (packagingPlan?.groups || []).length > 0) {
-      const cartonGroups = (packagingPlan.groups || []).filter((g) => g.carrierType === 'carton');
-      if (cartonGroups.length > 0) return cartonGroups.length;
-    }
+    const cartonGroups = (packagingPlan?.groups || []).filter((g) => g.carrierType === 'carton');
+    if (cartonGroups.length > 0) return cartonGroups.length;
     return skuCount;
   }, [skuCountManual, skuCount, packagingPlan]);
 
@@ -664,14 +662,16 @@ export default function CoPackingCalculator() {
     const product = getProducts().find((p) => p.id === cartonProduct);
     const ps = product?.packSize || packSize;
     const cartonQty = ps > 0 ? Math.ceil(counts.totalUnits / ps) : 0;
-    const result = lookupPrice(cartonProduct, cartonQty, skuCount);
+    // effectiveSkuCount matches runResults.js so live and replay agree.
+    // In legacy mode effectiveSkuCount falls through to skuCount anyway.
+    const result = lookupPrice(cartonProduct, cartonQty, effectiveSkuCount);
     if (!result) return empty;
     return {
       totalCost: result.totalCost + artFee, pricePerM: result.pricePerM,
       pricePerCarton: result.pricePerCarton, cartonQty,
       tierQty: result.tierQty, artFee, groupBreakdown: [],
     };
-  }, [carrierType, cartonProduct, skuCount, effectiveSkuCount, counts.totalUnits, packSize, includeNewArt, planDerived]);
+  }, [carrierType, cartonProduct, effectiveSkuCount, counts.totalUnits, packSize, includeNewArt, planDerived]);
 
   const inventoryMap = useMemo(() => {
     const map = {};
@@ -854,7 +854,10 @@ export default function CoPackingCalculator() {
       planDerived.groups.forEach((g) => {
         const description = g.label || (g.type === 'straight'
           ? `${flavorById[g.skuId]?.name || 'Straight'} ${g.packSize}-pk`
-          : `Variety ${g.packSize}-pk (${(g.mix || []).filter((m) => (m.cans || 0) > 0).map((m) => flavorById[m.skuId]?.name || m.skuId).join(' / ') || '—'})`);
+          : (() => {
+            const names = (g.mix || []).filter((m) => (m.cans || 0) > 0).map((m) => flavorById[m.skuId]?.name || m.skuId).join(' / ');
+            return names ? `Variety ${g.packSize}-pk (${names})` : `Variety ${g.packSize}-pk`;
+          })());
         // Auto-seed: carton pack groups default to the Drayhorse tier price
         // when the user hasn't manually overridden. Any non-carton group
         // (or carton group with a manual rate) reads g.unitPrice directly.
@@ -1119,7 +1122,7 @@ export default function CoPackingCalculator() {
     if (run.flavors) setFlavors(run.flavors.map(stripLegacyFlavorFields));
     if (run.carton) {
       setCartonProduct(run.carton.cartonProduct || 'sleek-4pk');
-      setSkuCount(run.carton.skuCount || 1);
+      setSkuCount(typeof run.carton.skuCount === 'number' && run.carton.skuCount > 0 ? run.carton.skuCount : 1);
       setSkuCountManual(!!run.carton.skuCountManual);
       setIncludeNewArt(run.carton.includeNewArt || false);
     }
@@ -1406,6 +1409,7 @@ export default function CoPackingCalculator() {
           unitsPerCase={unitsPerCase}
           casesPerPallet={casesPerPallet}
           defaultPackSize={packSize}
+          escSuppressed={compareOpen}
         />
       )}
 
@@ -2078,7 +2082,9 @@ export default function CoPackingCalculator() {
                   {cartonCost.artFee > 0 && <div style={{ fontSize: 10, color: '#6b7280' }}>incl. ${cartonCost.artFee} art</div>}
                 </div>
                 <div style={{ padding: 12, background: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: 6, textAlign: 'center' }}>
-                  <div style={{ fontSize: 11, color: '#7c3aed', fontWeight: 600 }}>Per Carton</div>
+                  <div style={{ fontSize: 11, color: '#7c3aed', fontWeight: 600 }}>
+                    {planDerived.active && planDerived.cartonGroups.length > 1 ? 'Avg / Carton' : 'Per Carton'}
+                  </div>
                   <div style={{ fontSize: 18, fontWeight: 700, color: '#5b21b6' }}>${cartonCost.pricePerCarton.toFixed(4)}</div>
                 </div>
               </div>
@@ -2207,10 +2213,17 @@ export default function CoPackingCalculator() {
                         value={row.feeType}
                         style={chipStyle(ftColors)}
                         onChange={(e) => {
-                          updatePackGroupField(row.packGroupId, 'feeType', e.target.value);
-                          // Clear manual qty override on fee type change so
-                          // the new auto-resolved qty kicks in.
-                          updatePackGroupField(row.packGroupId, 'qtyManual', false);
+                          // Clear manual qty override AND clear qtyOverride
+                          // so a stale value can't reappear if the user
+                          // re-enables manual later. Single setter to avoid
+                          // two-call race on draft state.
+                          const nextFeeType = e.target.value;
+                          setPackagingPlan((prev) => ({
+                            ...prev,
+                            groups: (prev.groups || []).map((g) => (g.id === row.packGroupId
+                              ? { ...g, feeType: nextFeeType, qtyManual: false, qtyOverride: undefined }
+                              : g)),
+                          }));
                         }}
                       >
                         {FEE_TYPES.map((ft) => <option key={ft.value} value={ft.value}>{ft.label}</option>)}

@@ -137,7 +137,10 @@ export function writeRunBlock({ ws, startRow, label, run, res, color, sheetName 
       const zebra = (r % 2 === 0) ? C.zebra : null;
       const description = g.label || (g.type === 'straight'
         ? `${flavorById[g.skuId]?.name || 'Straight'} ${g.packSize}-pk`
-        : `Variety ${g.packSize}-pk (${(g.mix || []).filter((m) => (m.cans || 0) > 0).map((m) => flavorById[m.skuId]?.name || m.skuId).join(' / ') || '—'})`);
+        : (() => {
+          const names = (g.mix || []).filter((m) => (m.cans || 0) > 0).map((m) => flavorById[m.skuId]?.name || m.skuId).join(' / ');
+          return names ? `Variety ${g.packSize}-pk (${names})` : `Variety ${g.packSize}-pk`;
+        })());
       const packRow = packRowsById[g.id];
       const rate = Number(packRow?.rate ?? g.unitPrice ?? 0);
       const billableQty = Number(packRow?.qty ?? g.packsCount ?? 0);
@@ -147,7 +150,12 @@ export function writeRunBlock({ ws, startRow, label, run, res, color, sheetName 
       put(ws, `A${r}`, description, { color: C.ink, bg: zebra, border: true });
       put(ws, `B${r}`, g.packSize, { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
       put(ws, `C${r}`, g.packsCount || 0, { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
-      put(ws, `D${r}`, Math.ceil(g.casesConsumed || 0), { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
+      // Cases is formula-driven so edits to packs (C) and pack size (B) roll
+      // up through. CEILING handles partial-case rounding consistent with
+      // the live UI.
+      putF(ws, `D${r}`, `IF($B$${upcRow}>0,CEILING(B${r}*C${r}/$B$${upcRow},1),0)`,
+        Math.ceil(g.casesConsumed || 0),
+        { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
       put(ws, `E${r}`, basis, { color: C.ink, bg: zebra, border: true });
       put(ws, `F${r}`, billableQty, { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
       put(ws, `G${r}`, rate, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY4, border: true });

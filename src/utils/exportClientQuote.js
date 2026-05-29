@@ -95,7 +95,10 @@ export function exportClientQuote(quote) {
     ], planDerived.groups.map((g) => {
       const description = g.label || (g.type === 'straight'
         ? `${flavorById[g.skuId]?.name || 'Straight'} ${g.packSize}-pack`
-        : `Variety ${g.packSize}-pack (${(g.mix || []).filter((m) => (m.cans || 0) > 0).map((m) => flavorById[m.skuId]?.name || m.skuId).join(' / ') || '—'})`);
+        : (() => {
+          const names = (g.mix || []).filter((m) => (m.cans || 0) > 0).map((m) => flavorById[m.skuId]?.name || m.skuId).join(' / ');
+          return names ? `Variety ${g.packSize}-pack (${names})` : `Variety ${g.packSize}-pack`;
+        })());
       const rate = Number(g.unitPrice) || 0;
       const qty = g.packsCount || 0;
       return [
