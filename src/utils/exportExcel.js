@@ -358,6 +358,17 @@ async function buildWorkbook({ run, rawPO }) {
   }
 
   buildSummarySheet(wsSummary, res, run, runRefs, poData, poRefs);
+
+  // Turn off gridlines on every sheet. Merges into any existing views
+  // entry (frozen panes etc.) so we don't clobber them.
+  wb.eachSheet((ws) => {
+    if (ws.views && ws.views.length > 0) {
+      ws.views = ws.views.map((v) => ({ ...v, showGridLines: false }));
+    } else {
+      ws.views = [{ showGridLines: false }];
+    }
+  });
+
   return wb;
 }
 

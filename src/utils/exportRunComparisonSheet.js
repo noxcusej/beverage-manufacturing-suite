@@ -114,5 +114,14 @@ export async function exportRunComparisonSheet(runA, runB, basis = 'total') {
   const { refA, refB } = buildLineItemsSheet(wsLines, a, b, runA, runB);
   buildComparisonSheet(wsSummary, a, b, runA, runB, refA, refB, basis);
 
+  // Turn off gridlines on every sheet, preserving any frozen panes.
+  wb.eachSheet((ws) => {
+    if (ws.views && ws.views.length > 0) {
+      ws.views = ws.views.map((v) => ({ ...v, showGridLines: false }));
+    } else {
+      ws.views = [{ showGridLines: false }];
+    }
+  });
+
   await downloadWorkbook(wb, `${filename(runA.name)}_vs_${filename(runB.name)}_comparison`);
 }
