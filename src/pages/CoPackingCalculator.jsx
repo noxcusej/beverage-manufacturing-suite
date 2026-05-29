@@ -2304,7 +2304,7 @@ export default function CoPackingCalculator() {
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
                         <span style={{ color: '#6b7280', fontSize: 13 }}>$</span>
                         <input
-                          key={`pack-rate-${row.id}-${row.unitPriceManual}`}
+                          key={`pack-rate-${row.id}-${row.rate}-${row.unitPriceManual}`}
                           type="text" inputMode="decimal" defaultValue={Number(row.rate || 0)}
                           style={{
                             width: 80, textAlign: 'right',
