@@ -846,8 +846,11 @@ export default function CoPackingCalculator() {
     // rate, qty (with manual override). Pre-filled from the plan but fully
     // editable; edits write back to packagingPlan.groups[*].
     const packGroupRows = [];
+    // pricePerCarton already reflects any legacy cartonRateManual/Override
+    // on the group, so reading from it keeps legacy saved runs consistent
+    // between the Drayhorse block and the pack-group row.
     const cartonAutoByGroup = Object.fromEntries(
-      (cartonCost.groupBreakdown || []).map((gb) => [gb.groupId, gb.autoRate || gb.pricePerCarton || 0])
+      (cartonCost.groupBreakdown || []).map((gb) => [gb.groupId, gb.pricePerCarton || 0])
     );
     if (planDerived.active) {
       const flavorById = Object.fromEntries(counts.flavorRows.map((f) => [f.id, f]));
@@ -873,11 +876,21 @@ export default function CoPackingCalculator() {
         const isPaktech = g.carrierType === 'paktech';
         const isCarton = g.carrierType === 'carton';
         const isVariety = g.type === 'variety';
+        // Every count scoped to THIS group. Pallets pro-rate from the group's
+        // cases; proof gallons pro-rate by the group's cans share; per-batch
+        // is 1 (the group itself).
+        const groupPallets = casesPerPallet > 0 ? Math.ceil((g.casesConsumed || 0) / casesPerPallet) : 0;
+        const groupProofGallons = counts.totalUnits > 0
+          ? Math.round(((g.cansConsumed || 0) / counts.totalUnits) * (counts.proofGallons || 0) * 100) / 100
+          : 0;
         const groupCounts = {
           ...effectiveCounts,
           totalPacks: g.packsCount || 0,
           totalCases: g.casesConsumed || 0,
           totalUnits: g.cansConsumed || 0,
+          totalPallets: groupPallets,
+          proofGallons: groupProofGallons,
+          flavorCount: 1,
           totalPaktechPacks: isPaktech ? (g.packsCount || 0) : 0,
           totalCartonPacks: isCarton ? (g.packsCount || 0) : 0,
           totalVarietyPacks: isVariety ? (g.packsCount || 0) : 0,
@@ -960,7 +973,7 @@ export default function CoPackingCalculator() {
     const costPerCase = costPerUnit * unitsPerCase;
 
     return { pkgRows, tollRows, bomRows, taxRows, packagingCost: totalPackaging, rawPackagingCost: packagingCost, totalIngredientCost, tollingCost, tollingEngineCost: tollingEstimate.totalCost, tollingEnginePrice: tollingEstimate.totalPrice, bomCost, totalBatchingFees, taxCost, totalCost, costPerUnit, costPerCase };
-  }, [packagingItems, tollingItems, bomItems, taxItems, flavors, counts, unitsPerCase, cartonCost, carrierType, planDerived, effectiveCounts, getEffectiveIngredientCostPerCan, tollingEstimate.totalCost, tollingEstimate.totalPrice]);
+  }, [packagingItems, tollingItems, bomItems, taxItems, flavors, counts, unitsPerCase, casesPerPallet, cartonCost, carrierType, planDerived, effectiveCounts, getEffectiveIngredientCostPerCan, tollingEstimate.totalCost, tollingEstimate.totalPrice]);
 
   const breakdown = useMemo(() => {
     const total = costs.totalCost;
@@ -1939,8 +1952,10 @@ export default function CoPackingCalculator() {
       </div>
 
       {/* Carton Pricing — shown when the run uses cartons (legacy single
-          carrier OR any plan group with carton carrier). */}
-      {(carrierType === 'carton' || (planDerived.active && planDerived.cartonGroups.length > 0)) && (
+          carrier) OR whenever a plan is active (so the user can flip any
+          pack group back to Carton via the inline dropdown without
+          unmounting the block). */}
+      {(carrierType === 'carton' || (planDerived.active && planDerived.groups.length > 0)) && (
         <div className="section" style={{ marginBottom: 20 }}>
           <div className="section-header">
             <div className="section-title">Carton Pricing (Drayhorse)</div>

@@ -81,10 +81,15 @@ export function exportClientQuote(quote) {
   ]));
 
   // Pack Configuration — shown when a packaging plan is configured so the
-  // client sees exactly what gets packed at what price.
+  // client sees exactly what gets packed at what price. Reads the resolved
+  // rate + line cost from `costs.pkgRows` so auto-seeded Drayhorse tier
+  // prices show up correctly (matching what the live UI bills).
   if (planDerived?.active && planDerived.groups.length > 0) {
     drawSectionTitle(pdf, 'Pack Configuration');
     const flavorById = Object.fromEntries((flavors || []).map((f) => [f.id, f]));
+    const pkgRowsById = Object.fromEntries(
+      ((costs && costs.pkgRows) || []).filter((row) => row.packGroup).map((row) => [row.packGroupId, row]),
+    );
     drawTable(pdf, [
       { label: 'Description', width: 230 },
       { label: 'Pack', width: 46, align: 'right' },
@@ -99,15 +104,16 @@ export function exportClientQuote(quote) {
           const names = (g.mix || []).filter((m) => (m.cans || 0) > 0).map((m) => flavorById[m.skuId]?.name || m.skuId).join(' / ');
           return names ? `Variety ${g.packSize}-pack (${names})` : `Variety ${g.packSize}-pack`;
         })());
-      const rate = Number(g.unitPrice) || 0;
-      const qty = g.packsCount || 0;
+      const pkgRow = pkgRowsById[g.id];
+      const rate = Number(pkgRow?.rate ?? g.unitPrice ?? 0);
+      const lineCost = Number(pkgRow?.lineCost ?? rate * (g.packsCount || 0));
       return [
         description,
         `${g.packSize}-pk`,
-        number(qty),
+        number(g.packsCount || 0),
         number(Math.ceil(g.casesConsumed || 0)),
         money(rate, 4),
-        money(rate * qty),
+        money(lineCost),
       ];
     }));
   }

@@ -189,8 +189,10 @@ export function computeRunResults(run) {
   // unitPriceManual). Carton groups auto-seed from the Drayhorse tier when
   // not manually overridden.
   const packGroupRows = [];
+  // pricePerCarton already reflects any legacy cartonRateManual/Override —
+  // see CoPackingCalculator.jsx for the same rule.
   const cartonAutoByGroup = Object.fromEntries(
-    (cartonCost.groupBreakdown || []).map((gb) => [gb.groupId, gb.autoRate || gb.pricePerCarton || 0])
+    (cartonCost.groupBreakdown || []).map((gb) => [gb.groupId, gb.pricePerCarton || 0])
   );
   if (planDerived.active) {
     const flavorByIdLocal = Object.fromEntries(counts.flavorRows.map((f) => [f.id, f]));
@@ -210,11 +212,18 @@ export function computeRunResults(run) {
       const isPaktech = g.carrierType === 'paktech';
       const isCarton = g.carrierType === 'carton';
       const isVariety = g.type === 'variety';
+      const groupPallets = casesPerPallet > 0 ? Math.ceil((g.casesConsumed || 0) / casesPerPallet) : 0;
+      const groupProofGallons = counts.totalUnits > 0
+        ? Math.round(((g.cansConsumed || 0) / counts.totalUnits) * (counts.proofGallons || 0) * 100) / 100
+        : 0;
       const groupCounts = {
         ...effectiveCounts,
         totalPacks: g.packsCount || 0,
         totalCases: g.casesConsumed || 0,
         totalUnits: g.cansConsumed || 0,
+        totalPallets: groupPallets,
+        proofGallons: groupProofGallons,
+        flavorCount: 1,
         totalPaktechPacks: isPaktech ? (g.packsCount || 0) : 0,
         totalCartonPacks: isCarton ? (g.packsCount || 0) : 0,
         totalVarietyPacks: isVariety ? (g.packsCount || 0) : 0,
