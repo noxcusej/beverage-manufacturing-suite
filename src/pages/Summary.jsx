@@ -30,8 +30,12 @@ export default function Summary() {
 
   // Pricing calculator state
   const [fobPrice, setFobPrice] = useState(0);
+  // Industry defaults for beverage off-premise pricing (~RTD / hard seltzer):
+  // 30% distributor margin, 35% retail margin. Matches the malt-RTD beer-
+  // channel band (28–33%) and the middle of the off-premise alcohol retail
+  // range (30–40%). User can override per-run.
   const [distributorMargin, setDistributorMargin] = useState(30);
-  const [retailMargin, setRetailMargin] = useState(40);
+  const [retailMargin, setRetailMargin] = useState(35);
 
   // Single source of truth: computeRunResults. Anywhere this number
   // ends up — KPI strip, matrix, pricing, insights, comparisons — it
@@ -258,6 +262,20 @@ export default function Summary() {
       </div>
 
       {/* Pricing & Margin Calculator */}
+      <div className="section" style={{
+        marginBottom: 12, padding: '10px 14px',
+        background: 'var(--surface)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius)',
+        display: 'flex', alignItems: 'center', gap: 10,
+      }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          How to use
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+          Enter your <strong>FOB Price per case</strong> (what you'd quote the distributor). The calculator works forward through
+          Distributor → Retail using the margin % defaults below — industry-typical for off-premise RTD: <strong>30% / 35%</strong>.
+          Override any margin to model a specific channel.
+        </div>
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20, marginBottom: 24 }}>
         <div className="projection-card">
           <h3>Pricing Calculator</h3>

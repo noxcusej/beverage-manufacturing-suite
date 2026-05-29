@@ -440,6 +440,14 @@ function buildSkuGtmSheet(ws, res, run, runRefs) {
   // ── CHANNEL PRICING — formula-driven, margin inputs at the top ──
   band(ws, r, totalColIdx + 1, 'CHANNEL PRICING', C.teal); r += 1;
 
+  // Light instructions so the user knows the workflow.
+  ws.mergeCells(`A${r}:${lastCol}${r}`);
+  put(ws, `A${r}`,
+    'How to use: enter your FOB Price per case (what you quote the distributor). The pricing table works forward through Distributor → Retail using the margin defaults below — 30% / 35% are industry-typical for off-premise RTD. Override any yellow cell to model a specific channel.',
+    { color: C.muted, size: 9, italic: true });
+  ws.getRow(r).height = 30;
+  r += 1;
+
   // Margin inputs row — user-editable cells.
   put(ws, `A${r}`, 'Distributor Margin', { bold: true, color: C.ink, border: true });
   put(ws, `B${r}`, 0.30, { bold: true, color: C.ink, bg: '#FFF8E1', align: 'right', numFmt: '0.0%', border: true });
@@ -448,7 +456,7 @@ function buildSkuGtmSheet(ws, res, run, runRefs) {
   r += 1;
 
   put(ws, `A${r}`, 'Retail Margin', { bold: true, color: C.ink, border: true });
-  put(ws, `B${r}`, 0.40, { bold: true, color: C.ink, bg: '#FFF8E1', align: 'right', numFmt: '0.0%', border: true });
+  put(ws, `B${r}`, 0.35, { bold: true, color: C.ink, bg: '#FFF8E1', align: 'right', numFmt: '0.0%', border: true });
   const retailMarginCell = `B${r}`;
   for (let i = 2; i <= totalColIdx; i += 1) put(ws, `${colLetter(i)}${r}`, '', { border: true });
   r += 1;
