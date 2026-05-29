@@ -673,8 +673,10 @@ function buildPackagingPlanSheet(ws, res) {
   tableHeader(ws, r, ['', 'Metric', 'Packs', '', '', '', '', '', '']); r += 1;
   const carrierRows = [
     ['PakTech packs', plan.totalPaktechPacks || 0],
+    ['PakTech cases', plan.totalPaktechCases || 0],
     ['Carton packs', plan.totalCartonPacks || 0],
     ['Variety packs', plan.totalVarietyPacks || 0],
+    ['Variety cases', plan.totalVarietyCases || 0],
     ['Straight packs', plan.totalStraightPacks || 0],
   ];
   carrierRows.forEach(([label, val]) => {

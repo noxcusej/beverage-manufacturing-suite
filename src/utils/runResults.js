@@ -14,6 +14,7 @@ function getFeeAutoQty(feeType, counts) {
   if (feeType === 'per-unit') return counts.totalUnits;
   if (feeType === 'per-pack') return counts.totalPacks;
   if (feeType === 'per-paktech-pack') return counts.totalPaktechPacks || 0;
+  if (feeType === 'per-paktech-case') return counts.totalPaktechCases || 0;
   if (feeType === 'per-carton-pack') return counts.totalCartonPacks || 0;
   if (feeType === 'per-variety-pack') return counts.totalVarietyPacks || 0;
   if (feeType === 'per-variety-case') return counts.totalVarietyCases || 0;
@@ -74,6 +75,7 @@ function deriveEffectiveCounts(counts, planDerived, carrierType, palletsPerTruck
     return {
       ...counts,
       totalPaktechPacks: carrierType === 'paktech' ? counts.totalPacks : 0,
+      totalPaktechCases: carrierType === 'paktech' ? counts.totalCases : 0,
       totalCartonPacks: carrierType === 'carton' ? counts.totalPacks : 0,
       totalVarietyPacks: 0,
       totalVarietyCases: 0,
@@ -88,6 +90,7 @@ function deriveEffectiveCounts(counts, planDerived, carrierType, palletsPerTruck
     totalPallets: planDerived.totalPallets,
     totalTrucks,
     totalPaktechPacks: planDerived.totalPaktechPacks,
+    totalPaktechCases: planDerived.totalPaktechCases || 0,
     totalCartonPacks: planDerived.totalCartonPacks,
     totalVarietyPacks: planDerived.totalVarietyPacks,
     totalVarietyCases: planDerived.totalVarietyCases || 0,
@@ -232,6 +235,7 @@ export function computeRunResults(run) {
         proofGallons: groupProofGallons,
         flavorCount: 1,
         totalPaktechPacks: isPaktech ? (g.packsCount || 0) : 0,
+        totalPaktechCases: isPaktech ? (g.casesConsumed || 0) : 0,
         totalCartonPacks: isCarton ? (g.packsCount || 0) : 0,
         totalVarietyPacks: isVariety ? (g.packsCount || 0) : 0,
         totalVarietyCases: isVariety ? (g.casesConsumed || 0) : 0,

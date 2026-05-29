@@ -7,6 +7,7 @@ export const FEE_TYPES = [
   { value: 'per-unit', label: 'Per Unit' },
   { value: 'per-pack', label: 'Per Pack' },
   { value: 'per-paktech-pack', label: 'Per PakTech Pack' },
+  { value: 'per-paktech-case', label: 'Per PakTech Case' },
   { value: 'per-carton-pack', label: 'Per Carton Pack' },
   { value: 'per-variety-pack', label: 'Per Variety Pack' },
   { value: 'per-variety-case', label: 'Per Variety Case' },

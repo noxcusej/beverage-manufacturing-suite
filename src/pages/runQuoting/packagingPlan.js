@@ -255,6 +255,12 @@ export function computePlanDerived(plan, flavorRows, { unitsPerCase = 24, casesP
   const totalPaktechPacks = groups
     .filter((g) => g.carrierType === 'paktech')
     .reduce((s, g) => s + (g.packsCount || 0), 0);
+  // PakTech cases = cases of product whose groups use paktech carriers.
+  // The case count for a paktech group is just its casesConsumed — we
+  // sum across paktech groups (straight + variety that use paktech).
+  const totalPaktechCases = groups
+    .filter((g) => g.carrierType === 'paktech')
+    .reduce((s, g) => s + (g.casesConsumed || 0), 0);
   const totalCartonPacks = groups
     .filter((g) => g.carrierType === 'carton')
     .reduce((s, g) => s + (g.packsCount || 0), 0);
@@ -376,6 +382,7 @@ export function computePlanDerived(plan, flavorRows, { unitsPerCase = 24, casesP
     totalStraightPacks,
     totalVarietyPacks,
     totalPaktechPacks,
+    totalPaktechCases,
     totalCartonPacks,
     totalCases,
     totalVarietyCases,
