@@ -340,9 +340,16 @@ export default function CoPackingCalculator() {
     const safeRate = Math.max(0, Number(rate) || 0);
     setPackagingPlan((prev) => ({
       ...prev,
-      groups: (prev.groups || []).map((g) => (g.id === groupId
-        ? { ...g, unitPrice: safeRate, unitPriceManual: true }
-        : g)),
+      groups: (prev.groups || []).map((g) => {
+        if (g.id !== groupId) return g;
+        // Treat 0 / empty as "revert to auto-seed", not "lock in zero".
+        // The user's mental model is "I only wanted an override; clearing
+        // the field should fall back to the Drayhorse rate card." Without
+        // this, an accidental Backspace-then-Tab permanently zeros the
+        // group until they hit the "auto" button.
+        if (safeRate === 0) return { ...g, unitPrice: 0, unitPriceManual: false };
+        return { ...g, unitPrice: safeRate, unitPriceManual: true };
+      }),
     }));
   }
 
@@ -1199,15 +1206,27 @@ export default function CoPackingCalculator() {
         : null;
       const migratedGroups = (plan.groups || []).map((g) => {
         let next = g;
-        // Carton-rate migration
+        // Carton-rate migration. Only promote to a manual override when
+        // the legacy override actually had a non-zero value — otherwise
+        // we'd pin the group at $0 and the Drayhorse auto-seed could
+        // never flow through on reload.
         if (g.cartonRateManual) {
           next = { ...next };
-          if (!g.unitPriceManual) {
-            next.unitPrice = Number(g.cartonRateOverride) || 0;
+          const legacyOverride = Number(g.cartonRateOverride) || 0;
+          if (!g.unitPriceManual && legacyOverride > 0) {
+            next.unitPrice = legacyOverride;
             next.unitPriceManual = true;
           }
           delete next.cartonRateManual;
           delete next.cartonRateOverride;
+        }
+        // Heal pass: any group stuck at unitPriceManual=true with
+        // unitPrice<=0 was either (a) accidentally blurred from an empty
+        // field under the old code, or (b) migrated from a 0-valued
+        // cartonRateOverride. Either way, manual+0 is never useful —
+        // revert to auto so the Drayhorse rate card flows through.
+        if (next.unitPriceManual && !(Number(next.unitPrice) > 0)) {
+          next = { ...next, unitPriceManual: false, unitPrice: 0 };
         }
         // Legacy straightPercent → per-group allocationPercent (only when
         // no group has explicit %s yet)
