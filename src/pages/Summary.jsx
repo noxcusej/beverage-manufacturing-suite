@@ -458,7 +458,7 @@ export default function Summary() {
       <CoverLetterSection
         run={run}
         data={data}
-        pricing={{ fob, distributorPrice, retailPrice, distributorMargin, retailMargin, grossMargin }}
+        pricing={{ fob }}
         text={coverLetterText}
         setText={setCoverLetterText}
         fromName={coverLetterFrom}
