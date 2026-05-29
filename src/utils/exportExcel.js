@@ -209,6 +209,16 @@ function buildSummarySheet(ws, res, run, runRefs, poData, poRefs) {
     });
   }
 
+  // ── Confidentiality footer ────────────────────────────────────────────
+  r += 2;
+  ws.mergeCells(`A${r}:E${r}`);
+  put(
+    ws, `A${r}`,
+    `Confidential and Proprietary. Copyright ${new Date().getFullYear()} Drayhorse Manufacturing and Supply, LLC. Do not disseminate without prior written consent. Protected under NDA.`,
+    { color: C.muted, size: 9, italic: true, align: 'center' },
+  );
+  ws.getRow(r).height = 24;
+
   ws.views = [{ state: 'frozen', ySplit: 5 }];
 }
 
