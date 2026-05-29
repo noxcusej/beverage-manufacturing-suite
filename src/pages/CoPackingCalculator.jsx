@@ -1641,9 +1641,24 @@ export default function CoPackingCalculator() {
           <button
             className="btn"
             onClick={() => {
-              exportCoPackingToGoogleSheets(buildExportArgs());
-              setSheetsHint(true);
-              setTimeout(() => setSheetsHint(false), 8000);
+              // Open the placeholder tab SYNCHRONOUSLY (popup-blocker rule),
+              // then let the async export either redirect it (OAuth path) or
+              // navigate it to sheets.new (fallback path).
+              const placeholderWin = (typeof window !== 'undefined')
+                ? window.open('about:blank', '_blank')
+                : null;
+              exportCoPackingToGoogleSheets({ ...buildExportArgs(), placeholderWin })
+                .then((result) => {
+                  if (result && result.mode === 'fallback') {
+                    setSheetsHint(true);
+                    setTimeout(() => setSheetsHint(false), 8000);
+                  }
+                })
+                .catch((err) => {
+                  console.error('[Sheets export]', err);
+                  if (placeholderWin) try { placeholderWin.close(); } catch { /* ignore */ }
+                  alert(`Couldn't open in Sheets: ${err.message || err}`);
+                });
             }}
             title="Open in Google Sheets"
             style={{ padding: '6px 10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}

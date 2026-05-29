@@ -371,20 +371,55 @@ export async function exportCoPackingToExcel({ run, rawPO } = {}) {
   await downloadWorkbook(wb, workbookName(run));
 }
 
-// Download the workbook AND open Google Sheets in a new tab so the user can
-// File → Import → Upload the file. The window.open must be invoked
-// synchronously from the original click handler to bypass popup blockers.
-export async function exportCoPackingToGoogleSheets({ run, rawPO } = {}) {
-  // Open the tab synchronously before any awaits.
-  let win = null;
-  if (typeof window !== 'undefined') {
-    try { win = window.open('https://sheets.new', '_blank', 'noopener,noreferrer'); } catch { /* popup blocked */ }
+// Two paths:
+//   - OAuth (preferred): VITE_GOOGLE_CLIENT_ID set → upload the workbook
+//     to the user's Drive with conversion to Google Sheets, then open
+//     the resulting Sheets URL in the placeholder tab.
+//   - Fallback: download .xlsx + open a blank sheets.new tab. The caller
+//     should show a hint instructing the user to File → Import → Upload.
+//
+// Returns { mode: 'oauth' | 'fallback', url? }. The placeholder window
+// MUST be opened synchronously from the click handler to bypass popup
+// blockers — pass it in as `placeholderWin`.
+export async function exportCoPackingToGoogleSheets({ run, rawPO, placeholderWin } = {}) {
+  const { getGoogleClientId, uploadXlsxToSheets } = await import('./googleSheets');
+  const clientId = getGoogleClientId();
+
+  // No OAuth configured — fall back to the original download + blank tab.
+  if (!clientId) {
+    if (placeholderWin) {
+      try { placeholderWin.location.href = 'https://sheets.new'; } catch { /* ignore */ }
+    }
+    try {
+      const wb = await buildWorkbook({ run, rawPO });
+      await downloadWorkbook(wb, workbookName(run));
+      return { mode: 'fallback' };
+    } catch (e) {
+      if (placeholderWin) try { placeholderWin.close(); } catch { /* ignore */ }
+      throw e;
+    }
   }
+
+  // OAuth path — upload + convert + redirect the placeholder tab.
   try {
     const wb = await buildWorkbook({ run, rawPO });
-    await downloadWorkbook(wb, workbookName(run));
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const { url } = await uploadXlsxToSheets({
+      blob,
+      filename: workbookName(run),
+      clientId,
+    });
+    if (placeholderWin) {
+      try { placeholderWin.location.href = url; } catch { /* ignore */ }
+    } else if (typeof window !== 'undefined') {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+    return { mode: 'oauth', url };
   } catch (e) {
-    if (win) try { win.close(); } catch { /* ignore */ }
+    if (placeholderWin) try { placeholderWin.close(); } catch { /* ignore */ }
     throw e;
   }
 }
