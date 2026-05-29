@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { getClients, getCurrentBatch, getFormulas, getGlobalSettings, getInventory, getRuns, saveGlobalSettings, saveRun, deleteRun } from '../data/store';
 import { getProducts, lookupPrice, NEW_ART_PREP_FEE } from '../data/drayhorsePricing';
 import { exportCoPackingToExcel, exportCoPackingToGoogleSheets } from '../utils/exportExcel';
+import { getGoogleClientId } from '../utils/googleSheets';
 import { exportClientQuote } from '../utils/exportClientQuote';
 import { computeRunResults } from '../utils/runResults';
 import { exportRunComparison } from '../utils/exportRunComparison';
@@ -404,6 +405,7 @@ export default function CoPackingCalculator() {
   const [stateVersion, setStateVersion] = useState(0);
   const [savedFlash, setSavedFlash] = useState(false);
   const [sheetsHint, setSheetsHint] = useState(false);
+  const [sheetsResultUrl, setSheetsResultUrl] = useState(null);
 
   // Run comparison
   const [compareOpen, setCompareOpen] = useState(false);
@@ -1470,6 +1472,40 @@ export default function CoPackingCalculator() {
   return (
     <div className="container">
       {/* Run Comparison Modal */}
+      {sheetsResultUrl && (
+        <div style={{
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 9100, background: '#0f172a', color: 'white',
+          padding: '12px 18px', borderRadius: 8, boxShadow: '0 10px 25px -5px rgba(0,0,0,0.3)',
+          display: 'flex', alignItems: 'center', gap: 12, fontSize: 13, maxWidth: 540,
+        }}>
+          <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true" style={{ flexShrink: 0 }}>
+            <path fill="#0F9D58" d="M37 6H11a3 3 0 0 0-3 3v30a3 3 0 0 0 3 3h26a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3z"/>
+            <path fill="#fff" d="M35 18H13v2.4h22zm0 5H13v2.4h22zm0 5H13v2.4h22z"/>
+            <path fill="#fff" d="M18.5 18h2.5v15h-2.5z"/>
+          </svg>
+          <div>
+            Your Google Sheet is ready.{' '}
+            <a
+              href={sheetsResultUrl} target="_blank" rel="noopener noreferrer"
+              onClick={() => setSheetsResultUrl(null)}
+              style={{ color: '#7dd3fc', textDecoration: 'underline', fontWeight: 600 }}
+            >Open it →</a>
+            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+              The browser blocked the auto-open popup; click the link.
+            </div>
+          </div>
+          <button
+            onClick={() => setSheetsResultUrl(null)}
+            style={{
+              background: 'transparent', border: 'none', color: '#cbd5e1',
+              cursor: 'pointer', fontSize: 18, padding: 0, lineHeight: 1,
+            }}
+            aria-label="Dismiss"
+          >×</button>
+        </div>
+      )}
+
       {sheetsHint && (
         <div style={{
           position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
@@ -1641,18 +1677,32 @@ export default function CoPackingCalculator() {
           <button
             className="btn"
             onClick={() => {
-              // Open the placeholder tab SYNCHRONOUSLY (popup-blocker rule),
-              // then let the async export either redirect it (OAuth path) or
-              // navigate it to sheets.new (fallback path).
-              const placeholderWin = (typeof window !== 'undefined')
+              // OAuth path: do NOT pre-open a window. GIS needs the user-
+              // gesture activation to open its OAuth popup; pre-opening
+              // burns the activation and the popup gets blocked.
+              // Fallback path: there's no OAuth popup, so we pre-open
+              // the placeholder tab synchronously and later redirect it.
+              const clientId = getGoogleClientId();
+              const placeholderWin = !clientId && typeof window !== 'undefined'
                 ? window.open('about:blank', '_blank')
                 : null;
-              exportCoPackingToGoogleSheets({ ...buildExportArgs(), placeholderWin })
+              exportCoPackingToGoogleSheets(buildExportArgs())
                 .then((result) => {
-                  if (result && result.mode === 'fallback') {
+                  if (result.mode === 'fallback') {
+                    if (placeholderWin) {
+                      try { placeholderWin.location.href = 'https://sheets.new'; } catch { /* ignore */ }
+                    }
                     setSheetsHint(true);
                     setTimeout(() => setSheetsHint(false), 8000);
+                    return;
                   }
+                  // OAuth success — try to open the new Sheet. If the
+                  // browser blocks the post-OAuth window, surface a
+                  // click-to-open banner instead.
+                  const win = typeof window !== 'undefined'
+                    ? window.open(result.url, '_blank', 'noopener,noreferrer')
+                    : null;
+                  if (!win) setSheetsResultUrl(result.url);
                 })
                 .catch((err) => {
                   console.error('[Sheets export]', err);

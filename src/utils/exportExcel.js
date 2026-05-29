@@ -371,55 +371,39 @@ export async function exportCoPackingToExcel({ run, rawPO } = {}) {
   await downloadWorkbook(wb, workbookName(run));
 }
 
-// Two paths:
-//   - OAuth (preferred): VITE_GOOGLE_CLIENT_ID set → upload the workbook
-//     to the user's Drive with conversion to Google Sheets, then open
-//     the resulting Sheets URL in the placeholder tab.
-//   - Fallback: download .xlsx + open a blank sheets.new tab. The caller
-//     should show a hint instructing the user to File → Import → Upload.
+// Returns one of:
+//   { mode: 'oauth', url }      — workbook uploaded to Drive + converted
+//                                  to a Google Sheet. Caller decides how
+//                                  to open the URL (window.open may be
+//                                  blocked post-OAuth; surface a
+//                                  click-to-open banner as a fallback).
+//   { mode: 'fallback' }        — no OAuth client configured. Caller
+//                                  should pre-open sheets.new in the
+//                                  click handler AND show the import
+//                                  hint after the .xlsx download.
 //
-// Returns { mode: 'oauth' | 'fallback', url? }. The placeholder window
-// MUST be opened synchronously from the click handler to bypass popup
-// blockers — pass it in as `placeholderWin`.
-export async function exportCoPackingToGoogleSheets({ run, rawPO, placeholderWin } = {}) {
+// Window-management is INTENTIONALLY left to the caller. The OAuth popup
+// must claim the user-gesture activation (calling window.open beforehand
+// burns it and the popup gets blocked).
+export async function exportCoPackingToGoogleSheets({ run, rawPO } = {}) {
   const { getGoogleClientId, uploadXlsxToSheets } = await import('./googleSheets');
   const clientId = getGoogleClientId();
 
-  // No OAuth configured — fall back to the original download + blank tab.
   if (!clientId) {
-    if (placeholderWin) {
-      try { placeholderWin.location.href = 'https://sheets.new'; } catch { /* ignore */ }
-    }
-    try {
-      const wb = await buildWorkbook({ run, rawPO });
-      await downloadWorkbook(wb, workbookName(run));
-      return { mode: 'fallback' };
-    } catch (e) {
-      if (placeholderWin) try { placeholderWin.close(); } catch { /* ignore */ }
-      throw e;
-    }
+    const wb = await buildWorkbook({ run, rawPO });
+    await downloadWorkbook(wb, workbookName(run));
+    return { mode: 'fallback' };
   }
 
-  // OAuth path — upload + convert + redirect the placeholder tab.
-  try {
-    const wb = await buildWorkbook({ run, rawPO });
-    const buffer = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buffer], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
-    const { url } = await uploadXlsxToSheets({
-      blob,
-      filename: workbookName(run),
-      clientId,
-    });
-    if (placeholderWin) {
-      try { placeholderWin.location.href = url; } catch { /* ignore */ }
-    } else if (typeof window !== 'undefined') {
-      window.open(url, '_blank', 'noopener,noreferrer');
-    }
-    return { mode: 'oauth', url };
-  } catch (e) {
-    if (placeholderWin) try { placeholderWin.close(); } catch { /* ignore */ }
-    throw e;
-  }
+  const wb = await buildWorkbook({ run, rawPO });
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const { url } = await uploadXlsxToSheets({
+    blob,
+    filename: workbookName(run),
+    clientId,
+  });
+  return { mode: 'oauth', url };
 }
