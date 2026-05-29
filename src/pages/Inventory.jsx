@@ -54,9 +54,16 @@ export default function Inventory() {
 
   const selectedItem = inventory.find((i) => i.id === selectedItemId);
   const lowStockCount = inventory.filter((i) => i.currentStock < i.reorderPoint).length;
+  // Replacement-cost valuation: pick the tier whose qty band contains
+  // currentStock (i.e. what we'd actually pay to reorder at this level).
+  // Falls back to the lowest tier if currentStock is below the smallest band.
   const totalValue = inventory.reduce((sum, item) => {
-    const price = item.priceTiers?.[0]?.price || 0;
-    return sum + item.currentStock * price;
+    const tiers = item.priceTiers || [];
+    if (tiers.length === 0) return sum;
+    const qty = item.currentStock || 0;
+    const matched = tiers.find((t) => qty >= (t.minQty || 0) && (t.maxQty == null || qty <= t.maxQty));
+    const price = (matched || tiers[0])?.price || 0;
+    return sum + qty * price;
   }, 0);
 
   function selectItem(id) {
@@ -187,7 +194,7 @@ export default function Inventory() {
         stock: colMap.stock !== undefined ? parseFloat(vals[colMap.stock]) || 0 : 0,
         reorder: colMap.reorder !== undefined ? parseFloat(vals[colMap.reorder]) || 0 : 0,
         price: colMap.price !== undefined ? parseFloat(vals[colMap.price]) || 0 : 0,
-        moq: colMap.moq !== undefined ? parseInt(vals[colMap.moq]) || 1 : 1,
+        moq: colMap.moq !== undefined ? parseFloat(vals[colMap.moq]) || 1 : 1,
         vendor: colMap.vendor !== undefined ? vals[colMap.vendor]?.replace(/^["']|["']$/g, '').trim() : '',
         category: colMap.category !== undefined ? vals[colMap.category]?.replace(/^["']|["']$/g, '').trim() : 'ingredient',
       });
@@ -571,7 +578,7 @@ export default function Inventory() {
                           className="tier-input"
                           defaultValue={tier.minQty}
                           style={{ width: 60, display: 'inline-block', marginRight: 4 }}
-                          onBlur={(e) => updatePriceTier(selectedItem.id, index, 'minQty', parseInt(e.target.value) || 0)}
+                          onBlur={(e) => updatePriceTier(selectedItem.id, index, 'minQty', parseFloat(e.target.value) || 0)}
                           key={`min-${selectedItem.id}-${index}`}
                         />
                         -
@@ -581,7 +588,7 @@ export default function Inventory() {
                           defaultValue={tier.maxQty || ''}
                           placeholder="\u221e"
                           style={{ width: 60, display: 'inline-block', marginLeft: 4 }}
-                          onBlur={(e) => updatePriceTier(selectedItem.id, index, 'maxQty', e.target.value ? parseInt(e.target.value) : null)}
+                          onBlur={(e) => updatePriceTier(selectedItem.id, index, 'maxQty', e.target.value ? parseFloat(e.target.value) : null)}
                           key={`max-${selectedItem.id}-${index}`}
                         />
                       </div>
@@ -600,7 +607,7 @@ export default function Inventory() {
                           type="number"
                           className="tier-input"
                           defaultValue={tier.moq || tier.minQty}
-                          onBlur={(e) => updatePriceTier(selectedItem.id, index, 'moq', parseInt(e.target.value) || 1)}
+                          onBlur={(e) => updatePriceTier(selectedItem.id, index, 'moq', parseFloat(e.target.value) || 1)}
                           key={`moq-${selectedItem.id}-${index}`}
                         />
                       </div>

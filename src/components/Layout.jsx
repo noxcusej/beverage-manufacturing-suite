@@ -82,16 +82,11 @@ export default function Layout() {
           </nav>
 
           <div className="sidebar-footer">
-            {!collapsed && (
-              <>
-                <a href="#settings"><span>&#x2699;</span> Settings</a>
-                <a href="#support"><span>&#x2709;</span> Support</a>
-              </>
-            )}
             <button
               className="sidebar-collapse-btn"
               onClick={() => setCollapsed(c => !c)}
               title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >
               {collapsed ? '›' : '‹'}
             </button>
@@ -101,14 +96,11 @@ export default function Layout() {
         {/* Main */}
         <div className="app-main">
           <header className="app-topbar">
-            <input
-              type="text"
-              className="topbar-search"
-              placeholder="Search projects or logs..."
-            />
             <div className="topbar-actions">
-              <a href="#reports" className="topbar-link">Reports</a>
-              <a href="#history" className="topbar-link">History</a>
+              {/* Cmd/Ctrl-K opens the command palette */}
+              <span className="topbar-link" style={{ opacity: 0.6, fontSize: 12 }}>
+                Press <kbd>⌘K</kbd> to search
+              </span>
             </div>
           </header>
 

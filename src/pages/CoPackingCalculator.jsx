@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { getClients, getCurrentBatch, getFormulas, getGlobalSettings, getInventory, getRuns, saveGlobalSettings, saveRun, deleteRun } from '../data/store';
+import { getClients, getCurrentBatch, getFormulas, getGlobalSettings, getInventory, getRuns, saveGlobalSettings, saveRun, deleteRun, getPackaging, getServices } from '../data/store';
 import { getProducts, lookupPrice, findTierUpOption, getQuantityTiers, NEW_ART_PREP_FEE } from '../data/drayhorsePricing';
 import { exportCoPackingToExcel, exportCoPackingToGoogleSheets } from '../utils/exportExcel';
 import { getGoogleClientId } from '../utils/googleSheets';
@@ -1021,6 +1021,28 @@ export default function CoPackingCalculator() {
   const updateTax = updateFeeItem(setTaxItems);
   const resetTaxQty = resetItemQty(setTaxItems);
 
+  // Catalog pickers — sourced from the Packaging and Services catalog pages.
+  // Empty until the user populates those catalogs; the "+ From catalog…"
+  // dropdown self-hides when its catalog is empty.
+  const packagingCatalog = useMemo(() => (getPackaging() || []).filter((p) => p.name), []);
+  const servicesCatalog = useMemo(() => (getServices() || []).filter((s) => s.name), []);
+  function addFromCatalog(setter, idPrefix) {
+    return (catItem) => {
+      setter((p) => [
+        ...p,
+        {
+          id: `${idPrefix}-${Date.now()}`,
+          name: catItem.name,
+          category: catItem.category || 'other',
+          feeType: catItem.feeType || 'per-unit',
+          rate: catItem.rate || 0,
+          qty: getFeeAutoQty(catItem.feeType || 'per-unit', effectiveCounts),
+          qtyManual: false,
+        },
+      ]);
+    };
+  }
+
   // ── Drag & drop reorder ──
   const [dragState, setDragState] = useState({ list: null, fromIdx: null, overIdx: null });
 
@@ -1304,7 +1326,7 @@ export default function CoPackingCalculator() {
 
   // ── Render helper: fee table (shared by services, taxes) ──
 
-  function renderFeeTable(rows, updateFn, resetFn, removeFn, addFn, addLabel, subtotal, drag) {
+  function renderFeeTable(rows, updateFn, resetFn, removeFn, addFn, addLabel, subtotal, drag, catalog, addFromCatalog) {
     return (
       <div style={{ overflowX: 'auto' }}>
       <table>
@@ -1362,7 +1384,7 @@ export default function CoPackingCalculator() {
                   ${row.lineCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </td>
                 <td>
-                  <button className="btn btn-small btn-danger" onClick={() => removeFn(idx)} title="Remove">x</button>
+                  <button className="btn btn-small btn-danger" onClick={() => removeFn(idx)} aria-label="Remove row" title="Remove">x</button>
                 </td>
               </tr>
             );
@@ -1377,8 +1399,27 @@ export default function CoPackingCalculator() {
             <td></td>
           </tr>
           <tr>
-            <td colSpan={7} style={{ padding: '8px 12px' }}>
+            <td colSpan={7} style={{ padding: '8px 12px', display: 'flex', gap: 8, alignItems: 'center' }}>
               <button className="btn btn-small" onClick={addFn} style={{ fontSize: 12 }}>+ {addLabel}</button>
+              {catalog && catalog.length > 0 && addFromCatalog && (
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const picked = catalog.find((c) => c.id === e.target.value);
+                    if (picked) addFromCatalog(picked);
+                    e.target.value = '';
+                  }}
+                  style={{ fontSize: 12 }}
+                  aria-label="Import from catalog"
+                >
+                  <option value="">+ From catalog…</option>
+                  {catalog.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.feeType} @ ${(c.rate || 0).toFixed(2)})
+                    </option>
+                  ))}
+                </select>
+              )}
             </td>
           </tr>
         </tfoot>
@@ -1983,7 +2024,7 @@ export default function CoPackingCalculator() {
                   <td style={{ textAlign: 'right' }}>{row.pallets.toLocaleString()}</td>
                   <td>
                     {flavors.length > 1 && (
-                      <button className="btn btn-small btn-danger" onClick={() => setFlavors((p) => p.filter((_, i) => i !== idx))}>x</button>
+                      <button className="btn btn-small btn-danger" onClick={() => setFlavors((p) => p.filter((_, i) => i !== idx))} aria-label="Remove flavor" title="Remove flavor">x</button>
                     )}
                   </td>
                 </tr>
@@ -2380,7 +2421,7 @@ export default function CoPackingCalculator() {
                       ${row.lineCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                     <td>
-                      <button className="btn btn-small btn-danger" onClick={() => setPackagingItems((p) => p.filter((_, i) => i !== idx))}>x</button>
+                      <button className="btn btn-small btn-danger" onClick={() => setPackagingItems((p) => p.filter((_, i) => i !== idx))} aria-label="Remove packaging item" title="Remove packaging item">x</button>
                     </td>
                   </tr>
                 );
@@ -2496,6 +2537,7 @@ export default function CoPackingCalculator() {
                         className="btn btn-small btn-danger"
                         onClick={() => removePackGroup(row.packGroupId)}
                         title="Remove pack group from the plan"
+                        aria-label="Remove pack group"
                       >x</button>
                     </td>
                   </tr>
@@ -2531,10 +2573,29 @@ export default function CoPackingCalculator() {
                 <td></td>
               </tr>
               <tr>
-                <td colSpan={8} style={{ padding: '8px 12px' }}>
+                <td colSpan={8} style={{ padding: '8px 12px', display: 'flex', gap: 8, alignItems: 'center' }}>
                   <button className="btn btn-small" onClick={() => setPackagingItems((p) => [...p, { id: 'pkg-' + Date.now(), name: '', category: 'other', feeType: 'per-unit', rate: 0, qty: getFeeAutoQty('per-unit', effectiveCounts), qtyManual: false }])} style={{ fontSize: 12 }}>
                     + Add Packaging Item
                   </button>
+                  {packagingCatalog.length > 0 && (
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const picked = packagingCatalog.find((c) => c.id === e.target.value);
+                        if (picked) addFromCatalog(setPackagingItems, 'pkg')(picked);
+                        e.target.value = '';
+                      }}
+                      style={{ fontSize: 12 }}
+                      aria-label="Import from packaging catalog"
+                    >
+                      <option value="">+ From catalog…</option>
+                      {packagingCatalog.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} ({c.feeType} @ ${(c.rate || 0).toFixed(2)})
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </td>
               </tr>
             </tfoot>
@@ -2706,7 +2767,8 @@ export default function CoPackingCalculator() {
             costs.tollRows, updateToll, resetTollQty,
             (idx) => setTollingItems((p) => p.filter((_, i) => i !== idx)),
             () => setTollingItems((p) => [...p, { id: 'toll-' + Date.now(), name: '', feeType: 'per-unit', rate: 0, qty: getFeeAutoQty('per-unit', effectiveCounts), qtyManual: false }]),
-            'Add Tolling Item', costs.tollingCost, tollDrag
+            'Add Tolling Item', costs.tollingCost, tollDrag,
+            servicesCatalog, addFromCatalog(setTollingItems, 'toll')
           )}
         </div>
       </div>
@@ -2721,7 +2783,8 @@ export default function CoPackingCalculator() {
             costs.bomRows, updateBom, resetBomQty,
             (idx) => setBomItems((p) => p.filter((_, i) => i !== idx)),
             () => setBomItems((p) => [...p, { id: 'bom-' + Date.now(), name: '', feeType: 'per-unit', rate: 0, qty: getFeeAutoQty('per-unit', effectiveCounts), qtyManual: false }]),
-            'Add BOM Item', costs.bomCost, bomDrag
+            'Add BOM Item', costs.bomCost, bomDrag,
+            servicesCatalog, addFromCatalog(setBomItems, 'bom')
           )}
         </div>
       </div>

@@ -223,6 +223,9 @@ export default function PackagingPlanModal({
   return (
     <div className="command-palette-overlay" onClick={onClose}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Packaging plan"
         onClick={(e) => e.stopPropagation()}
         style={{
           position: 'fixed', top: '4%', left: '50%', transform: 'translateX(-50%)',

@@ -181,7 +181,7 @@ export default function ClientProfile() {
                       <td><input type="text" defaultValue={ct.role} placeholder="Role..." style={{ width: '100%' }} onBlur={(e) => updateContact(idx, 'role', e.target.value)} /></td>
                       <td><input type="email" defaultValue={ct.email} placeholder="email@..." style={{ width: '100%' }} onBlur={(e) => updateContact(idx, 'email', e.target.value)} /></td>
                       <td><input type="tel" defaultValue={ct.phone} placeholder="Phone..." style={{ width: 120 }} onBlur={(e) => updateContact(idx, 'phone', e.target.value)} /></td>
-                      <td><button className="btn btn-small btn-danger" onClick={() => removeContact(idx)}>x</button></td>
+                      <td><button className="btn btn-small btn-danger" onClick={() => removeContact(idx)} aria-label="Remove contact" title="Remove contact">x</button></td>
                     </tr>
                   ))}
                 </tbody>

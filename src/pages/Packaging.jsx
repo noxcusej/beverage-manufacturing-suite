@@ -239,6 +239,10 @@ export default function Packaging() {
 
   return (
     <div className="main-container">
+      <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', padding: '8px 12px', borderRadius: 6, marginBottom: 12, fontSize: 12 }}>
+        This is a reference <strong>catalog</strong> of packaging materials. Items here aren't auto-applied to quotes —
+        open <strong>Run Quoting</strong>, scroll to the Packaging Items table, and use the <em>+ From catalog…</em> picker to pull them into a quote.
+      </div>
       <div className="items-panel">
         <div className="items-header">
           <input

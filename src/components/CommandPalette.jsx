@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const commands = [
-  { name: 'Go to Batch Calculator', description: 'Recipe scaling & costing', path: '/batch-calculator', shortcut: '' },
-  { name: 'Go to Co-Packing', description: 'Packaging & services calculator', path: '/copacking', shortcut: '' },
-  { name: 'Go to Inventory', description: 'Manage ingredients', path: '/inventory', shortcut: '' },
-  { name: 'Go to Services', description: 'Manage co-packing services', path: '/services', shortcut: '' },
-  { name: 'Go to Packaging', description: 'Manage packaging materials', path: '/packaging', shortcut: '' },
-  { name: 'Go to Mission Control', description: 'Task board & team dashboard', path: '/mission-control', shortcut: '' },
-  { name: 'Go Home', description: 'Landing page', path: '/', shortcut: '' },
+  { name: 'Go to Formula Calculator', description: 'Recipe scaling & costing', path: '/batch-calculator', shortcut: '' },
+  { name: 'Go to Run Quoting', description: 'Packaging & services calculator', path: '/copacking', shortcut: '' },
+  { name: 'Go to Clients', description: 'Client roster & profiles', path: '/clients', shortcut: '' },
+  { name: 'Go to Inventory', description: 'Ingredient catalog', path: '/inventory', shortcut: '' },
+  { name: 'Go to Packaging', description: 'Packaging catalog', path: '/packaging', shortcut: '' },
+  { name: 'Go to Services', description: 'Service-fee catalog', path: '/services', shortcut: '' },
+  { name: 'Go to Formulas', description: 'Formula library', path: '/formulas', shortcut: '' },
+  { name: 'Go to Summary', description: 'Run summary & comparison', path: '/summary', shortcut: '' },
 ];
 
 export default function CommandPalette() {
@@ -83,12 +84,13 @@ export default function CommandPalette() {
   return (
     <>
       <div className="command-palette-overlay" onClick={close} />
-      <div className="command-palette">
+      <div className="command-palette" role="dialog" aria-modal="true" aria-label="Command palette">
         <div className="command-palette-input-wrapper">
           <input
             ref={inputRef}
             type="text"
             placeholder="Type a command or search..."
+            aria-label="Search commands"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);

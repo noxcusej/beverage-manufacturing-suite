@@ -90,14 +90,16 @@ export default function BatchCalculator() {
   useEffect(() => {
     const batch = getCurrentBatch();
     if (batch) {
-      if (batch.formulaName) setFormulaName(batch.formulaName);
-      if (batch.formulaClient) setFormulaClient(batch.formulaClient);
-      if (batch.baseYield) setBaseYield(batch.baseYield);
-      if (batch.baseYieldUnit) setBaseYieldUnit(batch.baseYieldUnit);
-      if (batch.batchSizeUnit) setBatchSizeUnit(batch.batchSizeUnit);
-      if (batch.unitSizeVal) setUnitSizeVal(batch.unitSizeVal);
-      if (batch.unitSizeUnit) setUnitSizeUnitState(batch.unitSizeUnit);
-      if (batch.unitsPerCase) setUnitsPerCase(batch.unitsPerCase);
+      // Use `!== undefined` (not truthy-check) so a deliberate 0 round-trips.
+      // `if (batch.baseYield)` previously dropped 0 on reload.
+      if (batch.formulaName !== undefined) setFormulaName(batch.formulaName);
+      if (batch.formulaClient !== undefined) setFormulaClient(batch.formulaClient);
+      if (batch.baseYield !== undefined) setBaseYield(batch.baseYield);
+      if (batch.baseYieldUnit !== undefined) setBaseYieldUnit(batch.baseYieldUnit);
+      if (batch.batchSizeUnit !== undefined) setBatchSizeUnit(batch.batchSizeUnit);
+      if (batch.unitSizeVal !== undefined) setUnitSizeVal(batch.unitSizeVal);
+      if (batch.unitSizeUnit !== undefined) setUnitSizeUnitState(batch.unitSizeUnit);
+      if (batch.unitsPerCase !== undefined) setUnitsPerCase(batch.unitsPerCase);
       if (batch.lossPercent !== undefined) setLossPercent(batch.lossPercent);
       if (batch.ingredients) setIngredients(batch.ingredients);
       if (batch.sizeMode) setSizeMode(batch.sizeMode);
@@ -105,9 +107,9 @@ export default function BatchCalculator() {
       if (savedCases > 0) {
         setTargetCases(savedCases);
         if (!batch.sizeMode) setSizeMode('cases');
-        if (batch.batchSize) setBatchSize(batch.batchSize);
-      } else {
-        if (batch.batchSize) setBatchSize(batch.batchSize);
+        if (batch.batchSize !== undefined) setBatchSize(batch.batchSize);
+      } else if (batch.batchSize !== undefined) {
+        setBatchSize(batch.batchSize);
       }
     }
   }, []);
@@ -1280,7 +1282,7 @@ export default function BatchCalculator() {
                           })() : '\u2014'}
                         </td>
                         <td>
-                          <button className="btn btn-small btn-danger" onClick={() => removeIngredient(idx)}>x</button>
+                          <button className="btn btn-small btn-danger" onClick={() => removeIngredient(idx)} aria-label="Remove ingredient" title="Remove ingredient">x</button>
                         </td>
                       </tr>
                   ))}
