@@ -132,7 +132,9 @@ export default function PackagingPlanModal({
       const opts = { unitsPerCase, casesPerPallet };
       let prevWorstId = null;
       let prevWorst = -1;
-      for (let iter = 0; iter < 20; iter += 1) {
+      const maxIters = 20;
+      let iter = 0;
+      for (; iter < maxIters; iter += 1) {
         const der = computePlanDerived(current, flavorRows, opts);
         if ((der.overAllocatedGroups || []).length === 0) break;
         const worst = der.overAllocatedGroups.slice().sort((a, b) => b.overByCans - a.overByCans)[0];
@@ -161,6 +163,9 @@ export default function PackagingPlanModal({
               g.id === worst.groupId ? { ...g, casesCount: maxCases } : g),
           };
         }
+      }
+      if (iter >= maxIters) {
+        console.warn('[PackagingPlanModal] autoFitAll hit iteration cap without converging; some over-allocations remain.');
       }
       return current;
     });

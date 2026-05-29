@@ -199,9 +199,9 @@ export function computePlanDerived(plan, flavorRows, { unitsPerCase = 24, casesP
   const allocationMode = (plan?.allocationMode === 'percent' || legacyPercent) ? 'percent' : 'manual';
   const context = { allocationMode, totalCans: totalProduced, unitsPerCase };
 
-  // Migrate a legacy `straightPercent`-only plan transparently: distribute it
-  // across straight groups evenly, same for variety. The next save writes the
-  // new per-group shape back.
+  // Migrate a legacy `straightPercent`-only plan transparently. The
+  // applyRunState path also strips `straightPercent` after migrating so
+  // this only fires until the next save.
   const migratedGroups = migrateLegacyPercents(plan?.groups || [], plan, allocationMode);
 
   const groups = migratedGroups.map((g) => {

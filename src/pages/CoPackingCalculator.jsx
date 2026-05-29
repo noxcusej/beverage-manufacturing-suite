@@ -372,10 +372,10 @@ export default function CoPackingCalculator() {
     }));
   }
 
-  // Carrier switch: clears stale carton-rate / unit-price manual flags when
-  // transitioning OUT of carton, so a later switch back to carton doesn't
-  // silently re-apply an old override. Also clears the unitPrice auto-seed
-  // so the new carrier's pricing isn't masked by a previous tier number.
+  // Carrier switch. Only the auto-seeded carton tier price is cleared on
+  // transition OUT of carton — a manually-typed unitPrice survives so the
+  // user doesn't silently lose a rate they explicitly entered. They can
+  // click the rate's "auto" pill to reset if they want.
   function updatePackGroupCarrier(groupId, nextCarrier) {
     setPackagingPlan((prev) => ({
       ...prev,
@@ -383,10 +383,11 @@ export default function CoPackingCalculator() {
         if (g.id !== groupId) return g;
         const patch = { carrierType: nextCarrier };
         if (nextCarrier !== 'carton' && g.carrierType === 'carton') {
-          patch.cartonRateOverride = 0;
-          patch.cartonRateManual = false;
-          patch.unitPriceManual = false;
-          patch.unitPrice = 0;
+          // Auto-seeded unitPrice (no manual flag) is a stale carton tier
+          // number; drop it. Manual unitPrice stays.
+          if (!g.unitPriceManual) {
+            patch.unitPrice = 0;
+          }
         }
         return { ...g, ...patch };
       }),
@@ -624,24 +625,20 @@ export default function CoPackingCalculator() {
       cartonGroups.forEach((g) => {
         const cartonQty = g.packsCount || 0;
         if (cartonQty <= 0) return;
-        // Each carton group is one artwork SKU; tier depends on the total
-        // number of carton SKUs being ordered. User can override the per-
-        // carton price per group via `cartonRateOverride` / `cartonRateManual`.
+        // Each carton group is one artwork SKU. Pricing is the Drayhorse
+        // tier; per-group rate overrides live on the pack-group row's
+        // unitPrice/unitPriceManual, not here.
         const tier = lookupPrice(cartonProduct, cartonQty, effectiveSkuCount);
         const autoRate = tier?.pricePerCarton || 0;
-        const pricePerCarton = g.cartonRateManual
-          ? (Number(g.cartonRateOverride) || 0)
-          : autoRate;
-        const groupTotal = pricePerCarton * cartonQty;
+        const groupTotal = autoRate * cartonQty;
         totalCost += groupTotal;
         totalCartonQty += cartonQty;
         groupBreakdown.push({
           groupId: g.id,
           groupLabel: g.label || `${g.type === 'variety' ? 'Variety' : 'Straight'} ${g.packSize}-pk`,
           cartonQty,
-          pricePerCarton,
+          pricePerCarton: autoRate,
           autoRate,
-          rateManual: !!g.cartonRateManual,
           totalCost: groupTotal,
         });
       });
@@ -833,7 +830,12 @@ export default function CoPackingCalculator() {
     let packagingCost = 0;
     const pkgRowsFromItems = packagingItems.map((item) => {
       const legacySuppress = !planDerived.active && item.category === 'carriers' && carrierType === 'carton';
-      if (legacySuppress) {
+      // In plan mode, the default PakTech Carriers row is replaced by
+      // per-pack-group unitPrice — suppress it so the user isn't double-
+      // billed when the pack-group rate is non-zero. (Custom carrier rows
+      // with other ids stay active.)
+      const planSuppressDefaultCarriers = planDerived.active && item.id === 'pkg-carriers';
+      if (legacySuppress || planSuppressDefaultCarriers) {
         return { ...item, lineCost: 0, inactive: true };
       }
       const lineCost = (item.rate || 0) * (item.qty || 0);
@@ -1146,8 +1148,50 @@ export default function CoPackingCalculator() {
     if (run.taxItems) setTaxItems(run.taxItems);
     // Plan may legitimately be {groups: []} after a user clears it, so only
     // skip when the field is entirely absent (legacy run never had it).
-    if (run.packagingPlan) setPackagingPlan(run.packagingPlan);
-    else setPackagingPlan(createEmptyPlan());
+    // One-shot migrations:
+    //   - legacy cartonRateManual/Override → unitPrice/Manual (per group)
+    //   - legacy plan-level straightPercent → per-group allocationPercent,
+    //     then strip straightPercent so subsequent loads can't re-migrate
+    //     over deliberate user edits.
+    if (run.packagingPlan) {
+      const plan = run.packagingPlan;
+      const planAllocationMode = plan.allocationMode
+        || (typeof plan.straightPercent === 'number' ? 'percent' : 'manual');
+      const groupsHavePct = (plan.groups || []).some((g) => Number.isFinite(g.allocationPercent) && g.allocationPercent > 0);
+      const sp = typeof plan.straightPercent === 'number'
+        ? Math.max(0, Math.min(100, plan.straightPercent))
+        : null;
+      const migratedGroups = (plan.groups || []).map((g) => {
+        let next = g;
+        // Carton-rate migration
+        if (g.cartonRateManual) {
+          next = { ...next };
+          if (!g.unitPriceManual) {
+            next.unitPrice = Number(g.cartonRateOverride) || 0;
+            next.unitPriceManual = true;
+          }
+          delete next.cartonRateManual;
+          delete next.cartonRateOverride;
+        }
+        // Legacy straightPercent → per-group allocationPercent (only when
+        // no group has explicit %s yet)
+        if (sp !== null && !groupsHavePct && planAllocationMode === 'percent') {
+          const straight = (plan.groups || []).filter((x) => x.type === 'straight');
+          const variety = (plan.groups || []).filter((x) => x.type === 'variety');
+          let spLocal = sp;
+          let vpLocal = 100 - sp;
+          if (straight.length === 0 && variety.length > 0) { vpLocal += spLocal; spLocal = 0; }
+          if (variety.length === 0 && straight.length > 0) { spLocal += vpLocal; vpLocal = 0; }
+          const perStraight = straight.length > 0 ? spLocal / straight.length : 0;
+          const perVariety = variety.length > 0 ? vpLocal / variety.length : 0;
+          next = { ...next, allocationPercent: g.type === 'straight' ? perStraight : perVariety };
+        }
+        return next;
+      });
+      const migrated = { ...plan, groups: migratedGroups, allocationMode: planAllocationMode };
+      delete migrated.straightPercent; // stripped after migration
+      setPackagingPlan(migrated);
+    } else setPackagingPlan(createEmptyPlan());
     setStateVersion((v) => v + 1);
   }
 
@@ -2248,7 +2292,7 @@ export default function CoPackingCalculator() {
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
                         <span style={{ color: '#6b7280', fontSize: 13 }}>$</span>
                         <input
-                          key={`pack-rate-${row.id}-${row.rate}-${row.unitPriceManual}`}
+                          key={`pack-rate-${row.id}-${row.unitPriceManual}`}
                           type="text" inputMode="decimal" defaultValue={Number(row.rate || 0)}
                           style={{
                             width: 80, textAlign: 'right',
@@ -2284,7 +2328,16 @@ export default function CoPackingCalculator() {
                         />
                         {row.qtyManual && (
                           <button className="btn btn-small"
-                            onClick={() => updatePackGroupField(row.packGroupId, 'qtyManual', false)}
+                            onClick={() => {
+                              // Clear both qtyManual and qtyOverride so the
+                              // stale override can't reappear later.
+                              setPackagingPlan((prev) => ({
+                                ...prev,
+                                groups: (prev.groups || []).map((g) => (g.id === row.packGroupId
+                                  ? { ...g, qtyManual: false, qtyOverride: undefined }
+                                  : g)),
+                              }));
+                            }}
                             title="Reset to auto (derived from plan)"
                             style={{ padding: '2px 5px', fontSize: 10, lineHeight: 1 }}>auto</button>
                         )}

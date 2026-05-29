@@ -119,18 +119,14 @@ function computeCartonCost(carton, carrierType, packSize, totalUnits, planDerive
       if (cartonQty <= 0) return;
       const tier = lookupPrice(cartonProduct, cartonQty, effectiveSkuCount);
       const autoRate = tier?.pricePerCarton || 0;
-      const pricePerCarton = g.cartonRateManual
-        ? (Number(g.cartonRateOverride) || 0)
-        : autoRate;
-      const groupTotal = pricePerCarton * cartonQty;
+      const groupTotal = autoRate * cartonQty;
       totalCost += groupTotal;
       groupBreakdown.push({
         groupId: g.id,
         groupLabel: g.label || `${g.type === 'variety' ? 'Variety' : 'Straight'} ${g.packSize}-pk`,
         cartonQty,
-        pricePerCarton,
+        pricePerCarton: autoRate,
         autoRate,
-        rateManual: !!g.cartonRateManual,
         totalCost: groupTotal,
       });
     });
@@ -173,6 +169,11 @@ export function computeRunResults(run) {
   const sumLines = (items) => (items || []).map((item) => {
     // Legacy suppression: only when no plan exists and the run is single-carrier carton.
     if (!planDerived.active && item.category === 'carriers' && carrierType === 'carton') {
+      return { ...item, qty: 0, lineCost: 0, inactive: true };
+    }
+    // Plan mode: default PakTech Carriers row is replaced by per-pack-group
+    // unitPrice — suppress to avoid double-billing.
+    if (planDerived.active && item.id === 'pkg-carriers') {
       return { ...item, qty: 0, lineCost: 0, inactive: true };
     }
     const qty = resolveQty(item, effectiveCounts);
