@@ -18,6 +18,9 @@
 //     download-and-import flow.
 
 const GIS_SRC = 'https://accounts.google.com/gsi/client';
+// drive.file grants per-file access (only files this app creates) — narrow
+// scope, no consent-screen warning for "view all Drive files." The Sheets
+// API can act on the file too via the same scope.
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 
 let gisLoaded = false;
@@ -92,11 +95,43 @@ async function uploadAsSheet(accessToken, filename, blob) {
   return res.json();
 }
 
-// Public entry point: uploads + converts in one call. Caller is responsible
-// for opening the resulting URL in a window (sync from click).
+// Hide gridlines on every sheet in the newly-created spreadsheet. Google
+// Sheets ignores the Excel-level showGridLines attribute on import, so we
+// have to set the per-tab `hideGridlines` flag via the Sheets API. Best-
+// effort: a failure here doesn't break the open flow.
+async function hideGridlines(accessToken, spreadsheetId) {
+  try {
+    const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties(sheetId,title)`;
+    const metaRes = await fetch(metaUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (!metaRes.ok) return;
+    const meta = await metaRes.json();
+    const requests = (meta.sheets || []).map((s) => ({
+      updateSheetProperties: {
+        properties: {
+          sheetId: s.properties.sheetId,
+          gridProperties: { hideGridlines: true },
+        },
+        fields: 'gridProperties.hideGridlines',
+      },
+    }));
+    if (requests.length === 0) return;
+    await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requests }),
+    });
+  } catch (e) {
+    // Non-fatal — the sheet still opens, just with gridlines visible.
+    console.warn('[googleSheets] hideGridlines failed:', e);
+  }
+}
+
+// Public entry point: uploads + converts + hides gridlines in one call.
+// Caller is responsible for opening the resulting URL in a window.
 export async function uploadXlsxToSheets({ blob, filename, clientId }) {
   const token = await requestAccessToken(clientId);
   const file = await uploadAsSheet(token, filename, blob);
+  await hideGridlines(token, file.id);
   return {
     fileId: file.id,
     url: `https://docs.google.com/spreadsheets/d/${file.id}/edit`,
