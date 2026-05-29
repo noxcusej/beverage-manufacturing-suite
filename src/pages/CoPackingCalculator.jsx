@@ -1143,7 +1143,19 @@ export default function CoPackingCalculator() {
     }
     if (run.packagingItems) setPackagingItems(run.packagingItems);
     if (run.tollingEngine) setTollingEngine(normalizeTollingEngine(run.tollingEngine));
-    if (run.tollingItems) setTollingItems(ensureStandardTolling(run.tollingItems));
+    if (run.tollingItems) {
+      // One-shot migration: the toll-variety default changed from
+      // per-variety-pack @ $0.15 to per-variety-case @ $0.50. If the row
+      // still matches the OLD default profile (rate 0 or 0.15), migrate
+      // to the new default. A customized rate is preserved as-is so
+      // explicit user choices of per-variety-pack survive.
+      const migratedTolling = run.tollingItems.map((item) => {
+        if (item.id !== 'toll-variety' || item.feeType !== 'per-variety-pack') return item;
+        const looksUnedited = item.rate === 0 || item.rate === 0.15;
+        return looksUnedited ? { ...item, feeType: 'per-variety-case', rate: 0.50 } : item;
+      });
+      setTollingItems(ensureStandardTolling(migratedTolling));
+    }
     if (run.bomItems) setBomItems(run.bomItems);
     if (run.taxItems) setTaxItems(run.taxItems);
     // Plan may legitimately be {groups: []} after a user clears it, so only
