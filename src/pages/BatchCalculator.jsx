@@ -21,7 +21,7 @@ function convert(value, from, to) {
   return value;
 }
 
-const _weightUnitsSet = new Set(['lbs', 'lb', 'kg', 'g']);
+const _weightUnitsSet = new Set(['lbs', 'lb', 'kg', 'g', 'oz']);
 const _volumeUnitsSet = new Set(['gal', 'L', 'ml', 'fl oz']);
 function convertWithSG(value, from, to, sg) {
   if (from === to) return value;
@@ -263,7 +263,8 @@ export default function BatchCalculator() {
         if (invUnit === ing.buyUnit) {
           onHandBuyUnits = invQty;
         } else {
-          onHandBuyUnits = convert(invQty, invUnit, ing.buyUnit);
+          // SG-aware: lb-on-hand vs gal-buy (or vice versa) must apply SG.
+          onHandBuyUnits = convertWithSG(invQty, invUnit, ing.buyUnit, ing.specificGravity);
         }
       }
 

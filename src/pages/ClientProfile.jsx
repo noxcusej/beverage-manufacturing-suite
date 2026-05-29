@@ -94,7 +94,12 @@ export default function ClientProfile() {
       let candidate = `${baseName} (Copy)`;
       let n = 2;
       while (existingNames.has(candidate)) { candidate = `${baseName} (Copy ${n})`; n += 1; }
-      const { id, createdAt, updatedAt, ...rest } = run;
+      // Explicit deletes — destructuring `id`/`createdAt`/`updatedAt`
+      // triggers no-unused-vars and shadows the outer `client.id` binding.
+      const rest = { ...run };
+      delete rest.id;
+      delete rest.createdAt;
+      delete rest.updatedAt;
       saveRun({ ...rest, id: null, name: candidate });
       setAllRuns(getRuns());
     }
