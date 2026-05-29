@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
 import { getRuns } from '../data/store';
 import { computeRunResults } from '../utils/runResults';
+import { generateCoverLetter } from '../utils/coverLetter';
+import { uploadHtmlAsGoogleDoc, getGoogleClientId } from '../utils/googleSheets';
 
 // Industry-typical margin defaults by segment. Sources: BevNET / Craft
 // Brewery Finance / American Spirits Exchange / LibDib / Vividly (2024-26).
@@ -48,6 +50,15 @@ export default function Summary() {
   const [marginPresetId, setMarginPresetId] = useState('rtd-malt');
   const [distributorMargin, setDistributorMargin] = useState(30);
   const [retailMargin, setRetailMargin] = useState(35);
+
+  // Cover-letter editor state. `null` = render the auto-generated text;
+  // any string = user-edited and won't auto-refresh until they hit
+  // "Regenerate" (so typing isn't blown away when other state changes).
+  const [coverLetterText, setCoverLetterText] = useState(null);
+  const [coverLetterFrom, setCoverLetterFrom] = useState('');
+  const [coverLetterCompany, setCoverLetterCompany] = useState('');
+  const [coverLetterBusy, setCoverLetterBusy] = useState(false);
+  const [coverLetterStatus, setCoverLetterStatus] = useState(null);
 
   function applyMarginPreset(id) {
     const preset = SEGMENT_PRESETS.find((p) => p.id === id);
@@ -442,8 +453,148 @@ export default function Summary() {
           </p>
         </div>
       </div>
+
+      {/* ── Cover Letter ────────────────────────────────────────────── */}
+      <CoverLetterSection
+        run={run}
+        data={data}
+        pricing={{ fob, distributorPrice, retailPrice, distributorMargin, retailMargin, grossMargin }}
+        text={coverLetterText}
+        setText={setCoverLetterText}
+        fromName={coverLetterFrom}
+        setFromName={setCoverLetterFrom}
+        fromCompany={coverLetterCompany}
+        setFromCompany={setCoverLetterCompany}
+        busy={coverLetterBusy}
+        setBusy={setCoverLetterBusy}
+        status={coverLetterStatus}
+        setStatus={setCoverLetterStatus}
+      />
     </div>
   );
+}
+
+// Bottom-of-page cover-letter editor + exporters. Kept as a child
+// component so the main Summary render stays readable.
+function CoverLetterSection({
+  run, data, pricing,
+  text, setText,
+  fromName, setFromName,
+  fromCompany, setFromCompany,
+  busy, setBusy,
+  status, setStatus,
+}) {
+  const auto = useMemo(
+    () => generateCoverLetter({ run, data, pricing, fromName, fromCompany }),
+    [run, data, pricing, fromName, fromCompany]
+  );
+  const displayText = text == null ? auto.text : text;
+  const clientId = getGoogleClientId();
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(displayText);
+      setStatus({ kind: 'ok', msg: 'Copied to clipboard.' });
+    } catch {
+      setStatus({ kind: 'err', msg: 'Could not access the clipboard.' });
+    }
+  }
+
+  function handleDownloadTxt() {
+    const blob = new Blob([displayText], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(run?.name || 'cover-letter').replace(/[^a-z0-9-]+/gi, '-')}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleOpenAsDoc() {
+    if (!clientId) {
+      setStatus({ kind: 'err', msg: 'Google Sheets/Docs export needs VITE_GOOGLE_CLIENT_ID configured.' });
+      return;
+    }
+    setBusy(true);
+    setStatus(null);
+    try {
+      // If the user has edited the text, rebuild HTML that mirrors their
+      // current text (preserves their wording but keeps a clean layout).
+      const html = (text == null)
+        ? auto.html
+        : `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>${escapeHtmlForDoc(auto.title)}</title></head><body>${
+            displayText.split('\n\n').map((para) => `<p>${escapeHtmlForDoc(para).replaceAll('\n', '<br/>')}</p>`).join('')
+          }</body></html>`;
+      const { url } = await uploadHtmlAsGoogleDoc({
+        html, filename: auto.title || 'Cover Letter', clientId,
+      });
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setStatus({ kind: 'ok', msg: 'Opened in Google Docs.' });
+    } catch (e) {
+      setStatus({ kind: 'err', msg: `Couldn't export: ${e.message || e}` });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="section" style={{ marginTop: 24 }}>
+      <div className="section-header">
+        <div className="section-title">Cover Letter</div>
+      </div>
+      <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '4px 0 12px' }}>
+        Plain-English summary you can paste into an email. Auto-fills from this run; edits below stay until you hit Regenerate.
+      </p>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 200px' }}>
+          <label className="form-label" style={{ fontSize: 11 }}>Your name</label>
+          <input type="text" value={fromName} onChange={(e) => setFromName(e.target.value)} placeholder="(optional)" style={{ width: '100%' }} />
+        </div>
+        <div style={{ flex: '1 1 200px' }}>
+          <label className="form-label" style={{ fontSize: 11 }}>Your company</label>
+          <input type="text" value={fromCompany} onChange={(e) => setFromCompany(e.target.value)} placeholder="(optional)" style={{ width: '100%' }} />
+        </div>
+      </div>
+      <textarea
+        value={displayText}
+        onChange={(e) => setText(e.target.value)}
+        rows={18}
+        style={{ width: '100%', fontFamily: 'Manrope, system-ui, sans-serif', fontSize: 13, padding: 12, lineHeight: 1.5, border: '1px solid var(--border)', borderRadius: 6, resize: 'vertical' }}
+      />
+      <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <button
+          type="button" className="btn btn-primary"
+          onClick={handleOpenAsDoc}
+          disabled={busy || !run}
+          title={!clientId ? 'Set VITE_GOOGLE_CLIENT_ID to enable' : 'Upload as a formatted Google Doc'}
+        >
+          {busy ? 'Opening…' : 'Open in Google Docs'}
+        </button>
+        <button type="button" className="btn" onClick={handleCopy} disabled={!run}>Copy text</button>
+        <button type="button" className="btn" onClick={handleDownloadTxt} disabled={!run}>Download .txt</button>
+        <button
+          type="button" className="btn"
+          onClick={() => { setText(null); setStatus(null); }}
+          disabled={text == null}
+          title="Discard your edits and reload from the run data"
+        >Regenerate</button>
+        {status && (
+          <span style={{ fontSize: 12, color: status.kind === 'err' ? '#dc2626' : '#16a34a', marginLeft: 4 }}>
+            {status.msg}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function escapeHtmlForDoc(s) {
+  return String(s || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────

@@ -192,6 +192,52 @@ export async function uploadXlsxToSheets({ blob, filename, clientId }) {
   };
 }
 
+// Uploads an HTML string to Drive WITH conversion to a Google Doc. The
+// Drive API parses common HTML — h1/h2/h3, p, strong/em, ul/ol, table —
+// into native Doc structure with preserved formatting.
+async function uploadAsGoogleDoc(accessToken, filename, html) {
+  const metadata = {
+    name: filename,
+    mimeType: 'application/vnd.google-apps.document', // convert on upload
+  };
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+  form.append('file', new Blob([html], { type: 'text/html' }));
+  const url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink';
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: form,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Drive upload failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
+// Public entry point for cover-letter export. Same OAuth flow as Sheets.
+export async function uploadHtmlAsGoogleDoc({ html, filename, clientId }) {
+  let token = await requestAccessToken(clientId);
+  let file;
+  try {
+    file = await uploadAsGoogleDoc(token, filename, html);
+  } catch (e) {
+    if (/\b401\b|unauthorized/i.test(String(e?.message || e))) {
+      clearCachedToken();
+      token = await requestAccessToken(clientId, { forceRefresh: true });
+      file = await uploadAsGoogleDoc(token, filename, html);
+    } else {
+      throw e;
+    }
+  }
+  return {
+    fileId: file.id,
+    url: `https://docs.google.com/document/d/${file.id}/edit`,
+    webViewLink: file.webViewLink,
+  };
+}
+
 export function getGoogleClientId() {
   return import.meta.env.VITE_GOOGLE_CLIENT_ID || null;
 }
