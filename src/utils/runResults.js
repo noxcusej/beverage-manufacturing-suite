@@ -102,6 +102,8 @@ function computeCartonCost(carton, carrierType, packSize, totalUnits, planDerive
   const cartonProduct = carton?.cartonProduct || 'sleek-4pk';
   const storedSkuCount = carton?.skuCount || 1;
   const skuCountManual = !!carton?.skuCountManual;
+  // Per-product stock-up extras { [productId]: extraCartons }
+  const cartonExtras = (carton?.cartonExtras && typeof carton.cartonExtras === 'object') ? carton.cartonExtras : {};
   // Effective SKU count parallels CoPackingCalculator.jsx: in plan mode
   // default to # of carton groups, unless the user manually overrode it.
   let effectiveSkuCount = storedSkuCount;
@@ -149,7 +151,9 @@ function computeCartonCost(carton, carrierType, packSize, totalUnits, planDerive
       const productSkuCount = (skuCountManual && productId === cartonProduct)
         ? storedSkuCount
         : bucket.groups.length;
-      const tier = lookupPrice(productId, bucket.totalQty, productSkuCount);
+      const extras = Math.max(0, Number(cartonExtras[productId]) || 0);
+      const lookupQty = bucket.totalQty + extras;
+      const tier = lookupPrice(productId, lookupQty, productSkuCount);
       const autoRate = tier?.pricePerCarton || 0;
       bucket.groups.forEach(({ g, cartonQty }) => {
         const groupTotal = autoRate * cartonQty;
@@ -164,12 +168,18 @@ function computeCartonCost(carton, carrierType, packSize, totalUnits, planDerive
           productId,
           productSkuCount,
           bucketTotalQty: bucket.totalQty,
+          bucketLookupQty: lookupQty,
+          extras,
           belowTier: !!tier?.belowTier,
           aboveMaxTier: !!tier?.aboveMaxTier,
           skuExtrapolated: !!tier?.skuExtrapolated,
           tierQty: tier?.tierQty,
         });
       });
+      // Bill the stock-up extras at the bucket's (post-tier) rate.
+      if (extras > 0) {
+        totalCost += extras * autoRate;
+      }
     });
     if (groupBreakdown.length === 0) return empty;
     return { totalCost: totalCost + artFee, groupBreakdown, artFee };

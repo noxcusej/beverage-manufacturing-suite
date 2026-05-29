@@ -321,6 +321,11 @@ export default function CoPackingCalculator() {
   const [skuCount, setSkuCount] = useState(1);
   const [skuCountManual, setSkuCountManual] = useState(false);
   const [includeNewArt, setIncludeNewArt] = useState(false);
+  // Per-product extra cartons to "stock up" to the next Drayhorse tier.
+  // Shape: { [productId]: number } — extras get added to the bucket's
+  // tier-lookup qty AND billed at the (now lower) bucket rate. Excess
+  // cartons go to inventory.
+  const [cartonExtras, setCartonExtras] = useState({});
 
   // Line items
   const [packagingItems, setPackagingItems] = useState(makeDefaultPackaging);
@@ -658,13 +663,17 @@ export default function CoPackingCalculator() {
       });
 
       const groupBreakdown = [];
+      const bucketDetails = [];
       let totalCost = 0;
       let totalCartonQty = 0;
       buckets.forEach((bucket, productId) => {
-        // One tier lookup at SUM quantity. SKU count for this product =
-        // number of groups using it (each is a separate printed design).
+        // One tier lookup at SUM quantity (+ any stock-up extras). SKU
+        // count for this product = number of groups using it (each is a
+        // separate printed design).
         const productSkuCount = bucket.groups.length;
-        const tier = lookupPrice(productId, bucket.totalQty, productSkuCount);
+        const extras = Math.max(0, Number(cartonExtras[productId]) || 0);
+        const lookupQty = bucket.totalQty + extras;
+        const tier = lookupPrice(productId, lookupQty, productSkuCount);
         const autoRate = tier?.pricePerCarton || 0;
         bucket.groups.forEach(({ g, cartonQty }) => {
           const groupTotal = autoRate * cartonQty;
@@ -680,12 +689,28 @@ export default function CoPackingCalculator() {
             productId,
             productSkuCount,
             bucketTotalQty: bucket.totalQty,
+            bucketLookupQty: lookupQty,
+            extras,
             // Surfaced for the Carton Pricing block's warnings + tier-up UX.
             belowTier: !!tier?.belowTier,
             aboveMaxTier: !!tier?.aboveMaxTier,
             skuExtrapolated: !!tier?.skuExtrapolated,
             tierQty: tier?.tierQty,
           });
+        });
+        // Bill the stock-up extras at the bucket's (post-tier) rate.
+        if (extras > 0) {
+          totalCost += extras * autoRate;
+          totalCartonQty += extras;
+        }
+        bucketDetails.push({
+          productId,
+          needed: bucket.totalQty,
+          extras,
+          lookupQty,
+          pricePerCarton: autoRate,
+          productSkuCount,
+          tierQty: tier?.tierQty,
         });
       });
       if (groupBreakdown.length === 0) return empty;
@@ -696,6 +721,7 @@ export default function CoPackingCalculator() {
         pricePerCarton,
         cartonQty: totalCartonQty,
         groupBreakdown,
+        bucketDetails,
         artFee,
       };
     }
@@ -714,7 +740,7 @@ export default function CoPackingCalculator() {
       pricePerCarton: result.pricePerCarton, cartonQty,
       tierQty: result.tierQty, artFee, groupBreakdown: [],
     };
-  }, [carrierType, cartonProduct, effectiveSkuCount, counts.totalUnits, packSize, includeNewArt, planDerived]);
+  }, [carrierType, cartonProduct, effectiveSkuCount, counts.totalUnits, packSize, includeNewArt, planDerived, cartonExtras]);
 
   const inventoryMap = useMemo(() => {
     const map = {};
@@ -1145,7 +1171,7 @@ export default function CoPackingCalculator() {
         ingredientCost: getEffectiveIngredientCostPerCan(flavor),
         calculatedIngredientCost: getCalculatedIngredientCostPerCan(flavor),
       })),
-      carton: { cartonProduct, skuCount, skuCountManual, includeNewArt },
+      carton: { cartonProduct, skuCount, skuCountManual, includeNewArt, cartonExtras },
       packagingItems,
       tollingEngine,
       tollingItems,
@@ -1214,6 +1240,7 @@ export default function CoPackingCalculator() {
       setSkuCount(typeof run.carton.skuCount === 'number' && run.carton.skuCount > 0 ? run.carton.skuCount : 1);
       setSkuCountManual(!!run.carton.skuCountManual);
       setIncludeNewArt(run.carton.includeNewArt || false);
+      setCartonExtras(run.carton.cartonExtras && typeof run.carton.cartonExtras === 'object' ? run.carton.cartonExtras : {});
     }
     if (run.packagingItems) setPackagingItems(run.packagingItems);
     if (run.tollingEngine) setTollingEngine(normalizeTollingEngine(run.tollingEngine));
@@ -1348,7 +1375,7 @@ export default function CoPackingCalculator() {
     setFillVolume(12); setFillVolumeUnit('oz'); setPackSize(4); setCarrierType('paktech');
     setAbv(0); setUnitsPerCase(24); setCasesPerPallet(80); setPalletsPerTruck(20); setCansPerMinute(400);
     setFlavors([makeDefaultFlavor()]);
-    setCartonProduct('sleek-4pk'); setSkuCount(1); setSkuCountManual(false); setIncludeNewArt(false);
+    setCartonProduct('sleek-4pk'); setSkuCount(1); setSkuCountManual(false); setIncludeNewArt(false); setCartonExtras({});
     setPackagingItems(makeDefaultPackaging());
     setTollingEngine(normalizeTollingEngine());
     setTollingItems(ensureStandardTolling(makeDefaultTolling()));
@@ -2301,18 +2328,27 @@ export default function CoPackingCalculator() {
                     </tr>
                   </thead>
                   <tbody>
-                    {planDerived.groups.map((g) => {
+                    {planDerived.groups.map((g, gIdx) => {
                       const flavorById = Object.fromEntries(counts.flavorRows.map((f) => [f.id, f]));
                       const label = g.label || (g.type === 'straight'
                         ? `${flavorById[g.skuId]?.name || 'Straight'} ${g.packSize}-pk`
                         : `Variety ${g.packSize}-pk`);
                       const gb = (cartonCost.groupBreakdown || []).find((b) => b.groupId === g.id);
                       const isCarton = g.carrierType === 'carton';
+                      // Is this the FIRST group in its bucket? We render
+                      // bucket-level rows (tier-up, extras) only once.
+                      const earlierInBucket = isCarton && gb
+                        ? planDerived.groups.slice(0, gIdx).some((pg) => {
+                            const pgb = (cartonCost.groupBreakdown || []).find((b) => b.groupId === pg.id);
+                            return pgb && pgb.productId === gb.productId;
+                          })
+                        : true;
+                      const isFirstInBucket = isCarton && gb && !earlierInBucket;
                       // Tier-up suggestion uses the bucketed product + SKU
-                      // count + total qty so it reflects the combined order
-                      // to Drayhorse, not just this single group's slice.
+                      // count + total qty (including any already-applied
+                      // extras) so it reflects the actual combined order.
                       const tierUp = (isCarton && gb)
-                        ? findTierUpOption(gb.productId || cartonProduct, gb.bucketTotalQty || gb.cartonQty, gb.productSkuCount || effectiveSkuCount)
+                        ? findTierUpOption(gb.productId || cartonProduct, gb.bucketLookupQty || gb.bucketTotalQty || gb.cartonQty, gb.productSkuCount || effectiveSkuCount)
                         : null;
                       return (
                         <React.Fragment key={g.id}>
@@ -2355,14 +2391,47 @@ export default function CoPackingCalculator() {
                               {isCarton && gb ? `$${gb.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
                             </td>
                           </tr>
-                          {isCarton && tierUp && tierUp.savings > 0 && (
+                          {isFirstInBucket && (gb?.extras || 0) > 0 && (
+                            <tr style={{ background: '#fefce8' }}>
+                              <td colSpan={5} style={{ padding: '4px 8px 6px 8px', fontSize: 11, color: '#854d0e' }}>
+                                📦 Stocking <strong>+{(gb.extras || 0).toLocaleString()}</strong> extra carton{gb.extras > 1 ? 's' : ''} for this product
+                                ({gb.bucketLookupQty?.toLocaleString()} ordered, {gb.bucketTotalQty?.toLocaleString()} needed — surplus goes to inventory).
+                                {' '}
+                                <button
+                                  type="button"
+                                  className="btn btn-small"
+                                  onClick={() => setCartonExtras((prev) => {
+                                    const next = { ...prev };
+                                    delete next[gb.productId];
+                                    return next;
+                                  })}
+                                  style={{ padding: '1px 6px', fontSize: 10, marginLeft: 6 }}
+                                >clear</button>
+                              </td>
+                            </tr>
+                          )}
+                          {isFirstInBucket && tierUp && tierUp.savings > 0 && (
                             <tr style={{ background: '#ecfdf5' }}>
                               <td colSpan={5} style={{ padding: '4px 8px 6px 8px', fontSize: 11, color: '#065f46' }}>
                                 💡 Stock up to <strong>{tierUp.nextTierQty.toLocaleString()}</strong> cartons
                                 (<strong>+{tierUp.extraCartons.toLocaleString()}</strong>) and pay <strong>${tierUp.nextTierTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                                 instead of <strong>${tierUp.currentTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                                 — <strong style={{ color: '#16a34a' }}>save ${tierUp.savings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
-                                {' '}(${tierUp.nextPricePerM.toFixed(2)}/M at the next tier). Extra cartons go to inventory.
+                                {' '}(${tierUp.nextPricePerM.toFixed(2)}/M at the next tier).
+                                {' '}
+                                <button
+                                  type="button"
+                                  className="btn btn-small"
+                                  onClick={() => setCartonExtras((prev) => ({
+                                    ...prev,
+                                    // Stock total = next tier qty; extras =
+                                    // tier qty − what we already need. If
+                                    // prior extras existed they're replaced.
+                                    [gb.productId]: Math.max(0, tierUp.nextTierQty - (gb.bucketTotalQty || 0)),
+                                  }))}
+                                  style={{ padding: '2px 8px', fontSize: 10, marginLeft: 6, background: '#16a34a', color: 'white', borderColor: '#15803d' }}
+                                  title={`Add ${tierUp.extraCartons.toLocaleString()} cartons to this product so the bucket hits ${tierUp.nextTierQty.toLocaleString()} and qualifies for the next tier. Surplus goes to inventory.`}
+                                >Apply</button>
                               </td>
                             </tr>
                           )}
