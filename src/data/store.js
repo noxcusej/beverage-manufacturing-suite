@@ -347,12 +347,24 @@ export function saveFormula(formula, opts = {}) {
   const formulas = [...getFormulas()];
   const now = new Date().toISOString();
 
-  // Match by id ONLY. The old name-fallback overwrote cross-client
-  // formulas that happened to share a name (e.g. two clients with
-  // "Sparkling Water").
+  // Match by id first; fall back to (name, client). The (name, client)
+  // pair is the user's mental key — "save Cherry Soda for Acme" should
+  // version the existing Cherry Soda for Acme, even if loadedFormulaId
+  // isn't set (e.g. user retyped the name on a fresh page).
+  //
+  // Two clients with the same formula name still don't collide because
+  // client is part of the key. Formulas without a client tag share the
+  // 'Uncategorized' bucket and version against each other, which matches
+  // how the picker groups them.
   let existingIdx = -1;
   if (formula.id) {
     existingIdx = formulas.findIndex((f) => f.id === formula.id);
+  }
+  if (existingIdx === -1 && formula.name) {
+    const fClient = formula.client || 'Uncategorized';
+    existingIdx = formulas.findIndex(
+      (f) => f.name === formula.name && (f.client || 'Uncategorized') === fClient
+    );
   }
 
   let savedFormula;
