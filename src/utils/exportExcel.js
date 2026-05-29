@@ -217,6 +217,322 @@ function buildLineItemsSheet(ws, res, run) {
   return refs;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// COST SHEET — mirrors the in-app Summary page.
+//
+//   KEY METRICS (vertical strip, references Line Items where possible)
+//   COST BREAKDOWN BY SKU (flavors as columns, categories as rows,
+//                          Cost/Unit and Cost/Case footer rows)
+//   CHANNEL PRICING (COGS → FOB → Distributor → MSRP at per-case /
+//                    per-pack / per-unit basis, with editable margin %
+//                    cells that drive every other row via formula)
+// ─────────────────────────────────────────────────────────────────────────
+function buildCostSheetSheet(ws, res, run, runRefs) {
+  const flavors = (run.flavors || []);
+  // Resolve effective per-flavor counts from the saved run.
+  const config = res.config || {};
+  const unitsPerCase = config.unitsPerCase || 24;
+  const packSize = config.packSize || 4;
+  const casesPerPallet = config.casesPerPallet || 80;
+  const totalCans = res.counts.totalUnits || 0;
+
+  const flavorRows = (res.counts.flavorRows || []).map((fr) => {
+    const original = flavors.find((f) => f.id === fr.id) || {};
+    return {
+      id: fr.id,
+      name: original.name || fr.name || 'Unnamed',
+      cases: fr.cases || 0,
+      cans: fr.cans || 0,
+      ingredientCost: Number(original.ingredientCost || 0),
+      batchingFee: Number(original.batchingFee || 0),
+    };
+  });
+  const flavorCount = flavorRows.length;
+
+  // Categories shown in the matrix (same canonical list as the breakdown,
+  // skipping any with zero cost). Maps category label to runRefs.cat key
+  // for formula references.
+  const labelToKey = {
+    'Packaging Materials': 'packaging',
+    'Ingredients (optimized PO)': 'ingredients',
+    'Tolling': 'tolling',
+    'Freight & Other': 'bom',
+    'Batching Fees': 'batching',
+    'Taxes & Regulatory': 'taxes',
+  };
+  const matrixRows = (res.breakdown || [])
+    .filter((row) => (row.cost || 0) !== 0)
+    .map((row) => ({
+      label: row.label,
+      total: row.cost || 0,
+      key: labelToKey[row.label] || null,
+    }));
+
+  // Column layout: A=label, B..=per-flavor, then Run Total
+  const baseWidths = [{ width: 32 }];
+  for (let i = 0; i < flavorCount; i += 1) baseWidths.push({ width: 16 });
+  baseWidths.push({ width: 16 }); // Run Total column
+  ws.columns = baseWidths;
+
+  const colLetter = (n) => {
+    // 0-indexed → A, B, ... AA, AB
+    let s = '';
+    let x = n;
+    while (x >= 0) {
+      s = String.fromCharCode(65 + (x % 26)) + s;
+      x = Math.floor(x / 26) - 1;
+    }
+    return s;
+  };
+  const lastCol = colLetter(flavorCount + 1); // includes Run Total
+  const totalColIdx = flavorCount + 1;
+  const totalColLetter = colLetter(totalColIdx);
+
+  let r = 1;
+
+  // ── HEADER ──
+  band(ws, r, totalColIdx + 1, run.name || 'Cost Sheet', C.dark, C.white, 18, 30); r += 1;
+  ws.mergeCells(`A${r}:${lastCol}${r}`);
+  put(ws, `A${r}`,
+    `Cost Sheet  ·  Generated ${new Date().toLocaleDateString()}  ·  cost cells link to the ${SHEET_LINE_ITEMS} tab where possible`,
+    { color: C.muted, size: 10 });
+  ws.getRow(r).height = 16;
+  r += 2;
+
+  // ── KEY METRICS — vertical strip mirrors the 6-card in-app KPI row ──
+  band(ws, r, totalColIdx + 1, 'KEY METRICS', C.teal); r += 1;
+  tableHeader(ws, r, ['Metric', 'Value', ...Array(flavorCount).fill('')]); r += 1;
+
+  const metric = (label, ref, fallbackValue, fmt, bold = false, subtitle = null) => {
+    const zebra = (r % 2 === 0) ? C.zebra : null;
+    put(ws, `A${r}`, label + (subtitle ? `  (${subtitle})` : ''), { bold, color: C.ink, bg: zebra, border: true });
+    if (typeof ref === 'string') {
+      putF(ws, `B${r}`, ref, fallbackValue, { bold, color: C.ink, bg: zebra, align: 'right', numFmt: fmt, border: true });
+    } else {
+      put(ws, `B${r}`, fallbackValue, { bold, color: C.ink, bg: zebra, align: 'right', numFmt: fmt, border: true });
+    }
+    for (let i = 2; i <= totalColIdx; i += 1) {
+      put(ws, `${colLetter(i)}${r}`, '', { bg: zebra, border: true });
+    }
+    r += 1;
+  };
+
+  metric('Total Cost', runRefs.total, res.costs.totalCost, MONEY, true);
+  metric('All-in / Can', runRefs.perCan, res.costs.costPerUnit, MONEY4);
+  // Blended Raw Mat / Can — totalIngredientCost / totalUnits, referencing
+  // the Ingredients subtotal cell and the totalCans cell on Line Items.
+  const ingRef = runRefs.cat.ingredients;
+  const cansRef = runRefs.cans;
+  const blendedPerCan = totalCans > 0 ? (res.costs.totalIngredientCost || 0) / totalCans : 0;
+  metric('Raw Mat / Can', `IF(${cansRef}>0,${ingRef}/${cansRef},0)`,
+    blendedPerCan, MONEY4, false, 'blended PO');
+  metric('Per Case', runRefs.perCase, res.costs.costPerCase, MONEY);
+  // Per-pack and Per-full-pallet are simple multiples of unit cost.
+  metric('Per Pack', `${runRefs.perCan}*${packSize}`,
+    (res.costs.costPerUnit || 0) * packSize, MONEY, false, `${packSize}-pack`);
+  metric('Per Full Pallet', `${runRefs.perCase}*${casesPerPallet}`,
+    (res.costs.costPerCase || 0) * casesPerPallet, MONEY, false, `${casesPerPallet} cases`);
+  r += 1;
+
+  // ── COST BREAKDOWN BY SKU — matrix ──
+  band(ws, r, totalColIdx + 1, 'COST BREAKDOWN BY SKU', C.teal); r += 1;
+  ws.mergeCells(`A${r}:${lastCol}${r}`);
+  put(ws, `A${r}`,
+    'Ingredients are per-SKU (allocated from consolidated PO, captures bulk pricing). Shared categories allocated pro-rata by can share.',
+    { color: C.muted, size: 9, italic: true });
+  ws.getRow(r).height = 16;
+  r += 1;
+  const matrixHeader = ['Cost Component'];
+  flavorRows.forEach((f) => matrixHeader.push(`${f.name}\n${f.cases} cs / ${f.cans} cn`));
+  matrixHeader.push('Run Total');
+  tableHeader(ws, r, matrixHeader); r += 1;
+
+  // Each row: per-flavor cells, then Run Total.
+  // Per-flavor allocation: ingredients = ingredientCost × cans; batching =
+  // batchingFee; everything else = (flavor.cans / totalCans) × categoryTotal.
+  const allocateProRata = (totalCost) => flavorRows.map((f) => (totalCans > 0 ? (f.cans / totalCans) * totalCost : 0));
+
+  matrixRows.forEach((mr) => {
+    const zebra = (r % 2 === 0) ? C.zebra : null;
+    let perFlavor;
+    if (mr.label.startsWith('Ingredients')) {
+      perFlavor = flavorRows.map((f) => f.ingredientCost * f.cans);
+    } else if (mr.label.startsWith('Batching')) {
+      perFlavor = flavorRows.map((f) => f.batchingFee);
+    } else {
+      perFlavor = allocateProRata(mr.total);
+    }
+    put(ws, `A${r}`, mr.label, { bold: true, color: C.ink, bg: zebra, border: true });
+    flavorRows.forEach((_, i) => {
+      put(ws, `${colLetter(i + 1)}${r}`, perFlavor[i], {
+        color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true,
+      });
+    });
+    // Run Total — reference the canonical subtotal cell from Line Items
+    // when we have one. Otherwise sum the row's per-flavor cells.
+    const ref = mr.key ? runRefs.cat[mr.key] : null;
+    if (ref) {
+      putF(ws, `${totalColLetter}${r}`, ref, mr.total, {
+        bold: true, color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true,
+      });
+    } else {
+      put(ws, `${totalColLetter}${r}`, mr.total, {
+        bold: true, color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true,
+      });
+    }
+    r += 1;
+  });
+
+  // Total row
+  const totalRowR = r;
+  put(ws, `A${r}`, 'TOTAL', { bold: true, color: C.white, bg: C.dark, border: true });
+  flavorRows.forEach((_, i) => {
+    const col = colLetter(i + 1);
+    // Sum the per-flavor cells in this column across all matrix rows.
+    const colStart = totalRowR - matrixRows.length;
+    const colEnd = totalRowR - 1;
+    putF(ws, `${col}${r}`, `SUM(${col}${colStart}:${col}${colEnd})`,
+      matrixRows.reduce((s, mr) => {
+        if (mr.label.startsWith('Ingredients')) return s + flavorRows[i].ingredientCost * flavorRows[i].cans;
+        if (mr.label.startsWith('Batching')) return s + flavorRows[i].batchingFee;
+        return s + (totalCans > 0 ? (flavorRows[i].cans / totalCans) * mr.total : 0);
+      }, 0),
+      { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: MONEY, border: true });
+  });
+  // Run total — reference the line-items run total directly.
+  putF(ws, `${totalColLetter}${r}`, runRefs.total, res.costs.totalCost,
+    { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: MONEY, border: true });
+  r += 1;
+
+  // Cost / Unit row
+  put(ws, `A${r}`, 'Cost / Unit', { bold: true, color: C.muted, border: true });
+  flavorRows.forEach((f, i) => {
+    const col = colLetter(i + 1);
+    putF(ws, `${col}${r}`, `IF(${f.cans}>0,${col}${totalRowR}/${f.cans},0)`,
+      f.cans > 0 ? (matrixRows.reduce((s, mr) => {
+        if (mr.label.startsWith('Ingredients')) return s + f.ingredientCost * f.cans;
+        if (mr.label.startsWith('Batching')) return s + f.batchingFee;
+        return s + (totalCans > 0 ? (f.cans / totalCans) * mr.total : 0);
+      }, 0)) / f.cans : 0,
+      { color: C.muted, align: 'right', numFmt: MONEY4, border: true });
+  });
+  putF(ws, `${totalColLetter}${r}`, runRefs.perCan, res.costs.costPerUnit,
+    { bold: true, color: C.ink, align: 'right', numFmt: MONEY4, border: true });
+  r += 1;
+
+  // Cost / Case row
+  put(ws, `A${r}`, 'Cost / Case', { bold: true, color: C.muted, border: true });
+  flavorRows.forEach((f, i) => {
+    const col = colLetter(i + 1);
+    putF(ws, `${col}${r}`, `IF(${f.cases}>0,${col}${totalRowR}/${f.cases},0)`,
+      f.cases > 0 ? (matrixRows.reduce((s, mr) => {
+        if (mr.label.startsWith('Ingredients')) return s + f.ingredientCost * f.cans;
+        if (mr.label.startsWith('Batching')) return s + f.batchingFee;
+        return s + (totalCans > 0 ? (f.cans / totalCans) * mr.total : 0);
+      }, 0)) / f.cases : 0,
+      { color: C.muted, align: 'right', numFmt: MONEY, border: true });
+  });
+  putF(ws, `${totalColLetter}${r}`, runRefs.perCase, res.costs.costPerCase,
+    { bold: true, color: C.ink, align: 'right', numFmt: MONEY, border: true });
+  r += 2;
+
+  // ── CHANNEL PRICING — formula-driven, margin inputs at the top ──
+  band(ws, r, totalColIdx + 1, 'CHANNEL PRICING', C.teal); r += 1;
+
+  // Margin inputs row — user-editable cells.
+  put(ws, `A${r}`, 'Distributor Margin', { bold: true, color: C.ink, border: true });
+  put(ws, `B${r}`, 0.30, { bold: true, color: C.ink, bg: '#FFF8E1', align: 'right', numFmt: '0.0%', border: true });
+  const distMarginCell = `B${r}`;
+  for (let i = 2; i <= totalColIdx; i += 1) put(ws, `${colLetter(i)}${r}`, '', { border: true });
+  r += 1;
+
+  put(ws, `A${r}`, 'Retail Margin', { bold: true, color: C.ink, border: true });
+  put(ws, `B${r}`, 0.40, { bold: true, color: C.ink, bg: '#FFF8E1', align: 'right', numFmt: '0.0%', border: true });
+  const retailMarginCell = `B${r}`;
+  for (let i = 2; i <= totalColIdx; i += 1) put(ws, `${colLetter(i)}${r}`, '', { border: true });
+  r += 1;
+
+  put(ws, `A${r}`, 'FOB Price / Case', { bold: true, color: C.ink, border: true });
+  // Default FOB = COGS per case (user can override the cell). Formula
+  // references the COGS per-case cell directly so editing COGS upstream
+  // flows through unless the user types a literal value here.
+  putF(ws, `B${r}`, runRefs.perCase, res.costs.costPerCase,
+    { bold: true, color: C.ink, bg: '#FFF8E1', align: 'right', numFmt: MONEY, border: true });
+  const fobCell = `B${r}`;
+  for (let i = 2; i <= totalColIdx; i += 1) put(ws, `${colLetter(i)}${r}`, '', { border: true });
+  r += 2;
+
+  // Pricing table
+  tableHeader(ws, r, ['Level', 'Per Case', 'Per Pack', 'Per Unit', ...Array(Math.max(0, totalColIdx - 3)).fill('')]);
+  r += 1;
+
+  const upc = unitsPerCase;
+  const psz = packSize;
+  const perCaseRef = runRefs.perCase;
+  const perCanRef = runRefs.perCan;
+
+  // COGS row
+  {
+    const zebra = (r % 2 === 0) ? C.zebra : null;
+    put(ws, `A${r}`, 'COGS', { bold: true, color: C.ink, bg: zebra, border: true });
+    putF(ws, `B${r}`, perCaseRef, res.costs.costPerCase, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
+    putF(ws, `C${r}`, `${perCanRef}*${psz}`, (res.costs.costPerUnit || 0) * psz, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
+    putF(ws, `D${r}`, perCanRef, res.costs.costPerUnit, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY4, border: true });
+    for (let i = 4; i <= totalColIdx; i += 1) put(ws, `${colLetter(i)}${r}`, '', { bg: zebra, border: true });
+    r += 1;
+  }
+
+  // FOB to Distributor row
+  {
+    const zebra = (r % 2 === 0) ? C.zebra : null;
+    put(ws, `A${r}`, 'FOB to Distributor', { bold: true, color: C.ink, bg: zebra, border: true });
+    putF(ws, `B${r}`, fobCell, res.costs.costPerCase, { bold: true, color: C.teal, bg: zebra, align: 'right', numFmt: MONEY, border: true });
+    putF(ws, `C${r}`, `${fobCell}/${upc}*${psz}`, (res.costs.costPerCase || 0) / upc * psz, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
+    putF(ws, `D${r}`, `${fobCell}/${upc}`, (res.costs.costPerCase || 0) / upc, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY4, border: true });
+    for (let i = 4; i <= totalColIdx; i += 1) put(ws, `${colLetter(i)}${r}`, '', { bg: zebra, border: true });
+    r += 1;
+  }
+
+  // Distributor to Retail row
+  const distCaseRow = r;
+  {
+    const zebra = (r % 2 === 0) ? C.zebra : null;
+    put(ws, `A${r}`, 'Distributor to Retail', { bold: true, color: C.ink, bg: zebra, border: true });
+    // distPrice = fob / (1 - distMargin)
+    putF(ws, `B${r}`, `${fobCell}/(1-${distMarginCell})`, (res.costs.costPerCase || 0) / 0.7,
+      { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
+    putF(ws, `C${r}`, `B${r}/${upc}*${psz}`, ((res.costs.costPerCase || 0) / 0.7) / upc * psz,
+      { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
+    putF(ws, `D${r}`, `B${r}/${upc}`, ((res.costs.costPerCase || 0) / 0.7) / upc,
+      { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY4, border: true });
+    for (let i = 4; i <= totalColIdx; i += 1) put(ws, `${colLetter(i)}${r}`, '', { bg: zebra, border: true });
+    r += 1;
+  }
+
+  // Retail MSRP row
+  {
+    put(ws, `A${r}`, 'Retail MSRP', { bold: true, color: C.white, bg: C.dark, border: true });
+    putF(ws, `B${r}`, `B${distCaseRow}/(1-${retailMarginCell})`, ((res.costs.costPerCase || 0) / 0.7) / 0.6,
+      { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: MONEY, border: true });
+    putF(ws, `C${r}`, `B${r}/${upc}*${psz}`, (((res.costs.costPerCase || 0) / 0.7) / 0.6) / upc * psz,
+      { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: MONEY, border: true });
+    putF(ws, `D${r}`, `B${r}/${upc}`, (((res.costs.costPerCase || 0) / 0.7) / 0.6) / upc,
+      { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: MONEY4, border: true });
+    for (let i = 4; i <= totalColIdx; i += 1) put(ws, `${colLetter(i)}${r}`, '', { bg: C.dark, border: true });
+    r += 1;
+  }
+  r += 1;
+
+  // Margin caption
+  ws.mergeCells(`A${r}:${lastCol}${r}`);
+  put(ws, `A${r}`,
+    'Margin = (price − cost) / price. Edit the yellow cells (Distributor Margin, Retail Margin, FOB Price) to recalculate channel pricing.',
+    { color: C.muted, size: 9, italic: true });
+  ws.getRow(r).height = 16;
+
+  ws.views = [{ state: 'frozen', ySplit: 4 }];
+}
+
 // Packaging plan tab — one row per pack group with type, packSize, packsCount,
 // carrier, SKU mix, cans consumed, cases. Includes a per-SKU allocation
 // summary so the variety-mix math is auditable in the spreadsheet.
@@ -331,11 +647,16 @@ async function buildWorkbook({ run, rawPO }) {
   wb.created = new Date();
   wb.calcProperties = { fullCalcOnLoad: true };
 
+  const wsCostSheet = wb.addWorksheet('Cost Sheet', { properties: { tabColor: { argb: C.teal } } });
   const wsSummary = wb.addWorksheet('Summary', { properties: { tabColor: { argb: C.teal } } });
   const wsLines = wb.addWorksheet(SHEET_LINE_ITEMS, { properties: { tabColor: { argb: C.purple } } });
 
-  // Build line items first so the Summary can reference its cells.
+  // Build line items first so the Cost Sheet and Summary can reference its cells.
   const runRefs = buildLineItemsSheet(wsLines, res, run);
+
+  // Cost Sheet — mirrors the in-app Summary page (KPI strip, per-SKU
+  // cost matrix, Channel Pricing with editable margin %).
+  buildCostSheetSheet(wsCostSheet, res, run, runRefs);
 
   // Packaging plan tab — always include so a run with no plan still has the
   // sheet (it shows "not configured"). Helps QA the math against the plan.
