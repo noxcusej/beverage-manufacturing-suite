@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import { getInventory, getCurrentBatch, saveBatch, getFormulas, saveFormula as saveFormulaToStore, getClients } from '../data/store';
+import { getInventory, getCurrentBatch, saveBatch, getFormulas, saveFormula as saveFormulaToStore, getClients, getVendors } from '../data/store';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import * as XLSX from 'xlsx';
 
@@ -25,11 +25,15 @@ const _weightUnitsSet = new Set(['lbs', 'lb', 'kg', 'g']);
 const _volumeUnitsSet = new Set(['gal', 'L', 'ml', 'fl oz']);
 function convertWithSG(value, from, to, sg) {
   if (from === to) return value;
+  // Physics: 1 gal of fluid weighs 8.345 × SG lbs.
+  // → lbs to gal:  lbs / (8.345 × SG)
+  // → gal to lbs:  gal × 8.345 × SG
+  const _sg = sg || 1;
   if (_weightUnitsSet.has(from) && _volumeUnitsSet.has(to)) {
-    return convert(convert(value, from, 'lbs') / 8.345 * (sg || 1), 'gal', to);
+    return convert(convert(value, from, 'lbs') / (8.345 * _sg), 'gal', to);
   }
   if (_volumeUnitsSet.has(from) && _weightUnitsSet.has(to)) {
-    return convert(convert(value, from, 'gal') * 8.345 / (sg || 1), 'lbs', to);
+    return convert(convert(value, from, 'gal') * 8.345 * _sg, 'lbs', to);
   }
   return convert(value, from, to);
 }
@@ -45,6 +49,7 @@ export default function BatchCalculator() {
 
   const [formulaName, setFormulaName] = useState('');
   const [formulaClient, setFormulaClient] = useState('Uncategorized');
+  const [loadedFormulaId, setLoadedFormulaId] = useState(null);
   const [missingPriceIds, setMissingPriceIds] = useState(new Set());
   const [baseYield, setBaseYield] = useState(100);
   const [baseYieldUnit, setBaseYieldUnit] = useState('gal');
@@ -114,6 +119,7 @@ export default function BatchCalculator() {
     if (!formulaId) return;
     const formula = getFormulas().find((f) => f.id === formulaId);
     if (!formula) return;
+    setLoadedFormulaId(formula.id);
     setFormulaName(formula.name);
     setFormulaClient(formula.client || 'Uncategorized');
     setMissingPriceIds(new Set());
@@ -228,14 +234,14 @@ export default function BatchCalculator() {
         const toIsWeight = weightUnitsSet.has(ing.buyUnit);
 
         if (fromIsWeight && toIsVolume) {
-          // weight → volume: LB/8.345*SG, then convert to target volume unit
+          // weight → volume: gal = lb / (8.345 × SG)
           const weightLbs = convert(scaledRecipe, ing.recipeUnit, 'lbs');
-          const gallons = weightLbs / 8.345 * (ing.specificGravity || 1);
+          const gallons = weightLbs / (8.345 * (ing.specificGravity || 1));
           buyUnitAmount = convert(gallons, 'gal', ing.buyUnit);
         } else if (fromIsVolume && toIsWeight) {
-          // volume → weight: gal*8.345/SG, then convert to target weight unit
+          // volume → weight: lb = gal × 8.345 × SG
           const gallons = convert(scaledRecipe, ing.recipeUnit, 'gal');
-          const lbs = gallons * 8.345 / (ing.specificGravity || 1);
+          const lbs = gallons * 8.345 * (ing.specificGravity || 1);
           buyUnitAmount = convert(lbs, 'lbs', ing.buyUnit);
         } else {
           buyUnitAmount = convert(scaledRecipe, ing.recipeUnit, ing.buyUnit);
@@ -265,17 +271,17 @@ export default function BatchCalculator() {
       const netLineCost = netOrderQty * (ing.pricePerBuyUnit || 0);
       totalCostWithInventory += netLineCost;
 
-      // Liquid volume in gallons for volume tracking
-      // Always derive from weight using SG: GAL = LB / 8.345 × SG
-      // If recipe is already in a volume unit, convert directly to gal
+      // Liquid volume in gallons for volume tracking.
+      // Physics: 1 gal of fluid weighs 8.345 × SG lbs → gal = lb / (8.345 × SG).
+      // If recipe is already in a volume unit, convert directly to gal.
       let liquidGal = 0;
       const volumeUnits = ['gal', 'L', 'ml', 'fl oz'];
       if (volumeUnits.includes(ing.recipeUnit)) {
         liquidGal = convert(scaledRecipe, ing.recipeUnit, 'gal');
       } else {
-        // Weight-based: convert to lbs first, then apply SG
+        // Weight-based: convert to lbs first, then divide by (8.345 × SG)
         const weightLbs = convert(scaledRecipe, ing.recipeUnit, 'lbs');
-        liquidGal = weightLbs / 8.345 * (ing.specificGravity || 1);
+        liquidGal = weightLbs / (8.345 * (ing.specificGravity || 1));
       }
 
       return {
@@ -488,6 +494,9 @@ export default function BatchCalculator() {
     setMissingPriceIds(missing);
 
     saveFormulaToStore({
+      // Pass id when available so saveFormula's strict-id match updates
+      // in place. Without id (new formula), it falls through to insert.
+      ...(loadedFormulaId ? { id: loadedFormulaId } : {}),
       name: formulaName,
       client: formulaClient || 'Uncategorized',
       baseYield, baseYieldUnit,
@@ -692,6 +701,8 @@ export default function BatchCalculator() {
 
     // SHEET 4: Purchase Order
     const poRows = scaledData.rows.filter((r) => r.netOrderQty > 0);
+    const poVendorById = Object.fromEntries((getVendors() || []).map((v) => [v.id, v.name]));
+    const vendorOf = (it) => (it?.vendorId && poVendorById[it.vendorId]) || it?.vendor || '';
     const poData = [
       ['PURCHASE ORDER'],
       ['Generated: ' + new Date().toLocaleString()],
@@ -706,7 +717,7 @@ export default function BatchCalculator() {
         r.buyUnit,
         (r.pricePerBuyUnit || 0).toFixed(4),
         r.netLineCost.toFixed(2),
-        r.item?.vendor || '',
+        vendorOf(r.item),
       ]),
       [],
       ['', '', '', '', 'TOTAL:', scaledData.totalCostWithInventory.toFixed(2)],

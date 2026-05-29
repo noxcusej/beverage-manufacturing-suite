@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getInventory, saveInventory, addInventoryItem, deleteInventoryItem } from '../data/store';
+import { getInventory, saveInventory, addInventoryItem, deleteInventoryItem, getVendors } from '../data/store';
+import { nextId } from '../utils/ids';
 
 const UNIT_MAP = {
   'kg': 'kg', 'kilogram': 'kg', 'kilograms': 'kg',
@@ -19,6 +20,14 @@ function normalizeUnit(u) {
 
 export default function Inventory() {
   const [inventory, setInventory] = useState(getInventory());
+  const vendors = getVendors();
+  const vendorById = Object.fromEntries((vendors || []).map((v) => [v.id, v.name]));
+  const vendorLabel = (item) => {
+    // Migrate old free-text `vendor` keys + look up by `vendorId`.
+    if (item.vendorId && vendorById[item.vendorId]) return vendorById[item.vendorId];
+    if (item.vendor) return item.vendor; // legacy free-text row
+    return 'No vendor';
+  };
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [importResult, setImportResult] = useState(null);
@@ -110,7 +119,7 @@ export default function Inventory() {
     const newId = addInventoryItem({
       sku: '',
       name: 'New Item',
-      vendor: '',
+      vendorId: '',
       type: 'liquid',
       currentStock: 0,
       unit: 'gal',
@@ -220,7 +229,7 @@ export default function Inventory() {
             reorderPoint: row.reorder || baseInventory[idx].reorderPoint,
             unit: row.unit || baseInventory[idx].unit,
             sku: row.sku || baseInventory[idx].sku,
-            vendor: row.vendor || baseInventory[idx].vendor,
+            vendorId: row.vendor || baseInventory[idx].vendorId || '',
             lastUpdated: new Date().toLocaleString(),
             katanaImport: true,
           };
@@ -236,10 +245,10 @@ export default function Inventory() {
       } else {
         const isLiquid = ['gal', 'L', 'ml', 'oz'].includes(row.unit);
         baseInventory.push({
-          id: 'INV-' + String(baseInventory.length + 1).padStart(3, '0'),
+          id: nextId('INV-', baseInventory),
           name: row.name,
           sku: row.sku || '',
-          vendor: row.vendor || '',
+          vendorId: row.vendorId || row.vendor || '',
           type: isLiquid ? 'liquid' : 'dry',
           category: row.category,
           currentStock: row.stock,
@@ -382,7 +391,7 @@ export default function Inventory() {
                 </div>
                 <div className="item-meta">
                   <span>{item.sku || 'No SKU'}</span>
-                  <span>{item.vendor || 'No vendor'}</span>
+                  <span>{vendorLabel(item)}</span>
                 </div>
                 <div className="item-stock">
                   <span>{item.currentStock} {item.unit}</span>

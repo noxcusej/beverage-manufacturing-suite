@@ -2,6 +2,16 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { getClients, saveClient, deleteClient, getFormulas, getRuns, saveFormula, saveRun, deleteRun } from '../data/store';
 
+// crypto.randomUUID is unavailable on plain HTTP and older Safari. Fall back
+// to a v4-ish string from Math.random — fine for client-side keys.
+function uuidish() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 export default function ClientProfile() {
   const { clientName } = useParams();
   const navigate = useNavigate();
@@ -59,7 +69,9 @@ export default function ClientProfile() {
       if (!confirm(`Delete client "${decoded}" and remove client tag from all formulas and runs? This cannot be undone.`)) return;
       if (client.id) deleteClient(client.id);
       // Clear client field from formulas and runs
-      allFormulas.filter((f) => f.client === decoded).forEach((f) => saveFormula({ ...f, client: '' }));
+      // skipVersion: this is a housekeeping retag, not a user-meaningful change.
+      // Without it every formula gains a no-op version per client delete.
+      allFormulas.filter((f) => f.client === decoded).forEach((f) => saveFormula({ ...f, client: '' }, { skipVersion: true }));
       allRuns.filter((r) => r.client === decoded).forEach((r) => saveRun({ ...r, client: '' }));
       navigate('/clients');
     }
@@ -96,7 +108,7 @@ export default function ClientProfile() {
     function handleAddContact() {
       const name = prompt('Contact name:');
       if (!name?.trim()) return;
-      save({ contacts: [...contacts, { id: crypto.randomUUID(), name: name.trim(), email: '', phone: '', role: '' }] });
+      save({ contacts: [...contacts, { id: uuidish(), name: name.trim(), email: '', phone: '', role: '' }] });
     }
 
     function updateContact(idx, field, value) {

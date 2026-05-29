@@ -9,6 +9,7 @@ import { exportRunComparison } from '../utils/exportRunComparison';
 import { exportRunComparisonSheet } from '../utils/exportRunComparisonSheet';
 import PackagingPlanModal from './runQuoting/PackagingPlanModal';
 import { createEmptyPlan, computePlanDerived } from './runQuoting/packagingPlan';
+import { FEE_TYPES } from '../utils/feeTypes';
 
 // ── Constants ──
 
@@ -28,20 +29,6 @@ const PACKAGING_CATEGORIES = [
   { value: 'pallets', label: 'Pallets' },
   { value: 'wrap', label: 'Wrap / Film' },
   { value: 'other', label: 'Other' },
-];
-
-const FEE_TYPES = [
-  { value: 'per-unit', label: 'Per Unit' },
-  { value: 'per-pack', label: 'Per Pack' },
-  { value: 'per-paktech-pack', label: 'Per PakTech Pack' },
-  { value: 'per-carton-pack', label: 'Per Carton Pack' },
-  { value: 'per-variety-pack', label: 'Per Variety Pack' },
-  { value: 'per-variety-case', label: 'Per Variety Case' },
-  { value: 'per-case', label: 'Per Case' },
-  { value: 'per-pallet', label: 'Per Pallet' },
-  { value: 'per-batch', label: 'Per Batch' },
-  { value: 'per-proof-gallon', label: 'Per Proof Gal' },
-  { value: 'fixed', label: 'Fixed' },
 ];
 
 const categoryColors = {

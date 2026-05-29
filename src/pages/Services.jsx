@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { getServices, saveServices, addService as addSvc, deleteService, getVendors } from '../data/store';
+import { FEE_TYPES } from '../utils/feeTypes';
 
 const feeTypeColors = {
   'per-unit': { bg: '#dbeafe', color: '#1e40af' },
@@ -142,10 +143,7 @@ export default function Services() {
                   value={selectedItem.feeType}
                   onChange={(e) => updateField(selectedItem.id, 'feeType', e.target.value)}
                 >
-                  <option value="per-unit">Per Unit</option>
-                  <option value="fixed">Fixed</option>
-                  <option value="per-batch">Per Batch</option>
-                  <option value="per-pallet">Per Pallet</option>
+                  {FEE_TYPES.map((ft) => <option key={ft.value} value={ft.value}>{ft.label}</option>)}
                 </select>
               </div>
             </div>

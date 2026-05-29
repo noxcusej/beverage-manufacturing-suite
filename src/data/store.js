@@ -6,6 +6,7 @@ import {
   defaultTankConfig,
   defaultGlobalSettings,
 } from './defaults';
+import { nextId } from '../utils/ids';
 import {
   loadAppData,
   saveAppData,
@@ -155,7 +156,7 @@ export function updateInventoryItem(id, updates) {
 
 export function addInventoryItem(item) {
   const inventory = [...getInventory()];
-  const newId = 'INV-' + String(inventory.length + 1).padStart(3, '0');
+  const newId = nextId('INV-', inventory);
   inventory.push({ ...item, id: newId });
   saveInventory(inventory);
   return newId;
@@ -191,7 +192,7 @@ export function savePackaging(packaging) {
 
 export function addPackagingItem(item) {
   const packaging = [...getPackaging()];
-  const newId = 'PKG-' + String(packaging.length + 1).padStart(3, '0');
+  const newId = nextId('PKG-', packaging);
   packaging.push({ ...item, id: newId });
   savePackaging(packaging);
   return newId;
@@ -228,7 +229,7 @@ export function saveServices(services) {
 
 export function addService(service) {
   const services = [...getServices()];
-  const newId = 'SVC-' + String(services.length + 1).padStart(3, '0');
+  const newId = nextId('SVC-', services);
   services.push({ ...service, id: newId });
   saveServices(services);
   return newId;
@@ -336,16 +337,22 @@ export async function hydrateFormulasFromSupabase() {
   return getFormulas();
 }
 
-export function saveFormula(formula) {
+/**
+ * @param {object} formula
+ * @param {{ skipVersion?: boolean }} [opts] - when true, do NOT snapshot a
+ *   version row. Used for housekeeping rewrites (e.g. retag on client
+ *   delete) that aren't user-meaningful changes.
+ */
+export function saveFormula(formula, opts = {}) {
   const formulas = [...getFormulas()];
   const now = new Date().toISOString();
 
+  // Match by id ONLY. The old name-fallback overwrote cross-client
+  // formulas that happened to share a name (e.g. two clients with
+  // "Sparkling Water").
   let existingIdx = -1;
   if (formula.id) {
     existingIdx = formulas.findIndex((f) => f.id === formula.id);
-  }
-  if (existingIdx === -1) {
-    existingIdx = formulas.findIndex((f) => f.name === formula.name);
   }
 
   let savedFormula;
@@ -354,7 +361,8 @@ export function saveFormula(formula) {
     const versions = old.versions || [];
 
     const lastVer = versions[versions.length - 1];
-    const skipVersion = lastVer && (new Date(now) - new Date(lastVer.versionDate)) < 2000;
+    const dedupeRecent = lastVer && (new Date(now) - new Date(lastVer.versionDate)) < 2000;
+    const skipVersion = opts.skipVersion || dedupeRecent;
 
     if (!skipVersion) {
       const snapshot = { ...old };
