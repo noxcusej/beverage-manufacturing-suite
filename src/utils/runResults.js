@@ -185,22 +185,38 @@ export function computeRunResults(run) {
   const taxRows = sumLines(run.taxItems);
 
   // Pack-group rows — parity with the live calculator. Honors per-group
-  // overrides (label, category, feeType, qtyOverride/qtyManual, unitPrice).
+  // overrides (label, category, feeType, qtyOverride/qtyManual, unitPrice,
+  // unitPriceManual). Carton groups auto-seed from the Drayhorse tier when
+  // not manually overridden.
   const packGroupRows = [];
+  const cartonAutoByGroup = Object.fromEntries(
+    (cartonCost.groupBreakdown || []).map((gb) => [gb.groupId, gb.autoRate || gb.pricePerCarton || 0])
+  );
   if (planDerived.active) {
     const flavorByIdLocal = Object.fromEntries(counts.flavorRows.map((f) => [f.id, f]));
     planDerived.groups.forEach((g) => {
       const description = g.label || (g.type === 'straight'
         ? `${flavorByIdLocal[g.skuId]?.name || 'Straight'} ${g.packSize}-pk`
         : `Variety ${g.packSize}-pk (${(g.mix || []).filter((m) => (m.cans || 0) > 0).map((m) => flavorByIdLocal[m.skuId]?.name || m.skuId).join(' / ') || '—'})`);
-      const rate = Number(g.unitPrice) || 0;
+      const cartonAuto = cartonAutoByGroup[g.id] || 0;
+      const rate = g.unitPriceManual
+        ? (Number(g.unitPrice) || 0)
+        : (g.carrierType === 'carton' ? cartonAuto : (Number(g.unitPrice) || 0));
       const category = g.category || (g.type === 'variety' ? 'carriers' : 'cases');
       const feeType = g.feeType || 'per-pack';
+      const isPaktech = g.carrierType === 'paktech';
+      const isCarton = g.carrierType === 'carton';
+      const isVariety = g.type === 'variety';
       const groupCounts = {
         ...effectiveCounts,
         totalPacks: g.packsCount || 0,
         totalCases: g.casesConsumed || 0,
         totalUnits: g.cansConsumed || 0,
+        totalPaktechPacks: isPaktech ? (g.packsCount || 0) : 0,
+        totalCartonPacks: isCarton ? (g.packsCount || 0) : 0,
+        totalVarietyPacks: isVariety ? (g.packsCount || 0) : 0,
+        totalVarietyCases: isVariety ? (g.casesConsumed || 0) : 0,
+        totalStraightPacks: !isVariety ? (g.packsCount || 0) : 0,
       };
       const autoQty = getFeeAutoQty(feeType, groupCounts);
       const qty = g.qtyManual ? (g.qtyOverride ?? autoQty) : autoQty;

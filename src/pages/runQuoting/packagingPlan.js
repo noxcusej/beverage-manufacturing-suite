@@ -44,15 +44,21 @@ function round1(n) {
 // category so the new code path can read them. Fires whenever the resolved
 // mode is percent and the legacy field is present — covers both explicit
 // `allocationMode: 'percent'` and inferred-from-`straightPercent` cases.
+//
+// When one category has zero groups, its share is reassigned to the OTHER
+// category — otherwise legacy plans that no longer have any straight (or
+// any variety) groups would lose that share and stay forever <100%.
 function migrateLegacyPercents(groups, plan, resolvedMode) {
   if (resolvedMode !== 'percent') return groups;
   const anyHas = groups.some((g) => Number.isFinite(g.allocationPercent) && g.allocationPercent > 0);
   if (anyHas) return groups;
   if (typeof plan?.straightPercent !== 'number') return groups;
-  const sp = clampPct(plan.straightPercent);
-  const vp = 100 - sp;
+  let sp = clampPct(plan.straightPercent);
+  let vp = 100 - sp;
   const straight = groups.filter((g) => g.type === 'straight');
   const variety = groups.filter((g) => g.type === 'variety');
+  if (straight.length === 0 && variety.length > 0) { vp += sp; sp = 0; }
+  if (variety.length === 0 && straight.length > 0) { sp += vp; vp = 0; }
   const perStraight = straight.length > 0 ? sp / straight.length : 0;
   const perVariety = variety.length > 0 ? vp / variety.length : 0;
   return groups.map((g) => ({

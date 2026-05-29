@@ -128,13 +128,17 @@ export default function PackagingPlanModal({
     setDraft((prev) => {
       let current = { ...prev, groups: (prev.groups || []).map((g) => ({ ...g })) };
       const opts = { unitsPerCase, casesPerPallet };
+      let prevWorstId = null;
       let prevWorst = -1;
       for (let iter = 0; iter < 20; iter += 1) {
         const der = computePlanDerived(current, flavorRows, opts);
         if ((der.overAllocatedGroups || []).length === 0) break;
         const worst = der.overAllocatedGroups.slice().sort((a, b) => b.overByCans - a.overByCans)[0];
-        // Stop if we'd just be repeating ourselves with no progress.
-        if (worst.overByCans === prevWorst) break;
+        // Stop only when the SAME group is still worst with the SAME overByCans
+        // (genuine no-progress). A different group with an identical overByCans
+        // value is still real work to do.
+        if (worst.groupId === prevWorstId && worst.overByCans === prevWorst) break;
+        prevWorstId = worst.groupId;
         prevWorst = worst.overByCans;
         if (der.allocationMode === 'percent') {
           const newPct = round1(worst.maxPercent);

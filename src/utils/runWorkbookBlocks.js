@@ -117,16 +117,20 @@ export function writeRunBlock({ ws, startRow, label, run, res, color, sheetName 
   const ingredientsCell = `G${r}`;
   r += 2;
 
-  // Pack configuration — one row per pack group with the per-pack price
-  // (manual override) and resulting line cost. The TOTAL cell of this
-  // section is referenced from the Packaging Materials subtotal formula so
-  // editing pack rates in this sheet rolls up cleanly into the run total.
+  // Pack configuration — one row per pack group with the per-row rate, the
+  // billable qty resolved from feeType (basis), and the resulting line cost.
+  // The TOTAL cell of this section feeds the Packaging Materials subtotal
+  // formula so edits roll up cleanly into the run total. Reads rate+qty
+  // from the resolved pkgRows so live UI and Excel agree on every basis.
   let packConfigTotalCell = null;
   if (res.planDerived?.active && res.planDerived.groups.length > 0) {
     sectionHeader('Pack Configuration');
-    tableHeader(ws, r, ['Description', 'Pack Size', 'Packs', 'Cases', '$/Pack', 'Line Cost', 'Carrier']);
+    tableHeader(ws, r, ['Description', 'Pack Size', 'Packs', 'Cases', 'Basis', 'Billable Qty', 'Rate', 'Line Cost', 'Carrier']);
     r += 1;
     const flavorById = Object.fromEntries((res.counts.flavorRows || []).map((f) => [f.id, f]));
+    const packRowsById = Object.fromEntries(
+      (res.costs.pkgRows || []).filter((row) => row.packGroup).map((row) => [row.packGroupId, row]),
+    );
     const lineCellsForSum = [];
     let packTotalCost = 0;
     res.planDerived.groups.forEach((g) => {
@@ -134,18 +138,22 @@ export function writeRunBlock({ ws, startRow, label, run, res, color, sheetName 
       const description = g.label || (g.type === 'straight'
         ? `${flavorById[g.skuId]?.name || 'Straight'} ${g.packSize}-pk`
         : `Variety ${g.packSize}-pk (${(g.mix || []).filter((m) => (m.cans || 0) > 0).map((m) => flavorById[m.skuId]?.name || m.skuId).join(' / ') || '—'})`);
-      const rate = Number(g.unitPrice) || 0;
-      const qty = g.packsCount || 0;
-      const lineCost = rate * qty;
+      const packRow = packRowsById[g.id];
+      const rate = Number(packRow?.rate ?? g.unitPrice ?? 0);
+      const billableQty = Number(packRow?.qty ?? g.packsCount ?? 0);
+      const basis = packRow?.feeType || g.feeType || 'per-pack';
+      const lineCost = rate * billableQty;
       packTotalCost += lineCost;
       put(ws, `A${r}`, description, { color: C.ink, bg: zebra, border: true });
       put(ws, `B${r}`, g.packSize, { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
-      put(ws, `C${r}`, qty, { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
+      put(ws, `C${r}`, g.packsCount || 0, { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
       put(ws, `D${r}`, Math.ceil(g.casesConsumed || 0), { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
-      put(ws, `E${r}`, rate, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY4, border: true });
-      putF(ws, `F${r}`, `C${r}*E${r}`, lineCost, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
-      put(ws, `G${r}`, g.carrierType || 'paktech', { color: C.muted, bg: zebra, border: true });
-      lineCellsForSum.push(`F${r}`);
+      put(ws, `E${r}`, basis, { color: C.ink, bg: zebra, border: true });
+      put(ws, `F${r}`, billableQty, { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
+      put(ws, `G${r}`, rate, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY4, border: true });
+      putF(ws, `H${r}`, `F${r}*G${r}`, lineCost, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
+      put(ws, `I${r}`, g.carrierType || 'paktech', { color: C.muted, bg: zebra, border: true });
+      lineCellsForSum.push(`H${r}`);
       r += 1;
     });
     // Totals row — formula-driven so edits to the per-group cells roll up.
@@ -154,10 +162,12 @@ export function writeRunBlock({ ws, startRow, label, run, res, color, sheetName 
     put(ws, `C${r}`, res.planDerived.totalPacks, { bold: true, color: C.ink, align: 'right', numFmt: INT, border: true });
     put(ws, `D${r}`, res.planDerived.totalCases, { bold: true, color: C.ink, align: 'right', numFmt: INT, border: true });
     put(ws, `E${r}`, '', { border: true });
-    putF(ws, `F${r}`, lineCellsForSum.length ? lineCellsForSum.join('+') : '0', packTotalCost,
-      { bold: true, color: C.ink, align: 'right', numFmt: MONEY, border: true });
+    put(ws, `F${r}`, '', { border: true });
     put(ws, `G${r}`, '', { border: true });
-    packConfigTotalCell = `F${r}`;
+    putF(ws, `H${r}`, lineCellsForSum.length ? lineCellsForSum.join('+') : '0', packTotalCost,
+      { bold: true, color: C.ink, align: 'right', numFmt: MONEY, border: true });
+    put(ws, `I${r}`, '', { border: true });
+    packConfigTotalCell = `H${r}`;
     r += 2;
   }
 

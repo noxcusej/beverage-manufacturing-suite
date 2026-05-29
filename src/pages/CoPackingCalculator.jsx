@@ -162,19 +162,14 @@ function makeDefaultTolling() {
 
 // Legacy-id remap for older saved runs; previously this also re-added missing
 // default tolling rows, which made deletes impossible to persist across reloads.
+// Note: per-variety-pack remains a valid fee-type choice for production
+// rates, so we do NOT force-migrate toll-variety here.
 function ensureStandardTolling(items) {
-  return (items || []).map((item) => {
-    if (item.id === 'toll-production') {
-      return { ...item, id: 'toll-price-per-can', name: 'Tolling Price / Can' };
-    }
-    // Variety Pack Assembly used to default to per-variety-pack; now per-
-    // variety-case. Migrate older rows so loaded runs pick up the new
-    // semantics. Rate is preserved — user can adjust if needed.
-    if (item.id === 'toll-variety' && item.feeType === 'per-variety-pack') {
-      return { ...item, feeType: 'per-variety-case' };
-    }
-    return item;
-  });
+  return (items || []).map((item) => (
+    item.id === 'toll-production'
+      ? { ...item, id: 'toll-price-per-can', name: 'Tolling Price / Can' }
+      : item
+  ));
 }
 
 function makeDefaultBOM() {
@@ -343,16 +338,6 @@ export default function CoPackingCalculator() {
   const [tollingEngine, setTollingEngine] = useState(normalizeTollingEngine);
   const [tollingCalculatorOpen, setTollingCalculatorOpen] = useState(false);
 
-  // Self-heal: if a saved run had Variety Pack Assembly stored as the old
-  // per-variety-pack fee type, migrate it to per-variety-case on mount.
-  // This catches the case where a run was already loaded in-memory before
-  // the migration code shipped.
-  useEffect(() => {
-    setTollingItems((prev) => {
-      const needsFix = prev.some((item) => item.id === 'toll-variety' && item.feeType === 'per-variety-pack');
-      return needsFix ? ensureStandardTolling(prev) : prev;
-    });
-  }, []);
   const [bomItems, setBomItems] = useState(makeDefaultBOM);
   const [taxItems, setTaxItems] = useState(makeDefaultTaxes);
 
@@ -365,7 +350,9 @@ export default function CoPackingCalculator() {
     const safeRate = Math.max(0, Number(rate) || 0);
     setPackagingPlan((prev) => ({
       ...prev,
-      groups: (prev.groups || []).map((g) => (g.id === groupId ? { ...g, unitPrice: safeRate } : g)),
+      groups: (prev.groups || []).map((g) => (g.id === groupId
+        ? { ...g, unitPrice: safeRate, unitPriceManual: true }
+        : g)),
     }));
   }
 
@@ -382,6 +369,27 @@ export default function CoPackingCalculator() {
     setPackagingPlan((prev) => ({
       ...prev,
       groups: (prev.groups || []).filter((g) => g.id !== groupId),
+    }));
+  }
+
+  // Carrier switch: clears stale carton-rate / unit-price manual flags when
+  // transitioning OUT of carton, so a later switch back to carton doesn't
+  // silently re-apply an old override. Also clears the unitPrice auto-seed
+  // so the new carrier's pricing isn't masked by a previous tier number.
+  function updatePackGroupCarrier(groupId, nextCarrier) {
+    setPackagingPlan((prev) => ({
+      ...prev,
+      groups: (prev.groups || []).map((g) => {
+        if (g.id !== groupId) return g;
+        const patch = { carrierType: nextCarrier };
+        if (nextCarrier !== 'carton' && g.carrierType === 'carton') {
+          patch.cartonRateOverride = 0;
+          patch.cartonRateManual = false;
+          patch.unitPriceManual = false;
+          patch.unitPrice = 0;
+        }
+        return { ...g, ...patch };
+      }),
     }));
   }
 
@@ -838,22 +846,40 @@ export default function CoPackingCalculator() {
     // rate, qty (with manual override). Pre-filled from the plan but fully
     // editable; edits write back to packagingPlan.groups[*].
     const packGroupRows = [];
+    const cartonAutoByGroup = Object.fromEntries(
+      (cartonCost.groupBreakdown || []).map((gb) => [gb.groupId, gb.autoRate || gb.pricePerCarton || 0])
+    );
     if (planDerived.active) {
       const flavorById = Object.fromEntries(counts.flavorRows.map((f) => [f.id, f]));
       planDerived.groups.forEach((g) => {
         const description = g.label || (g.type === 'straight'
           ? `${flavorById[g.skuId]?.name || 'Straight'} ${g.packSize}-pk`
           : `Variety ${g.packSize}-pk (${(g.mix || []).filter((m) => (m.cans || 0) > 0).map((m) => flavorById[m.skuId]?.name || m.skuId).join(' / ') || '—'})`);
-        const rate = Number(g.unitPrice) || 0;
+        // Auto-seed: carton pack groups default to the Drayhorse tier price
+        // when the user hasn't manually overridden. Any non-carton group
+        // (or carton group with a manual rate) reads g.unitPrice directly.
+        const cartonAuto = cartonAutoByGroup[g.id] || 0;
+        const rate = g.unitPriceManual
+          ? (Number(g.unitPrice) || 0)
+          : (g.carrierType === 'carton' ? cartonAuto : (Number(g.unitPrice) || 0));
         const category = g.category || (g.type === 'variety' ? 'carriers' : 'cases');
         const feeType = g.feeType || 'per-pack';
-        // Group-scoped count basis so per-pack/per-case/per-unit fee types
-        // resolve to THIS group's totals (not the run-wide totals).
+        // Group-scoped count basis — every relevant fee type maps to THIS
+        // group's totals (not the run-wide aggregates that would leak in
+        // via the spread).
+        const isPaktech = g.carrierType === 'paktech';
+        const isCarton = g.carrierType === 'carton';
+        const isVariety = g.type === 'variety';
         const groupCounts = {
           ...effectiveCounts,
           totalPacks: g.packsCount || 0,
           totalCases: g.casesConsumed || 0,
           totalUnits: g.cansConsumed || 0,
+          totalPaktechPacks: isPaktech ? (g.packsCount || 0) : 0,
+          totalCartonPacks: isCarton ? (g.packsCount || 0) : 0,
+          totalVarietyPacks: isVariety ? (g.packsCount || 0) : 0,
+          totalVarietyCases: isVariety ? (g.casesConsumed || 0) : 0,
+          totalStraightPacks: !isVariety ? (g.packsCount || 0) : 0,
         };
         const autoQty = getFeeAutoQty(feeType, groupCounts);
         const qty = g.qtyManual ? (g.qtyOverride ?? autoQty) : autoQty;
@@ -864,6 +890,8 @@ export default function CoPackingCalculator() {
           lineCost: rate * qty,
           inactive: false, synthetic: true, packGroup: true, packGroupId: g.id,
           qtyManual: !!g.qtyManual,
+          unitPriceManual: !!g.unitPriceManual,
+          autoRate: cartonAuto,
           // Description for screen-reader / fallback when label is empty
           autoDescription: description,
         });
@@ -2000,7 +2028,7 @@ export default function CoPackingCalculator() {
                           <td style={{ padding: '4px 6px' }}>
                             <select
                               value={g.carrierType || 'paktech'}
-                              onChange={(e) => updatePackGroupField(g.id, 'carrierType', e.target.value)}
+                              onChange={(e) => updatePackGroupCarrier(g.id, e.target.value)}
                               style={{ fontSize: 11, padding: '1px 4px' }}
                               title="Change a group's carrier to add or remove it from carton tier pricing"
                             >
@@ -2038,7 +2066,9 @@ export default function CoPackingCalculator() {
                 <div style={{ padding: 12, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, textAlign: 'center' }}>
                   <div style={{ fontSize: 11, color: '#3b82f6', fontWeight: 600 }}>Price / 1,000</div>
                   <div style={{ fontSize: 18, fontWeight: 700, color: '#1e40af' }}>${cartonCost.pricePerM.toFixed(2)}</div>
-                  <div style={{ fontSize: 10, color: '#6b7280' }}>{cartonCost.tierQty?.toLocaleString()}+ tier</div>
+                  {cartonCost.tierQty != null && (
+                    <div style={{ fontSize: 10, color: '#6b7280' }}>{cartonCost.tierQty.toLocaleString()}+ tier</div>
+                  )}
                 </div>
                 <div style={{ padding: 12, background: '#fefce8', border: '1px solid #fef08a', borderRadius: 6, textAlign: 'center' }}>
                   <div style={{ fontSize: 11, color: '#ca8a04', fontWeight: 600 }}>Total</div>
@@ -2187,19 +2217,30 @@ export default function CoPackingCalculator() {
                       </select>
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
                         <span style={{ color: '#6b7280', fontSize: 13 }}>$</span>
                         <input
-                          key={`pack-rate-${row.id}-${stateVersion}`}
-                          type="text" inputMode="decimal" defaultValue={row.rate}
+                          key={`pack-rate-${row.id}-${row.rate}-${row.unitPriceManual}`}
+                          type="text" inputMode="decimal" defaultValue={Number(row.rate || 0)}
                           style={{
                             width: 80, textAlign: 'right',
                             background: row.rate === 0 ? '#fef9c3' : undefined,
                           }}
-                          onChange={(e) => updatePackGroupPrice(row.packGroupId, e.target.value === '' ? 0 : +e.target.value || 0)}
                           onBlur={(e) => updatePackGroupPrice(row.packGroupId, e.target.value === '' ? 0 : +e.target.value || 0)}
-                          title={row.rate === 0 ? 'No per-pack price set — click to enter one' : 'Pack rate'}
+                          title={
+                            row.unitPriceManual
+                              ? `Manual override. Click "auto" to revert to Drayhorse tier ($${(row.autoRate || 0).toFixed(4)}).`
+                              : (row.autoRate > 0 ? `Auto-seeded from Drayhorse tier ($${row.autoRate.toFixed(4)}). Type to override.` : 'Pack rate')
+                          }
                         />
+                        {row.unitPriceManual && row.autoRate > 0 && (
+                          <button
+                            className="btn btn-small"
+                            onClick={() => updatePackGroupField(row.packGroupId, 'unitPriceManual', false)}
+                            title={`Reset to Drayhorse tier ($${(row.autoRate || 0).toFixed(4)})`}
+                            style={{ padding: '2px 5px', fontSize: 10, lineHeight: 1 }}
+                          >auto</button>
+                        )}
                       </div>
                     </td>
                     <td style={{ textAlign: 'right' }}>
@@ -2234,43 +2275,19 @@ export default function CoPackingCalculator() {
                   </tr>
                 );
               })}
-              {/* Carton synthetic rows (Drayhorse-priced). Rate defaults to
-                  the tier lookup but is editable per pack group; an "auto"
-                  pill appears when the rate is manually overridden. Qty is
-                  the group's carton count (= packs), still derived. */}
+              {/* Legacy carton synthetic row (no plan, single-carrier=carton).
+                  Read-only — the rate is the Drayhorse tier lookup. Plan-mode
+                  carton pricing is set per pack-group via the rows above. */}
               {costs.pkgRows.filter((r) => r.synthetic && !r.packGroup).map((row) => (
-                <tr key={row.id}>
+                <tr key={row.id} style={{ background: '#fafafa', color: 'var(--text-secondary)' }}>
                   <td></td>
                   <td style={{ fontWeight: 600 }}>
                     {row.name}
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Drayhorse tier · editable</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Drayhorse tier lookup</div>
                   </td>
-                  <td><span style={chipStyle(categoryColors[row.category] || categoryColors.other)}>{row.category}</span></td>
-                  <td><span style={chipStyle(feeTypeColors[row.feeType] || feeTypeColors.fixed)}>{row.feeType}</span></td>
-                  <td style={{ textAlign: 'right' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
-                      <span style={{ color: '#6b7280', fontSize: 13 }}>$</span>
-                      <input
-                        key={`carton-rate-${row.id}-${row.rate}-${row.rateManual}`}
-                        type="text" inputMode="decimal" defaultValue={Number(row.rate || 0).toFixed(4)}
-                        style={{ width: 80, textAlign: 'right' }}
-                        onBlur={(e) => {
-                          const v = e.target.value === '' ? 0 : +e.target.value || 0;
-                          updatePackGroupField(row.cartonGroupId, 'cartonRateOverride', v);
-                          updatePackGroupField(row.cartonGroupId, 'cartonRateManual', true);
-                        }}
-                        title="Per-carton price (manual override). Click 'auto' to reset to Drayhorse tier."
-                      />
-                      {row.rateManual && (
-                        <button
-                          className="btn btn-small"
-                          onClick={() => updatePackGroupField(row.cartonGroupId, 'cartonRateManual', false)}
-                          title={`Reset to Drayhorse tier ($${(row.autoRate || 0).toFixed(4)})`}
-                          style={{ padding: '2px 5px', fontSize: 10, lineHeight: 1 }}
-                        >auto</button>
-                      )}
-                    </div>
-                  </td>
+                  <td><span style={{ ...chipStyle(categoryColors[row.category] || categoryColors.other), opacity: 0.8 }}>{row.category}</span></td>
+                  <td><span style={{ ...chipStyle(feeTypeColors[row.feeType] || feeTypeColors.fixed), opacity: 0.8 }}>{row.feeType}</span></td>
+                  <td style={{ textAlign: 'right' }}>${Number(row.rate || 0).toFixed(4)}</td>
                   <td style={{ textAlign: 'right' }}>{(row.qty || 0).toLocaleString()}</td>
                   <td style={{ textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>
                     ${row.lineCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

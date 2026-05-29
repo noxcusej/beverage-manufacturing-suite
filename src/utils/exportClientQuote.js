@@ -1,10 +1,11 @@
 import { PAGE_W, M, PdfDoc, money, number, filename, drawSectionTitle, drawTable } from './pdf';
 
 function lineRows(rows = []) {
-  // Synthetic rows (pack groups, cartons) are shown in their own Pack
-  // Configuration table above so the client doesn't see them twice.
+  // Pack-group synthetic rows appear in the dedicated Pack Configuration
+  // table — filter only those. Legacy carton synthetic rows have no Pack
+  // Configuration block to show them in, so they must stay listed here.
   return rows
-    .filter((row) => (row.lineCost || 0) > 0 && !row.synthetic)
+    .filter((row) => (row.lineCost || 0) > 0 && !(row.synthetic && row.packGroup))
     .map((row) => [
       row.name || 'Line item',
       row.feeType || '',
