@@ -219,10 +219,10 @@ function buildSummarySheet(ws, res, run, runRefs, poData, poRefs) {
   ws.mergeCells(`A${r}:E${r}`);
   const footerCell = put(
     ws, `A${r}`,
-    `Confidential and Proprietary. Copyright ${new Date().getFullYear()} Drayhorse Manufacturing and Supply, LLC. Do not disseminate without prior written consent. Protected under NDA.`,
-    // Left-justified + wrap so the notice never gets clipped at the
-    // merged-cell edges. No fixed row height — the viewer auto-fits.
-    { color: C.muted, size: 9, italic: true, align: 'left', wrap: true },
+    `Confidential and Proprietary. Copyright ${new Date().getFullYear()} Drayhorse Manufacturing and Supply, LLC. Do not disseminate without prior written consent. Protected under NDA. Protected under NDA after prior written consent.`,
+    // Left-justified, single line. The viewer overflows past the
+    // merged-cell edge if needed (the rest of the row is empty).
+    { color: C.muted, size: 9, italic: true, align: 'left' },
   );
 
   // Unlock everything we wrote on the Summary tab so only the footer
