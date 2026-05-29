@@ -403,6 +403,7 @@ export default function CoPackingCalculator() {
   // Bumped on every external state apply (load/new) so uncontrolled inputs remount with fresh defaultValue.
   const [stateVersion, setStateVersion] = useState(0);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [sheetsHint, setSheetsHint] = useState(false);
 
   // Run comparison
   const [compareOpen, setCompareOpen] = useState(false);
@@ -1469,6 +1470,33 @@ export default function CoPackingCalculator() {
   return (
     <div className="container">
       {/* Run Comparison Modal */}
+      {sheetsHint && (
+        <div style={{
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 9100, background: '#0f172a', color: 'white',
+          padding: '12px 18px', borderRadius: 8, boxShadow: '0 10px 25px -5px rgba(0,0,0,0.3)',
+          display: 'flex', alignItems: 'center', gap: 12, fontSize: 13, maxWidth: 540,
+        }}>
+          <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true" style={{ flexShrink: 0 }}>
+            <path fill="#0F9D58" d="M37 6H11a3 3 0 0 0-3 3v30a3 3 0 0 0 3 3h26a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3z"/>
+            <path fill="#fff" d="M35 18H13v2.4h22zm0 5H13v2.4h22zm0 5H13v2.4h22z"/>
+            <path fill="#fff" d="M18.5 18h2.5v15h-2.5z"/>
+          </svg>
+          <div>
+            Excel file downloaded. In the new Sheets tab: <strong>File → Import → Upload</strong>,
+            drop the file, choose <strong>Replace spreadsheet</strong>.
+          </div>
+          <button
+            onClick={() => setSheetsHint(false)}
+            style={{
+              background: 'transparent', border: 'none', color: '#cbd5e1',
+              cursor: 'pointer', fontSize: 18, padding: 0, lineHeight: 1,
+            }}
+            aria-label="Dismiss"
+          >×</button>
+        </div>
+      )}
+
       {packagingPlanOpen && (
         <PackagingPlanModal
           onClose={() => setPackagingPlanOpen(false)}
@@ -1610,7 +1638,23 @@ export default function CoPackingCalculator() {
           )}
           <button className="btn" onClick={handleExportClientQuote}>Export Quote</button>
           <button className="btn" onClick={() => exportCoPackingToExcel(buildExportArgs())}>Export Excel</button>
-          <button className="btn" onClick={() => exportCoPackingToGoogleSheets(buildExportArgs())}>Open in Sheets</button>
+          <button
+            className="btn"
+            onClick={() => {
+              exportCoPackingToGoogleSheets(buildExportArgs());
+              setSheetsHint(true);
+              setTimeout(() => setSheetsHint(false), 8000);
+            }}
+            title="Open in Google Sheets"
+            style={{ padding: '6px 10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+            aria-label="Open in Google Sheets"
+          >
+            <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+              <path fill="#0F9D58" d="M37 6H11a3 3 0 0 0-3 3v30a3 3 0 0 0 3 3h26a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3z"/>
+              <path fill="#fff" d="M35 18H13v2.4h22zm0 5H13v2.4h22zm0 5H13v2.4h22z"/>
+              <path fill="#fff" d="M18.5 18h2.5v15h-2.5z"/>
+            </svg>
+          </button>
           <button className="btn btn-primary" onClick={handleSaveRun}>
             {savedFlash ? 'Saved ✓' : (currentRunId ? 'Save' : 'Save Configuration')}
           </button>
