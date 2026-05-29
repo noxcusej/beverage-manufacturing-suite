@@ -218,16 +218,17 @@ function buildLineItemsSheet(ws, res, run) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// COST SHEET — mirrors the in-app Summary page.
+// SKU GTM — go-to-market view: mirrors the in-app Summary page.
 //
 //   KEY METRICS (vertical strip, references Line Items where possible)
 //   COST BREAKDOWN BY SKU (flavors as columns, categories as rows,
 //                          Cost/Unit and Cost/Case footer rows)
 //   CHANNEL PRICING (COGS → FOB → Distributor → MSRP at per-case /
-//                    per-pack / per-unit basis, with editable margin %
-//                    cells that drive every other row via formula)
+//                    per-pack / per-unit basis, with editable
+//                    margin % AND pack-size cells that drive every
+//                    formula via cell reference)
 // ─────────────────────────────────────────────────────────────────────────
-function buildCostSheetSheet(ws, res, run, runRefs) {
+function buildSkuGtmSheet(ws, res, run, runRefs) {
   const flavors = (run.flavors || []);
   // Resolve effective per-flavor counts from the saved run.
   const config = res.config || {};
@@ -460,6 +461,15 @@ function buildCostSheetSheet(ws, res, run, runRefs) {
     { bold: true, color: C.ink, bg: '#FFF8E1', align: 'right', numFmt: MONEY, border: true });
   const fobCell = `B${r}`;
   for (let i = 2; i <= totalColIdx; i += 1) put(ws, `${colLetter(i)}${r}`, '', { border: true });
+  r += 1;
+
+  // Pack Size — editable; drives the Per Pack column. Default is the run
+  // config's packSize, but the user can change it (e.g., to model what a
+  // 6-pack or 12-pack would price at).
+  put(ws, `A${r}`, 'Pack Size (cans / pack)', { bold: true, color: C.ink, border: true });
+  put(ws, `B${r}`, packSize, { bold: true, color: C.ink, bg: '#FFF8E1', align: 'right', numFmt: INT, border: true });
+  const packSizeCell = `B${r}`;
+  for (let i = 2; i <= totalColIdx; i += 1) put(ws, `${colLetter(i)}${r}`, '', { border: true });
   r += 2;
 
   // Pricing table
@@ -467,7 +477,6 @@ function buildCostSheetSheet(ws, res, run, runRefs) {
   r += 1;
 
   const upc = unitsPerCase;
-  const psz = packSize;
   const perCaseRef = runRefs.perCase;
   const perCanRef = runRefs.perCan;
 
@@ -476,7 +485,7 @@ function buildCostSheetSheet(ws, res, run, runRefs) {
     const zebra = (r % 2 === 0) ? C.zebra : null;
     put(ws, `A${r}`, 'COGS', { bold: true, color: C.ink, bg: zebra, border: true });
     putF(ws, `B${r}`, perCaseRef, res.costs.costPerCase, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
-    putF(ws, `C${r}`, `${perCanRef}*${psz}`, (res.costs.costPerUnit || 0) * psz, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
+    putF(ws, `C${r}`, `${perCanRef}*${packSizeCell}`, (res.costs.costPerUnit || 0) * packSize, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
     putF(ws, `D${r}`, perCanRef, res.costs.costPerUnit, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY4, border: true });
     for (let i = 4; i <= totalColIdx; i += 1) put(ws, `${colLetter(i)}${r}`, '', { bg: zebra, border: true });
     r += 1;
@@ -487,7 +496,7 @@ function buildCostSheetSheet(ws, res, run, runRefs) {
     const zebra = (r % 2 === 0) ? C.zebra : null;
     put(ws, `A${r}`, 'FOB to Distributor', { bold: true, color: C.ink, bg: zebra, border: true });
     putF(ws, `B${r}`, fobCell, res.costs.costPerCase, { bold: true, color: C.teal, bg: zebra, align: 'right', numFmt: MONEY, border: true });
-    putF(ws, `C${r}`, `${fobCell}/${upc}*${psz}`, (res.costs.costPerCase || 0) / upc * psz, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
+    putF(ws, `C${r}`, `${fobCell}/${upc}*${packSizeCell}`, (res.costs.costPerCase || 0) / upc * packSize, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
     putF(ws, `D${r}`, `${fobCell}/${upc}`, (res.costs.costPerCase || 0) / upc, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY4, border: true });
     for (let i = 4; i <= totalColIdx; i += 1) put(ws, `${colLetter(i)}${r}`, '', { bg: zebra, border: true });
     r += 1;
@@ -501,7 +510,7 @@ function buildCostSheetSheet(ws, res, run, runRefs) {
     // distPrice = fob / (1 - distMargin)
     putF(ws, `B${r}`, `${fobCell}/(1-${distMarginCell})`, (res.costs.costPerCase || 0) / 0.7,
       { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
-    putF(ws, `C${r}`, `B${r}/${upc}*${psz}`, ((res.costs.costPerCase || 0) / 0.7) / upc * psz,
+    putF(ws, `C${r}`, `B${r}/${upc}*${packSizeCell}`, ((res.costs.costPerCase || 0) / 0.7) / upc * packSize,
       { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
     putF(ws, `D${r}`, `B${r}/${upc}`, ((res.costs.costPerCase || 0) / 0.7) / upc,
       { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY4, border: true });
@@ -514,7 +523,7 @@ function buildCostSheetSheet(ws, res, run, runRefs) {
     put(ws, `A${r}`, 'Retail MSRP', { bold: true, color: C.white, bg: C.dark, border: true });
     putF(ws, `B${r}`, `B${distCaseRow}/(1-${retailMarginCell})`, ((res.costs.costPerCase || 0) / 0.7) / 0.6,
       { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: MONEY, border: true });
-    putF(ws, `C${r}`, `B${r}/${upc}*${psz}`, (((res.costs.costPerCase || 0) / 0.7) / 0.6) / upc * psz,
+    putF(ws, `C${r}`, `B${r}/${upc}*${packSizeCell}`, (((res.costs.costPerCase || 0) / 0.7) / 0.6) / upc * packSize,
       { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: MONEY, border: true });
     putF(ws, `D${r}`, `B${r}/${upc}`, (((res.costs.costPerCase || 0) / 0.7) / 0.6) / upc,
       { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: MONEY4, border: true });
@@ -526,7 +535,7 @@ function buildCostSheetSheet(ws, res, run, runRefs) {
   // Margin caption
   ws.mergeCells(`A${r}:${lastCol}${r}`);
   put(ws, `A${r}`,
-    'Margin = (price − cost) / price. Edit the yellow cells (Distributor Margin, Retail Margin, FOB Price) to recalculate channel pricing.',
+    'Margin = (price − cost) / price. Edit the yellow cells (Distributor Margin, Retail Margin, FOB Price, Pack Size) to recalculate channel pricing.',
     { color: C.muted, size: 9, italic: true });
   ws.getRow(r).height = 16;
 
@@ -647,16 +656,11 @@ async function buildWorkbook({ run, rawPO }) {
   wb.created = new Date();
   wb.calcProperties = { fullCalcOnLoad: true };
 
-  const wsCostSheet = wb.addWorksheet('Cost Sheet', { properties: { tabColor: { argb: C.teal } } });
   const wsSummary = wb.addWorksheet('Summary', { properties: { tabColor: { argb: C.teal } } });
   const wsLines = wb.addWorksheet(SHEET_LINE_ITEMS, { properties: { tabColor: { argb: C.purple } } });
 
-  // Build line items first so the Cost Sheet and Summary can reference its cells.
+  // Build line items first so the Summary and SKU GTM can reference its cells.
   const runRefs = buildLineItemsSheet(wsLines, res, run);
-
-  // Cost Sheet — mirrors the in-app Summary page (KPI strip, per-SKU
-  // cost matrix, Channel Pricing with editable margin %).
-  buildCostSheetSheet(wsCostSheet, res, run, runRefs);
 
   // Packaging plan tab — always include so a run with no plan still has the
   // sheet (it shows "not configured"). Helps QA the math against the plan.
@@ -679,6 +683,12 @@ async function buildWorkbook({ run, rawPO }) {
   }
 
   buildSummarySheet(wsSummary, res, run, runRefs, poData, poRefs);
+
+  // SKU GTM — added LAST so it sits at the end of the tab order. Mirrors
+  // the in-app Summary page (KPI strip, per-SKU cost matrix, Channel
+  // Pricing with editable margin % and pack-size cells).
+  const wsSkuGtm = wb.addWorksheet('SKU GTM', { properties: { tabColor: { argb: C.teal } } });
+  buildSkuGtmSheet(wsSkuGtm, res, run, runRefs);
 
   // Turn off gridlines on every sheet. Merges into any existing views
   // entry (frozen panes etc.) so we don't clobber them.
