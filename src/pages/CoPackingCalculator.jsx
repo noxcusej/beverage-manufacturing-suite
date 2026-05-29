@@ -620,29 +620,72 @@ export default function CoPackingCalculator() {
     if (planDerived.active) {
       const cartonGroups = planDerived.cartonGroups;
       if (cartonGroups.length === 0) return empty;
-      const groupBreakdown = [];
-      let totalCost = 0;
-      let totalCartonQty = 0;
+
+      // Drayhorse prices on (total cartons ordered, total SKU count) for a
+      // given product. When multiple groups share the same carton product
+      // (e.g. 4 flavors of Sleek 4pk), we need ONE tier lookup at the SUM
+      // of all those groups' carton quantities and the COUNT of those
+      // groups (each printed design = one SKU). Previously each group hit
+      // the grid independently with its own (small) quantity, which fell
+      // below the smallest tier and returned the most expensive price.
+      //
+      // Derive each group's productId from the user-selected structure
+      // (Sleek / Standard) at the top-level + the group's packSize, so
+      // a Variety 8pk on a Sleek line correctly hits 'sleek-8pk' and
+      // gets its own (separate) tier lookup.
+      const allProducts = getProducts();
+      const topProduct = allProducts.find((p) => p.id === cartonProduct);
+      const structure = topProduct?.structure || 'Sleek';
+      const productForGroup = (g) => {
+        // Prefer an explicit per-group productId if the data carries one
+        // (forward-compat for a future per-group selector). Otherwise
+        // derive from packSize within the chosen structure.
+        if (g.cartonProductId) return g.cartonProductId;
+        const match = allProducts.find((p) => p.structure === structure && p.packSize === g.packSize);
+        return match?.id || cartonProduct;
+      };
+
+      // Bucket groups by product so we can do one tier lookup per product.
+      const buckets = new Map();
       cartonGroups.forEach((g) => {
         const cartonQty = g.packsCount || 0;
         if (cartonQty <= 0) return;
-        const tier = lookupPrice(cartonProduct, cartonQty, effectiveSkuCount);
+        const productId = productForGroup(g);
+        if (!buckets.has(productId)) buckets.set(productId, { totalQty: 0, groups: [] });
+        const bucket = buckets.get(productId);
+        bucket.totalQty += cartonQty;
+        bucket.groups.push({ g, cartonQty });
+      });
+
+      const groupBreakdown = [];
+      let totalCost = 0;
+      let totalCartonQty = 0;
+      buckets.forEach((bucket, productId) => {
+        // One tier lookup at SUM quantity. SKU count for this product =
+        // number of groups using it (each is a separate printed design).
+        const productSkuCount = bucket.groups.length;
+        const tier = lookupPrice(productId, bucket.totalQty, productSkuCount);
         const autoRate = tier?.pricePerCarton || 0;
-        const groupTotal = autoRate * cartonQty;
-        totalCost += groupTotal;
-        totalCartonQty += cartonQty;
-        groupBreakdown.push({
-          groupId: g.id,
-          groupLabel: g.label || `${g.type === 'variety' ? 'Variety' : 'Straight'} ${g.packSize}-pk`,
-          cartonQty,
-          pricePerCarton: autoRate,
-          autoRate,
-          totalCost: groupTotal,
-          // Surfaced for the Carton Pricing block's warnings + tier-up UX.
-          belowTier: !!tier?.belowTier,
-          aboveMaxTier: !!tier?.aboveMaxTier,
-          skuExtrapolated: !!tier?.skuExtrapolated,
-          tierQty: tier?.tierQty,
+        bucket.groups.forEach(({ g, cartonQty }) => {
+          const groupTotal = autoRate * cartonQty;
+          totalCost += groupTotal;
+          totalCartonQty += cartonQty;
+          groupBreakdown.push({
+            groupId: g.id,
+            groupLabel: g.label || `${g.type === 'variety' ? 'Variety' : 'Straight'} ${g.packSize}-pk`,
+            cartonQty,
+            pricePerCarton: autoRate,
+            autoRate,
+            totalCost: groupTotal,
+            productId,
+            productSkuCount,
+            bucketTotalQty: bucket.totalQty,
+            // Surfaced for the Carton Pricing block's warnings + tier-up UX.
+            belowTier: !!tier?.belowTier,
+            aboveMaxTier: !!tier?.aboveMaxTier,
+            skuExtrapolated: !!tier?.skuExtrapolated,
+            tierQty: tier?.tierQty,
+          });
         });
       });
       if (groupBreakdown.length === 0) return empty;
@@ -2265,8 +2308,11 @@ export default function CoPackingCalculator() {
                         : `Variety ${g.packSize}-pk`);
                       const gb = (cartonCost.groupBreakdown || []).find((b) => b.groupId === g.id);
                       const isCarton = g.carrierType === 'carton';
+                      // Tier-up suggestion uses the bucketed product + SKU
+                      // count + total qty so it reflects the combined order
+                      // to Drayhorse, not just this single group's slice.
                       const tierUp = (isCarton && gb)
-                        ? findTierUpOption(cartonProduct, gb.cartonQty, effectiveSkuCount)
+                        ? findTierUpOption(gb.productId || cartonProduct, gb.bucketTotalQty || gb.cartonQty, gb.productSkuCount || effectiveSkuCount)
                         : null;
                       return (
                         <React.Fragment key={g.id}>

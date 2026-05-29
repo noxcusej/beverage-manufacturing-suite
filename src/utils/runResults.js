@@ -115,26 +115,60 @@ function computeCartonCost(carton, carrierType, packSize, totalUnits, planDerive
   if (planDerived.active) {
     const cartonGroups = planDerived.cartonGroups;
     if (cartonGroups.length === 0) return empty;
-    const groupBreakdown = [];
-    let totalCost = 0;
+
+    // Mirror CoPackingCalculator: bucket groups by carton productId
+    // (derived from packSize + the top-level structure), sum quantities,
+    // and do one tier lookup per product. SKU count per product = number
+    // of groups using it.
+    const allProducts = getProducts();
+    const topProduct = allProducts.find((p) => p.id === cartonProduct);
+    const structure = topProduct?.structure || 'Sleek';
+    const productForGroup = (g) => {
+      if (g.cartonProductId) return g.cartonProductId;
+      const match = allProducts.find((p) => p.structure === structure && p.packSize === g.packSize);
+      return match?.id || cartonProduct;
+    };
+
+    const buckets = new Map();
     cartonGroups.forEach((g) => {
       const cartonQty = g.packsCount || 0;
       if (cartonQty <= 0) return;
-      const tier = lookupPrice(cartonProduct, cartonQty, effectiveSkuCount);
+      const productId = productForGroup(g);
+      if (!buckets.has(productId)) buckets.set(productId, { totalQty: 0, groups: [] });
+      const bucket = buckets.get(productId);
+      bucket.totalQty += cartonQty;
+      bucket.groups.push({ g, cartonQty });
+    });
+
+    const groupBreakdown = [];
+    let totalCost = 0;
+    buckets.forEach((bucket, productId) => {
+      // If the user explicitly overrode SKU count and this product is the
+      // top-selected one, honor the override; otherwise use the bucket's
+      // group count.
+      const productSkuCount = (skuCountManual && productId === cartonProduct)
+        ? storedSkuCount
+        : bucket.groups.length;
+      const tier = lookupPrice(productId, bucket.totalQty, productSkuCount);
       const autoRate = tier?.pricePerCarton || 0;
-      const groupTotal = autoRate * cartonQty;
-      totalCost += groupTotal;
-      groupBreakdown.push({
-        groupId: g.id,
-        groupLabel: g.label || `${g.type === 'variety' ? 'Variety' : 'Straight'} ${g.packSize}-pk`,
-        cartonQty,
-        pricePerCarton: autoRate,
-        autoRate,
-        totalCost: groupTotal,
-        belowTier: !!tier?.belowTier,
-        aboveMaxTier: !!tier?.aboveMaxTier,
-        skuExtrapolated: !!tier?.skuExtrapolated,
-        tierQty: tier?.tierQty,
+      bucket.groups.forEach(({ g, cartonQty }) => {
+        const groupTotal = autoRate * cartonQty;
+        totalCost += groupTotal;
+        groupBreakdown.push({
+          groupId: g.id,
+          groupLabel: g.label || `${g.type === 'variety' ? 'Variety' : 'Straight'} ${g.packSize}-pk`,
+          cartonQty,
+          pricePerCarton: autoRate,
+          autoRate,
+          totalCost: groupTotal,
+          productId,
+          productSkuCount,
+          bucketTotalQty: bucket.totalQty,
+          belowTier: !!tier?.belowTier,
+          aboveMaxTier: !!tier?.aboveMaxTier,
+          skuExtrapolated: !!tier?.skuExtrapolated,
+          tierQty: tier?.tierQty,
+        });
       });
     });
     if (groupBreakdown.length === 0) return empty;
