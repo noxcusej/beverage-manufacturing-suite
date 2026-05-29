@@ -92,6 +92,7 @@ export default function BatchCalculator() {
     if (batch) {
       // Use `!== undefined` (not truthy-check) so a deliberate 0 round-trips.
       // `if (batch.baseYield)` previously dropped 0 on reload.
+      if (batch.formulaId) setLoadedFormulaId(batch.formulaId);
       if (batch.formulaName !== undefined) setFormulaName(batch.formulaName);
       if (batch.formulaClient !== undefined) setFormulaClient(batch.formulaClient);
       if (batch.baseYield !== undefined) setBaseYield(batch.baseYield);
@@ -505,7 +506,7 @@ export default function BatchCalculator() {
     );
     setMissingPriceIds(missing);
 
-    saveFormulaToStore({
+    const saved = saveFormulaToStore({
       // Pass id when available so saveFormula's strict-id match updates
       // in place. Without id (new formula), it falls through to insert.
       ...(loadedFormulaId ? { id: loadedFormulaId } : {}),
@@ -518,6 +519,10 @@ export default function BatchCalculator() {
       targetCases,
       ingredients,
     });
+    // First save of a brand-new formula returns the generated id; latch it
+    // so subsequent saves update in place (and version-snapshot) instead
+    // of pushing more duplicates.
+    if (saved?.id && saved.id !== loadedFormulaId) setLoadedFormulaId(saved.id);
 
     if (missing.size > 0) {
       showToast(`Saved — ${missing.size} ingredient${missing.size > 1 ? 's' : ''} missing price`, 'warning');
@@ -528,6 +533,7 @@ export default function BatchCalculator() {
 
   function handleSaveBatch() {
     saveBatch({
+      formulaId: loadedFormulaId, // keep the formula binding across reload
       formulaName, formulaClient,
       batchSize, batchSizeUnit, baseYield, baseYieldUnit,
       unitSizeVal, unitSizeUnit, unitsPerCase, lossPercent,
@@ -555,6 +561,10 @@ export default function BatchCalculator() {
   function handleLoadFormula(name) {
     const formula = formulas.find((f) => f.name === name);
     if (!formula) return;
+    // Track which formula we loaded so handleSaveFormula passes the id back
+    // to saveFormula's strict-id match — otherwise save() would insert a new
+    // row instead of updating + version-snapshotting the existing one.
+    setLoadedFormulaId(formula.id);
     setFormulaName(formula.name);
     setFormulaClient(formula.client || 'Uncategorized');
     setMissingPriceIds(new Set());
@@ -602,6 +612,7 @@ export default function BatchCalculator() {
   }
 
   function handleNewFormula() {
+    setLoadedFormulaId(null); // clear so next save inserts as a brand-new formula
     setFormulaName('New Formula');
     setBaseYield(100);
     setBaseYieldUnit('gal');

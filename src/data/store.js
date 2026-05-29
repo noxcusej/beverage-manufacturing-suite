@@ -398,6 +398,10 @@ export function saveFormula(formula, opts = {}) {
   saveFormulaToSupabase(savedFormula).catch(err =>
     console.error('[Store] Supabase write-through failed:', err)
   );
+
+  // Return the saved row so callers know the generated id on first insert
+  // (otherwise the next save without id would insert a second duplicate).
+  return savedFormula;
 }
 
 export function saveAllFormulas(formulas) {
