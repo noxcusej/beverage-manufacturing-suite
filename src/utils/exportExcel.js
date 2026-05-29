@@ -438,7 +438,7 @@ function buildSkuGtmSheet(ws, res, run, runRefs) {
   r += 2;
 
   // ── CHANNEL PRICING — formula-driven, margin inputs at the top ──
-  band(ws, r, totalColIdx + 1, 'CHANNEL PRICING', C.teal); r += 1;
+  band(ws, r, totalColIdx + 1, 'CHANNEL PRICING ESTIMATOR', C.teal); r += 1;
 
   // Light instructions so the user knows the workflow.
   ws.mergeCells(`A${r}:${lastCol}${r}`);

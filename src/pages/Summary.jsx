@@ -323,7 +323,7 @@ export default function Summary() {
 
         <div className="section" style={{ margin: 0 }}>
           <div className="section-header">
-            <div className="section-title">Channel Pricing</div>
+            <div className="section-title">Channel Pricing Estimator</div>
           </div>
           <div className="section-body">
             <div className="form-group" style={{ marginBottom: 12 }}>
