@@ -662,6 +662,9 @@ function deriveSummary(run) {
     costPerCase: costs.costPerCase || 0,
     ingredientTotal: costs.totalIngredientCost || 0,
     ingredientPerUnit: totalCans > 0 ? (costs.totalIngredientCost || 0) / totalCans : 0,
+    // Exposed for the cover-letter packaging breakdown.
+    planDerived: res.planDerived,
+    flavorRows: counts.flavorRows || [],
   };
 }
 

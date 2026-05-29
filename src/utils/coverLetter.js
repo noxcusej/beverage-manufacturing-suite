@@ -1,10 +1,10 @@
 // Generates a sales-focused cover letter from a Summary run.
 //
-// Framing: the co-packer is pitching the brand client. The letter
-// references the run quote, summarizes what we're proposing to produce
-// for them, and gives a clean per-case / per-pack price. Downstream
-// economics (distributor margin, retail MSRP, the client's profit) are
-// deliberately omitted — those aren't ours to set.
+// Co-packer pitching the brand client. References the run as the quote.
+// The headline content is the PACKAGING PLAN — what's actually being
+// produced: per-group breakdown with flavor, pack size, carrier, and
+// case count. Downstream client economics (distributor/retail margins,
+// "what you earn") are intentionally absent.
 //
 // Two outputs in parallel:
 //   - HTML (for upload as a Google Doc — Drive API parses headings/tables)
@@ -22,13 +22,57 @@ function todayLong() {
   return new Date().toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
+function carrierLabel(c) {
+  if (c === 'paktech') return 'PakTech';
+  if (c === 'carton') return 'Carton';
+  if (c === 'shrink') return 'Shrink-wrap';
+  if (c === 'none') return 'No carrier';
+  return c || '';
+}
+
+/**
+ * Resolve a pack-group into a sales-friendly line:
+ *   { label, sublabel, cases, packs, carrier }
+ *
+ * Straight group → "Cherry Whiskey · 4-pack · PakTech"
+ * Variety group → "Variety 8-pack (Cherry / Lime / Mint) · Carton"
+ */
+function describeGroup(g, flavorRows) {
+  const flavorById = Object.fromEntries((flavorRows || []).map((f) => [f.id, f]));
+  const carrier = carrierLabel(g.carrierType);
+  if (g.type === 'variety') {
+    const mixNames = (g.mix || [])
+      .filter((m) => (m.cans || 0) > 0)
+      .map((m) => flavorById[m.skuId]?.name || m.skuId)
+      .filter(Boolean);
+    const baseLabel = g.label || `Variety ${g.packSize}-pack`;
+    const mixSuffix = mixNames.length > 0 ? ` (${mixNames.join(' / ')})` : '';
+    return {
+      label: baseLabel + mixSuffix,
+      packConfig: `${g.packSize}-pack`,
+      carrier,
+      cases: g.casesConsumed || 0,
+      packs: g.packsCount || 0,
+    };
+  }
+  const flavorName = flavorById[g.skuId]?.name;
+  const baseLabel = g.label || (flavorName ? `${flavorName} ${g.packSize}-pack` : `Straight ${g.packSize}-pack`);
+  return {
+    label: baseLabel,
+    packConfig: `${g.packSize}-pack`,
+    carrier,
+    cases: g.casesConsumed || 0,
+    packs: g.packsCount || 0,
+  };
+}
+
 /**
  * @param {object} args
  * @param {object} args.run              - selected saved run
- * @param {object} args.data             - computeRunResults() output
+ * @param {object} args.data             - deriveSummary() output (with planDerived, flavorRows)
  * @param {object} args.pricing          - { fob } — per-case quote price
- * @param {string} [args.fromName]       - sender name (optional)
- * @param {string} [args.fromCompany]    - sender company (optional)
+ * @param {string} [args.fromName]
+ * @param {string} [args.fromCompany]
  * @returns {{ html: string, text: string, title: string }}
  */
 export function generateCoverLetter({ run, data, pricing, fromName, fromCompany } = {}) {
@@ -39,18 +83,36 @@ export function generateCoverLetter({ run, data, pricing, fromName, fromCompany 
   const clientName = run.client || 'your team';
   const runName = run.name || 'Untitled quote';
   const date = todayLong();
-  const { totalCases, totalCans, totalPallets, flavorCount, packSize, unitsPerCase } = data;
+  const { totalCases, totalCans, totalPallets, packSize, unitsPerCase, planDerived, flavorRows } = data;
+
   const quotePerCase = (pricing?.fob && pricing.fob > 0) ? pricing.fob : (data.costPerCase || 0);
   const pricePerPack = unitsPerCase > 0 ? quotePerCase / unitsPerCase * packSize : 0;
   const pricePerCan = unitsPerCase > 0 ? quotePerCase / unitsPerCase : 0;
   const projectTotal = quotePerCase * totalCases;
-  const flavorList = (data.flavorData || []).map((f) => f.name).filter(Boolean);
+
+  // Build the packaging-plan line items. If a plan is active, use its
+  // groups (real per-group breakdown). Otherwise fall back to the
+  // single legacy line ("X cases of Y-pack").
+  const groups = (planDerived?.active && Array.isArray(planDerived.groups))
+    ? planDerived.groups.filter((g) => (g.casesConsumed || 0) > 0).map((g) => describeGroup(g, flavorRows))
+    : [{
+        label: `${packSize}-pack run`,
+        packConfig: `${packSize}-pack`,
+        carrier: '',
+        cases: totalCases,
+        packs: 0,
+      }];
 
   const title = `${runName} — Co-Pack Quote`;
   const senderLine = fromName || '[Your name]';
   const companyLine = fromCompany ? `\n${fromCompany}` : '';
 
   // ── Plain-text version ──
+  const groupTextLines = groups.map((gr) => {
+    const carrierBit = gr.carrier ? ` · ${gr.carrier}` : '';
+    return `• ${int(gr.cases)} cases — ${gr.label}${gr.label.includes('-pack') ? '' : ` · ${gr.packConfig}`}${carrierBit}`;
+  });
+
   const textLines = [
     date,
     '',
@@ -59,9 +121,9 @@ export function generateCoverLetter({ run, data, pricing, fromName, fromCompany 
     `Thanks for the opportunity to quote ${runName}. Here's what we're proposing to produce for you:`,
     '',
     'THE RUN',
-    `• ${int(totalCases)} cases (${int(totalCans)} cans) across ${flavorCount} SKU${flavorCount === 1 ? '' : 's'}${flavorList.length > 0 ? `: ${flavorList.join(', ')}` : ''}`,
-    `• ${packSize}-packs, ${unitsPerCase} cans per case`,
-    `• ${int(totalPallets)} pallet${totalPallets === 1 ? '' : 's'} finished`,
+    ...groupTextLines,
+    '',
+    `Totals: ${int(totalCases)} cases · ${int(totalCans)} cans · ${int(totalPallets)} pallet${totalPallets === 1 ? '' : 's'}`,
     '',
     'THE QUOTE',
     `• $${money(quotePerCase)} per case`,
@@ -79,6 +141,14 @@ export function generateCoverLetter({ run, data, pricing, fromName, fromCompany 
   const text = textLines.join('\n');
 
   // ── HTML version (Google Doc) ──
+  const groupRowsHtml = groups.map((gr) => `
+    <tr>
+      <td>${escapeHtml(gr.label)}</td>
+      <td>${escapeHtml(gr.carrier || '—')}</td>
+      <td style="text-align:right;"><strong>${int(gr.cases)}</strong></td>
+      <td style="text-align:right;">${gr.packs > 0 ? int(gr.packs) : '—'}</td>
+    </tr>`).join('');
+
   const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -96,11 +166,21 @@ export function generateCoverLetter({ run, data, pricing, fromName, fromCompany 
   <p>Thanks for the opportunity to quote <strong>${escapeHtml(runName)}</strong>. Here's what we're proposing to produce for you:</p>
 
   <h2>The run</h2>
-  <ul>
-    <li><strong>${int(totalCases)} cases</strong> (${int(totalCans)} cans) across <strong>${flavorCount} SKU${flavorCount === 1 ? '' : 's'}</strong>${flavorList.length > 0 ? `: ${escapeHtml(flavorList.join(', '))}` : ''}</li>
-    <li>${packSize}-packs, ${unitsPerCase} cans per case</li>
-    <li><strong>${int(totalPallets)} pallet${totalPallets === 1 ? '' : 's'}</strong> finished</li>
-  </ul>
+  <table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;">
+    <tr style="background:#f3f4f6;font-weight:600;">
+      <td>SKU / Pack</td>
+      <td>Carrier</td>
+      <td style="text-align:right;">Cases</td>
+      <td style="text-align:right;">Packs</td>
+    </tr>
+    ${groupRowsHtml}
+    <tr style="background:#f9fafb;font-weight:700;">
+      <td colspan="2">Totals</td>
+      <td style="text-align:right;">${int(totalCases)}</td>
+      <td style="text-align:right;">—</td>
+    </tr>
+  </table>
+  <p style="color:#6b7280;font-size:10pt;">${int(totalCans)} cans total · ${int(totalPallets)} pallet${totalPallets === 1 ? '' : 's'} finished</p>
 
   <h2>The quote</h2>
   <table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;">
