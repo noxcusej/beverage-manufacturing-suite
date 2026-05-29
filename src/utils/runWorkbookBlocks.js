@@ -123,7 +123,7 @@ export function writeRunBlock({ ws, startRow, label, run, res, color, sheetName 
   let packConfigTotalCell = null;
   if (res.planDerived?.active && res.planDerived.groups.length > 0) {
     sectionHeader('Pack Configuration');
-    tableHeader(ws, r, ['Description', 'Pack Size', 'Packs', 'Cases', 'Rate', 'Line Cost', 'Carrier']);
+    tableHeader(ws, r, ['Description', 'Pack Size', 'Packs', 'Cases', 'Rate', 'Carrier', 'Line Cost']);
     r += 1;
     const flavorById = Object.fromEntries((res.counts.flavorRows || []).map((f) => [f.id, f]));
     const packRowsById = Object.fromEntries(
@@ -141,9 +141,6 @@ export function writeRunBlock({ ws, startRow, label, run, res, color, sheetName 
           const names = (g.mix || []).filter((m) => (m.cans || 0) > 0).map((m) => flavorById[m.skuId]?.name || m.skuId).join(' / ');
           return names ? `Variety ${g.packSize}-pk (${names})` : `Variety ${g.packSize}-pk`;
         })());
-      // Read rate + line cost from the resolved pkgRow so live UI and Excel
-      // agree on every basis (per-pack / per-case / per-variety-case /
-      // etc). The visible Rate cell shows the effective $-per-resolved-unit.
       const packRow = packRowsById[g.id];
       const rate = Number(packRow?.rate ?? g.unitPrice ?? 0);
       const liveLineCost = Number(packRow?.lineCost ?? rate * (g.packsCount || 0));
@@ -155,13 +152,13 @@ export function writeRunBlock({ ws, startRow, label, run, res, color, sheetName 
         Math.ceil(g.casesConsumed || 0),
         { color: C.ink, bg: zebra, align: 'right', numFmt: INT, border: true });
       put(ws, `E${r}`, rate, { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY4, border: true });
-      // Static line cost matches the live UI value (which respects feeType
-      // and qtyOverride). If the user edits C (packs) or E (rate), Excel
-      // recomputes as packs × rate — close enough for the spreadsheet.
-      putF(ws, `F${r}`, `C${r}*E${r}`, liveLineCost,
+      put(ws, `F${r}`, g.carrierType || 'paktech', { color: C.muted, bg: zebra, border: true });
+      // Line cost in G. Static value matches the live UI (which respects
+      // feeType + qtyOverride). The formula approximates as packs × rate
+      // for "what if you edit" use.
+      putF(ws, `G${r}`, `C${r}*E${r}`, liveLineCost,
         { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
-      put(ws, `G${r}`, g.carrierType || 'paktech', { color: C.muted, bg: zebra, border: true });
-      lineCellsForSum.push(`F${r}`);
+      lineCellsForSum.push(`G${r}`);
       packsCellsForSum.push(`C${r}`);
       casesCellsForSum.push(`D${r}`);
       r += 1;
@@ -174,10 +171,10 @@ export function writeRunBlock({ ws, startRow, label, run, res, color, sheetName 
     putF(ws, `D${r}`, casesCellsForSum.length ? casesCellsForSum.join('+') : '0', res.planDerived.totalCases,
       { bold: true, color: C.ink, align: 'right', numFmt: INT, border: true });
     put(ws, `E${r}`, '', { border: true });
-    putF(ws, `F${r}`, lineCellsForSum.length ? lineCellsForSum.join('+') : '0', packTotalCost,
+    put(ws, `F${r}`, '', { border: true });
+    putF(ws, `G${r}`, lineCellsForSum.length ? lineCellsForSum.join('+') : '0', packTotalCost,
       { bold: true, color: C.ink, align: 'right', numFmt: MONEY, border: true });
-    put(ws, `G${r}`, '', { border: true });
-    packConfigTotalCell = `F${r}`;
+    packConfigTotalCell = `G${r}`;
     r += 2;
   }
 
@@ -214,14 +211,32 @@ export function writeRunBlock({ ws, startRow, label, run, res, color, sheetName 
       r += 1;
     }
     const dataEnd = r - 1;
+    // Pack Configuration roll-in row — only on the Packaging Materials
+    // section. Visible reference so the user can SEE the pack-config total
+    // flow into Packaging Materials → RUN TOTAL, even in a viewer that
+    // doesn't recompute formulas. Reads from packConfigTotalCell so any
+    // edit there propagates here.
+    let packConfigInclusionCell = null;
+    if (key === 'packaging' && packConfigTotalCell) {
+      const zebra = (r % 2 === 0) ? C.zebra : null;
+      put(ws, `A${r}`, 'Pack Configuration', { color: C.muted, bg: zebra, border: true });
+      put(ws, `B${r}`, '(from section above)', { color: C.muted, bg: zebra, italic: true, border: true });
+      ['C', 'D', 'E', 'F'].forEach((c) => put(ws, `${c}${r}`, '', { bg: zebra, border: true }));
+      // Display-only cell that mirrors the Pack Configuration TOTAL.
+      putF(ws, `G${r}`, packConfigTotalCell, 0,
+        { color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
+      packConfigInclusionCell = `G${r}`;
+      r += 1;
+    }
     put(ws, `A${r}`, 'Subtotal', { bold: true, color: C.ink, border: true });
     ['B', 'C', 'D', 'E', 'F'].forEach((c) => put(ws, `${c}${r}`, '', { border: true }));
-    // For Packaging Materials, fold the Pack Configuration TOTAL into the
-    // subtotal so synthetic pack-group / carton costs aren't lost.
-    let subtotalFormula = data.length ? `SUM(G${dataStart}:G${dataEnd})` : '0';
-    if (key === 'packaging' && packConfigTotalCell) {
-      subtotalFormula = `${subtotalFormula}+${packConfigTotalCell}`;
-    }
+    // Subtotal formula sums the data rows AND the inclusion row when
+    // present. Extending dataEnd by one row covers the inclusion cell
+    // cleanly within the SUM range so the math is self-contained.
+    const sumEnd = packConfigInclusionCell ? r - 1 : dataEnd;
+    const subtotalFormula = data.length || packConfigInclusionCell
+      ? `SUM(G${dataStart}:G${sumEnd})`
+      : '0';
     putF(ws, `G${r}`, subtotalFormula, subtotalVal,
       { bold: true, color: C.ink, align: 'right', numFmt: MONEY, border: true });
     sectionCells[key] = `G${r}`;
