@@ -171,6 +171,98 @@ function buildSummarySheet(ws, res, run, runRefs, poData, poRefs) {
   r += 2;
 
   // ─────────────────────────────────────────────────────────────────────
+  // ADJUSTMENTS TO FINISHED GOOD COST BREAKDOWN — line items the recipient
+  // may want to back out of the finished-good cost: MOQ slack (over-purchase
+  // baked into the gross ingredient spend), one-time setup fees (lab work +
+  // COLA), and the freight reserve (inbound + outbound). Each row carries an
+  // editable "% Applied" lever — the backed-out cost is base × % Applied — and
+  // NET FINISHED GOODS below subtracts the live total, so dialing a row's
+  // % down (or to 0) reduces how much of it is excluded.
+  // ─────────────────────────────────────────────────────────────────────
+  const lineCostById = (rows, id) => (rows || []).find((x) => x.id === id)?.lineCost || 0;
+  // One-Time = Lab Testing (Freight & Other) + COLA registration (Taxes).
+  const oneTimeCost = lineCostById(res.costs.bomRows, 'bom-lab')
+    + lineCostById(res.costs.taxRows, 'tax-cola');
+  // Freight Reserve = inbound raw-material + outbound finished-goods freight.
+  const freightReserveCost = lineCostById(res.costs.bomRows, 'bom-freight-in')
+    + lineCostById(res.costs.bomRows, 'bom-freight-out');
+  // Slack = MOQ over-purchase dollar value from the Raw Material PO.
+  const slackCost = poData
+    ? poData.masterList.reduce((s, m) => s + (m.slack * m.pricePerBuyUnit), 0)
+    : 0;
+
+  band(ws, r, 5, 'ADJUSTMENTS TO FINISHED GOOD COST BREAKDOWN', C.teal); r += 1;
+  tableHeader(ws, r, ['Adjustment', 'Cost', '$/Can', '$/Case', '% Applied']); r += 1;
+  // Each row backs out  base × (% Applied)  from the finished-good cost.
+  // % Applied (column E) is editable. Slack and One-Time default to 100%
+  // (fully excluded); Freight Reserve defaults to 0% — we do NOT assume the
+  // reserve is fully removed, so the user dials in how much to credit back.
+  const PCT = '0%';
+  const fmtMoney = (n) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+  const adjCostCells = [];
+  const adjRow = (label, base, { baseRef = null, appliedPct = 1, bold = false } = {}) => {
+    const zebra = (r % 2 === 0) ? C.zebra : null;
+    const baseExpr = baseRef || `${base}`;
+    // When we apply less than 100%, the Cost cell shows only the backed-out
+    // amount, so surface the full reserve in the label for transparency.
+    const showBase = appliedPct < 1;
+    put(ws, `A${r}`, showBase ? `${label} (reserve ${fmtMoney(base)})` : label,
+      { bold, color: C.ink, bg: zebra, border: true });
+    // % Applied — editable lever; the Cost below recomputes live off it.
+    put(ws, `E${r}`, appliedPct, { color: C.ink, bg: zebra, align: 'right', numFmt: PCT, border: true });
+    const costVal = base * appliedPct;
+    putF(ws, `B${r}`, `(${baseExpr})*E${r}`, costVal,
+      { bold, color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
+    putF(ws, `C${r}`, `IF(${cansRef}>0,B${r}/${cansRef},0)`,
+      res.counts.totalUnits > 0 ? costVal / res.counts.totalUnits : 0,
+      { bold, color: C.ink, bg: zebra, align: 'right', numFmt: MONEY4, border: true });
+    putF(ws, `D${r}`, `IF(${casesRef}>0,B${r}/${casesRef},0)`,
+      res.counts.totalCases > 0 ? costVal / res.counts.totalCases : 0,
+      { bold, color: C.ink, bg: zebra, align: 'right', numFmt: MONEY, border: true });
+    adjCostCells.push(`B${r}`);
+    r += 1;
+  };
+  // Slack links live to the Raw Material PO tab when available; One-Time and
+  // Freight Reserve default to the run's line-item amounts. All stay editable.
+  const FREIGHT_APPLIED = 0; // default credit on the freight reserve (0% = none assumed)
+  adjRow('Cost of Slack', slackCost, { baseRef: poRefs ? poRefs.grandSlackCost : null, appliedPct: 1 });
+  adjRow('One-Time Costs (Labs + COLA)', oneTimeCost, { appliedPct: 1 });
+  adjRow('Freight Reserve', freightReserveCost, { appliedPct: FREIGHT_APPLIED });
+
+  const adjTotalRow = r;
+  const adjTotalValue = slackCost + oneTimeCost + (freightReserveCost * FREIGHT_APPLIED);
+  put(ws, `A${r}`, 'TOTAL', { bold: true, color: C.white, bg: C.dark, border: true });
+  putF(ws, `B${r}`, `SUM(${adjCostCells.join(',')})`, adjTotalValue,
+    { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: MONEY, border: true });
+  putF(ws, `C${r}`, `IF(${cansRef}>0,B${r}/${cansRef},0)`,
+    res.counts.totalUnits > 0 ? adjTotalValue / res.counts.totalUnits : 0,
+    { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: MONEY4, border: true });
+  putF(ws, `D${r}`, `IF(${casesRef}>0,B${r}/${casesRef},0)`,
+    res.counts.totalCases > 0 ? adjTotalValue / res.counts.totalCases : 0,
+    { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: MONEY, border: true });
+  put(ws, `E${r}`, '', { bold: true, color: C.white, bg: C.dark, border: true });
+  const adjTotalCell = `B${adjTotalRow}`;
+  r += 2;
+
+  // ─────────────────────────────────────────────────────────────────────
+  // NET FINISHED GOODS — finished-good total minus the adjustments above.
+  // Live formula: edit or zero any adjustment and this recomputes.
+  // ─────────────────────────────────────────────────────────────────────
+  const netFGValue = res.costs.totalCost - adjTotalValue;
+  band(ws, r, 5, 'NET FINISHED GOODS', C.teal); r += 1;
+  put(ws, `A${r}`, 'TOTAL', { bold: true, color: C.white, bg: C.dark, border: true });
+  putF(ws, `B${r}`, `${totalRef}-${adjTotalCell}`, netFGValue,
+    { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: MONEY, border: true });
+  putF(ws, `C${r}`, `IF(${cansRef}>0,B${r}/${cansRef},0)`,
+    res.counts.totalUnits > 0 ? netFGValue / res.counts.totalUnits : 0,
+    { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: MONEY4, border: true });
+  putF(ws, `D${r}`, `IF(${casesRef}>0,B${r}/${casesRef},0)`,
+    res.counts.totalCases > 0 ? netFGValue / res.counts.totalCases : 0,
+    { bold: true, color: C.white, bg: C.dark, align: 'right', numFmt: MONEY, border: true });
+  put(ws, `E${r}`, '', { bold: true, color: C.white, bg: C.dark, border: true });
+  r += 2;
+
+  // ─────────────────────────────────────────────────────────────────────
   // RAW MATERIAL PO SUMMARY (no spreadsheet-level Freight/Waste/Tax — those
   // are already priced in at the formula/ingredient level).
   // ─────────────────────────────────────────────────────────────────────
@@ -185,11 +277,25 @@ function buildSummarySheet(ws, res, run, runRefs, poData, poRefs) {
       ['C', 'D', 'E'].forEach((c) => put(ws, `${c}${r}`, '', { bg: zebra, border: true }));
       r += 1;
     };
-    poRow('Net Total (what you pay for ingredients)', poRefs.grandNet, poData.netSubtotalAll, MONEY, true);
+    // Gross = the full PO amount you pay (includes MOQ slack over-purchase).
+    const grossRow = r;
+    poRow('Gross Total (what you pay for ingredients)', poRefs.grandNet, poData.netSubtotalAll, MONEY, true);
+    const slackRow = r;
+    poRow('Cost of Slack', poRefs.grandSlackCost, slackCost, MONEY);
+    // Net ingredients = Gross − Slack (cost of just what the recipe needs).
+    const netIngRow = r;
+    const netIngValue = poData.netSubtotalAll - slackCost;
+    poRow('Net ingredients', `B${grossRow}-B${slackRow}`, netIngValue, MONEY, true);
     poRow('Blended Cost per Can', poRefs.blendedPerCan,
       poData.totalUnitsAll > 0 ? poData.netSubtotalAll / poData.totalUnitsAll : 0, MONEY4);
     poRow('Blended Cost per Case', poRefs.blendedPerCase,
       poData.totalCasesAll > 0 ? poData.netSubtotalAll / poData.totalCasesAll : 0, MONEY);
+    // Net blended = Net ingredients ÷ the PO-level can / case totals (same
+    // divisors the gross blended rows use, so the two stay comparable).
+    poRow('Net Blended Cost per Can', `IF(${poRefs.unitsTotal}>0,B${netIngRow}/${poRefs.unitsTotal},0)`,
+      poData.totalUnitsAll > 0 ? netIngValue / poData.totalUnitsAll : 0, MONEY4);
+    poRow('Net Blended Cost per Case', `IF(${poRefs.casesTotal}>0,B${netIngRow}/${poRefs.casesTotal},0)`,
+      poData.totalCasesAll > 0 ? netIngValue / poData.totalCasesAll : 0, MONEY);
     poRow('Vendors', null, Object.keys(poRefs.vendors).length, INT);
     poRow('Ingredients', null, poData.masterList.length, INT);
     r += 1;
