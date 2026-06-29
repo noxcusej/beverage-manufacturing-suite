@@ -186,23 +186,37 @@ function mergeXeroBills(current, facts) {
 }
 
 /* ---- Quote → cash-timed run (Phase 2) ----
- * A suite "run" is a co-packing quote (no schedule). We roll it up with the
- * suite's own computeRunResults so numbers match the quoting screen, then emit
- * two synthetic cash events: Tolling IN (the co-packer's margin, 50% deposit /
- * 50% on completion) and Freight & BOM OUT (100% at start). Material pass-throughs
- * (packaging/ingredients/taxes) are intentionally NOT modeled here — those are the
- * real Xero AP bills already in the cockpit, so this avoids double-counting them.
- * Schedule (startWeek/duration) is local to the cockpit; the quote carries none. */
+ * A suite "run" is a co-packing quote (no schedule). We roll it up with the suite's
+ * own computeRunResults so the numbers match the quoting screen, then itemize it into
+ * cash events — the model the user chose ("quote in, pass-throughs out, tolling = margin"):
+ *   IN  — Client deposit (50% of the full quote at start) + Client balance (50% on completion)
+ *   OUT — each pass-through cost as its own line: Ingredients, Packaging, Freight & BOM,
+ *         Taxes & regulatory, Batching (BOM lands 100% at start; taxes at completion)
+ * Tolling isn't a separate line — it's the residual margin (net = quote − pass-throughs).
+ * Material out-lines are budget; link the real Xero AP bills to them (Budget vs actuals)
+ * to retime/replace without double-counting. Schedule is local to the cockpit. */
 function quoteEvents(run) {
-  let tolling = 0, bom = 0;
-  try { const r = computeRunResults(run); tolling = r.costs.tollingCost || 0; bom = r.costs.bomCost || 0; }
-  catch { /* malformed quote — emit zeroed events so it still appears */ }
-  const half = Math.round(tolling / 2);
-  return [
-    { id: run.id + ":toll-dep", label: "Tolling deposit", dir: "in", amount: half, anchor: "start", offset: 0, auto: true },
-    { id: run.id + ":toll-bal", label: "Tolling balance", dir: "in", amount: Math.round(tolling) - half, anchor: "end", offset: 0, auto: true },
-    { id: run.id + ":bom", label: "Freight & BOM", dir: "out", amount: Math.round(bom), anchor: "start", offset: 0, auto: true },
+  let c = { totalCost: 0, rawPackagingCost: 0, totalIngredientCost: 0, bomCost: 0, taxCost: 0, totalBatchingFees: 0 };
+  try { c = computeRunResults(run).costs; } catch { /* malformed quote — fall through with zeros */ }
+  const total = Math.round(c.totalCost || 0);
+  const dep = Math.round(total / 2);
+  const out = (key, label, amt, anchor, offset) => ({ id: run.id + ":" + key, label, dir: "out", amount: Math.round(amt || 0), anchor, offset, auto: true });
+  const evs = [
+    { id: run.id + ":dep", label: "Client deposit", dir: "in", amount: dep, anchor: "start", offset: 0, auto: true },
+    { id: run.id + ":bal", label: "Client balance", dir: "in", amount: total - dep, anchor: "end", offset: 0, auto: true },
+    out("ingredients", "Ingredients", c.totalIngredientCost, "start", 0),
+    out("packaging", "Packaging", c.rawPackagingCost, "start", 1),
+    out("bom", "Freight & BOM", c.bomCost, "start", 0),
+    out("tax", "Taxes & regulatory", c.taxCost, "end", 0),
+    out("batching", "Batching", c.totalBatchingFees, "start", 0),
   ];
+  // keep the receivable lines always; drop zero-value cost lines
+  return evs.filter((e) => e.dir === "in" || e.amount > 0);
+}
+/* one-quote rollup for the picker UI (units/cases/total/tolling margin) */
+function quoteSummary(run) {
+  try { const r = computeRunResults(run); return { units: r.counts.totalUnits || 0, cases: r.counts.totalCases || 0, total: r.costs.totalCost || 0, tolling: r.costs.tollingCost || 0 }; }
+  catch { return { units: 0, cases: 0, total: 0, tolling: 0 }; }
 }
 function quoteToProject(run, idx) {
   return {
@@ -312,12 +326,11 @@ export default function TreasuryCockpit() {
     setOpeningCash(60000); setFloor(25000); setSelId(1); setTab("plan");
   };
 
-  /* pull co-packing quotes from the suite's `runs` domain and turn each into a
-     cash-timed Gantt run; re-import refreshes amounts but keeps local schedules */
-  const importQuoteRuns = async () => {
-    const runs = await loadAppData("runs");
-    if (!Array.isArray(runs) || runs.length === 0) return { error: "No quotes found in Run Quoting yet." };
-    const { merged, added, updated } = mergeQuoteRuns(projects, runs);
+  /* merge a user-selected set of quotes (from the picker) into the planner;
+     re-import refreshes amounts but keeps local schedules/edits */
+  const addQuoteRuns = (selectedRuns) => {
+    if (!Array.isArray(selectedRuns) || selectedRuns.length === 0) return { added: 0, updated: 0 };
+    const { merged, added, updated } = mergeQuoteRuns(projects, selectedRuns);
     setProjects(merged);
     return { added, updated };
   };
@@ -510,7 +523,7 @@ export default function TreasuryCockpit() {
 
         {tab === "plan" && (
           <PlanTab {...{ openingCash, setOpeningCash, floor, setFloor, calc, base, breach, weeklyBurn,
-            projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, importQuoteRuns, onDown, evWeek,
+            projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, addQuoteRuns, onDown, evWeek,
             ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, capInW: capB.inW, capOutW: capB.outW,
             horizon, TL_W, bands, fixedW, apArr: apB.arr, maxNet, maxLane, cumY, cumPts, cumPath,
             floorY: cumY(floor), openingY: cumY(openingCash), zeroVisible: cumLo < 0 && cumHi > 0, zeroY: cumY(0) }} />
@@ -526,13 +539,78 @@ export default function TreasuryCockpit() {
   );
 }
 
+/* Quote picker modal — choose which co-packing quotes to bring onto the Gantt. */
+function QuotePicker({ existingIds, onClose, onImport }) {
+  const [quotes, setQuotes] = useState(null); // null = loading
+  const [sel, setSel] = useState(() => new Set());
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    let alive = true;
+    (async () => { const r = await loadAppData("runs"); if (alive) setQuotes(Array.isArray(r) ? r : []); })();
+    return () => { alive = false; };
+  }, []);
+  const rows = useMemo(() => (quotes || []).map((run) => ({ run, ...quoteSummary(run) })), [quotes]);
+  const ql = q.toLowerCase();
+  const filtered = rows.filter((r) => !q || (r.run.name || "").toLowerCase().includes(ql) || (r.run.client || "").toLowerCase().includes(ql));
+  const toggle = (id) => setSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const allShown = filtered.length > 0 && filtered.every((r) => sel.has(r.run.id));
+  const toggleAll = () => setSel((s) => { const n = new Set(s); filtered.forEach((r) => allShown ? n.delete(r.run.id) : n.add(r.run.id)); return n; });
+  const doImport = () => onImport((quotes || []).filter((run) => sel.has(run.id)));
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(20,22,26,.45)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div className="card" onClick={(e) => e.stopPropagation()} style={{ width: "min(740px, 96vw)", maxHeight: "82vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 12 }}>
+          <span className="eyebrow">Import runs from quoting</span>
+          <input className="inp" placeholder="Search name or client…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 220, marginLeft: "auto" }} />
+          <button className="btn-x" onClick={onClose} title="Close">✕</button>
+        </div>
+        <div style={{ overflowY: "auto", flex: 1 }}>
+          {quotes === null ? (
+            <div style={{ padding: 24, color: "var(--muted)", fontSize: 13 }}>Loading quotes…</div>
+          ) : rows.length === 0 ? (
+            <div style={{ padding: 24, color: "var(--muted)", fontSize: 13 }}>No quotes found in Run Quoting yet.</div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead><tr>
+                <th style={{ padding: "6px 10px", textAlign: "left" }}><input type="checkbox" checked={allShown} onChange={toggleAll} title="Select all shown" /></th>
+                {["Run", "Client", "Cases", "Quote", "Tolling (margin)"].map((h, i) => (<th key={i} className="th" style={{ textAlign: i >= 2 ? "right" : "left", padding: "6px 10px", fontWeight: 600 }}>{h}</th>))}
+              </tr></thead>
+              <tbody>
+                {filtered.map(({ run, cases, total, tolling }) => {
+                  const on = sel.has(run.id);
+                  return (
+                    <tr key={run.id} className="evrow" style={{ cursor: "pointer", background: on ? "#F1EFE7" : "transparent" }} onClick={() => toggle(run.id)}>
+                      <td style={{ padding: "5px 10px" }}><input type="checkbox" checked={on} onChange={() => toggle(run.id)} onClick={(e) => e.stopPropagation()} /></td>
+                      <td style={{ padding: "5px 10px" }}>{run.name || "(unnamed)"} {existingIds.has(run.id) && <span className="tag" style={{ color: "#5a5f66", background: "var(--chip)" }}>on board</span>}</td>
+                      <td style={{ padding: "5px 10px", color: "var(--muted)" }}>{run.client || "—"}</td>
+                      <td className="num" style={{ padding: "5px 10px", textAlign: "right" }}>{cases ? cases.toLocaleString() : "—"}</td>
+                      <td className="num" style={{ padding: "5px 10px", textAlign: "right" }}>{fmt(total)}</td>
+                      <td className="num" style={{ padding: "5px 10px", textAlign: "right", color: "var(--in)" }}>{fmt(tolling)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div style={{ padding: "10px 16px", borderTop: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>{sel.size} selected</span>
+          <div style={{ flex: 1 }} />
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn" disabled={sel.size === 0} onClick={doImport} style={{ fontWeight: 600, opacity: sel.size === 0 ? 0.5 : 1 }}>Import {sel.size || ""} run{sel.size === 1 ? "" : "s"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* =====================  TAB 1  ===================== */
 function PlanTab(props) {
   const { openingCash, setOpeningCash, floor, setFloor, calc, base, breach, weeklyBurn,
-    projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, importQuoteRuns, onDown, evWeek,
+    projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, addQuoteRuns, onDown, evWeek,
     ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, capInW, capOutW,
     horizon, TL_W, bands, fixedW, apArr, maxNet, maxLane, cumY, cumPts, cumPath, floorY, openingY, zeroVisible, zeroY } = props;
-  const [runImporting, setRunImporting] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [runMsg, setRunMsg] = useState("");
   return (
     <>
@@ -650,13 +728,16 @@ function PlanTab(props) {
       <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
         <button className="btn" onClick={addProject}>+ Add run</button>
         {sel && <button className="btn" onClick={() => dupProject(sel)}>Duplicate "{sel.name}"</button>}
-        <button className="btn" disabled={runImporting} title="Pull co-packing quotes from Run Quoting and time them on the Gantt (keeps your schedule on re-import)" onClick={async () => {
-          setRunImporting(true); setRunMsg("");
-          try { const r = await importQuoteRuns(); setRunMsg(r?.error ? r.error : `Imported ${r.added} new, ${r.updated} updated from quoting.`); }
-          finally { setRunImporting(false); }
-        }}>{runImporting ? "Importing…" : "↓ Import runs from quoting"}</button>
+        <button className="btn" title="Choose which co-packing quotes to bring onto the Gantt" onClick={() => setPickerOpen(true)}>↓ Import runs from quoting…</button>
         {runMsg && <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{runMsg}</span>}
       </div>
+      {pickerOpen && (
+        <QuotePicker
+          existingIds={new Set(projects.map((p) => p.id))}
+          onClose={() => setPickerOpen(false)}
+          onImport={(selected) => { const r = addQuoteRuns(selected); setRunMsg(`Imported ${r.added} new, ${r.updated} updated from quoting.`); setPickerOpen(false); }}
+        />
+      )}
 
       {sel && (
         <div className="card" style={{ marginTop: 14, padding: 16 }}>
