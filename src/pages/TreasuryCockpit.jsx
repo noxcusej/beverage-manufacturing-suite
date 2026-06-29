@@ -360,6 +360,9 @@ export default function TreasuryCockpit() {
 
   /* ---- scenario handlers ---- */
   const activeName = (scenarios.find((s) => s.id === activeId) || {}).name || "Base case";
+  const [toast, setToast] = useState("");
+  const toastTimer = useRef(null);
+  const showToast = (msg) => { setToast(msg); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(""), 2600); };
   const switchScenario = (id) => {
     if (id === activeId) return;
     const outgoing = { openingCash, floor, projects, fixed, ap, capital, tab, selId };
@@ -369,15 +372,18 @@ export default function TreasuryCockpit() {
     setScenarios(list);
     applyState(target.state);
     setActiveId(id);
+    showToast("Switched to " + target.name);
   };
   const saveAsScenario = (name) => {
     const id = uid();
+    const nm = (name && name.trim()) || "Untitled scenario";
     const state = { openingCash, floor, projects, fixed, ap, capital, tab, selId };
     setScenarios((prev) => [
       ...prev.map((s) => (s.id === activeId ? { ...s, state: { ...state }, updatedAt: Date.now() } : s)),
-      { id, name: (name && name.trim()) || "Untitled scenario", updatedAt: Date.now(), state },
+      { id, name: nm, updatedAt: Date.now(), state },
     ]);
     setActiveId(id); // fork becomes active; live state already equals the fork
+    showToast('Created "' + nm + '" — now editing it');
   };
   const renameScenario = (id, name) => setScenarios((prev) => prev.map((s) => (s.id === id ? { ...s, name: (name && name.trim()) || s.name, updatedAt: Date.now() } : s)));
   const deleteScenario = (id) => {
@@ -591,6 +597,9 @@ export default function TreasuryCockpit() {
             onRename={renameScenario}
             onDelete={deleteScenario}
           />
+        )}
+        {toast && (
+          <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", zIndex: 60, background: "var(--ink)", color: "#fff", padding: "9px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600, boxShadow: "0 4px 16px rgba(0,0,0,.25)" }}>{toast}</div>
         )}
 
         {tab === "plan" && (
