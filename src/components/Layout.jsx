@@ -55,6 +55,10 @@ export default function Layout() {
               <span className="nav-icon">&#x2B1C;</span>
               {!collapsed && 'Run Quoting'}
             </NavLink>
+            <NavLink to="/cash-floor" className={({ isActive }) => isActive ? 'active' : ''} title="Cash Floor">
+              <span className="nav-icon">&#x1F4C9;</span>
+              {!collapsed && 'Cash Floor'}
+            </NavLink>
             <NavLink to="/clients" className={({ isActive }) => isActive ? 'active' : ''} title="Clients">
               <span className="nav-icon">&#x263A;</span>
               {!collapsed && 'Clients'}

@@ -11,6 +11,7 @@ const FormulaLibrary = lazy(() => import('./pages/FormulaLibrary'));
 const Summary = lazy(() => import('./pages/Summary'));
 const ClientProfile = lazy(() => import('./pages/ClientProfile'));
 const Services = lazy(() => import('./pages/Services'));
+const TreasuryCockpit = lazy(() => import('./pages/TreasuryCockpit'));
 
 function AppStatus({ error }) {
   return (
@@ -58,6 +59,7 @@ export default function App() {
             <Route path="/clients" element={<ClientProfile />} />
             <Route path="/clients/:clientName" element={<ClientProfile />} />
             <Route path="/services" element={<Services />} />
+            <Route path="/cash-floor" element={<TreasuryCockpit />} />
           </Route>
         </Routes>
       </Suspense>
