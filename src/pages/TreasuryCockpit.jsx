@@ -577,7 +577,6 @@ export default function TreasuryCockpit() {
               <button className={"tabbtn" + (tab === "sheet" ? " on" : "")} onClick={() => setTab("sheet")}>Spreadsheet</button>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--muted)" }}>
-              <button className="btn" style={{ fontSize: 12, padding: "5px 10px", fontWeight: 600 }} title="Switch, save, rename, or delete budget scenarios" onClick={() => setScenarioPickerOpen(true)}>📁 {activeName} ▾</button>
               <span title="Your plan is saved to the cloud (Supabase) and restored on every device">auto-saved</span>
             </div>
           </div>
@@ -596,6 +595,7 @@ export default function TreasuryCockpit() {
 
         {tab === "plan" && (
           <PlanTab {...{ openingCash, setOpeningCash, floor, setFloor, calc, base, breach, weeklyBurn,
+            activeName, openScenarios: () => setScenarioPickerOpen(true),
             projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, addQuoteRuns, onDown, evWeek,
             ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, capInW: capB.inW, capOutW: capB.outW,
             horizon, TL_W, bands, fixedW, apArr: apB.arr, maxNet, maxLane, cumY, cumPts, cumPath,
@@ -606,6 +606,7 @@ export default function TreasuryCockpit() {
         {tab === "capital" && <CapitalTab {...{ capital, setCapital, base, horizon, capB, cum: calc.cum, floor, openingCash, bands, TL_W, capMarks }} />}
         {tab === "sheet" && <SheetTab {...{ projects, setProjects, fixed, setFixed, ap, setAp, capital, setCapital,
           openingCash, setOpeningCash, floor, setFloor, base, horizon, evWeek, eventDateMap, calc, fixedW,
+          activeName, openScenarios: () => setScenarioPickerOpen(true),
           apArr: apB.arr, capInW: capB.inW, capOutW: capB.outW }} />}
       </div>
     </div>
@@ -792,7 +793,7 @@ function QuotePicker({ existingIds, onClose, onImport }) {
 function PlanTab(props) {
   const { openingCash, setOpeningCash, floor, setFloor, calc, base, breach, weeklyBurn,
     projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, addQuoteRuns, onDown, evWeek,
-    ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, capInW, capOutW,
+    ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, capInW, capOutW, activeName, openScenarios,
     horizon, TL_W, bands, fixedW, apArr, maxNet, maxLane, cumY, cumPts, cumPath, floorY, openingY, zeroVisible, zeroY } = props;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [runMsg, setRunMsg] = useState("");
@@ -809,10 +810,11 @@ function PlanTab(props) {
   const breachLabel = (fb) => (fb >= horizon ? "no dip (full horizon)" : "week of " + dateLabel(base, fb));
   return (
     <>
-      <div style={{ display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap", alignItems: "stretch" }}>
         <Field label="Opening cash" value={openingCash} onChange={setOpeningCash} />
         <Field label="Cash floor" value={floor} onChange={setFloor} hint="min you'll tolerate" />
         <div className="card" style={{ padding: "7px 11px" }}><div className="eyebrow">Fixed burn / wk</div><div className="num" style={{ fontSize: 16, fontWeight: 700, color: "var(--fixed)", marginTop: 4 }}>{fmt(weeklyBurn)}</div></div>
+        <button className="btn" style={{ marginLeft: "auto", alignSelf: "flex-end", fontWeight: 600 }} title="Switch, save, rename, or delete budget scenarios" onClick={openScenarios}>📁 {activeName} ▾</button>
       </div>
 
       <div style={{ marginTop: 14 }}>
@@ -1442,7 +1444,7 @@ function WeeklyCashFlow({ calc, fixedW, apArr, capInW, capOutW, base, horizon, f
 
 /* =====================  TAB 6  ===================== */
 function SheetTab({ projects, setProjects, fixed, setFixed, ap, setAp, capital, setCapital,
-  openingCash, setOpeningCash, floor, setFloor, base, horizon, evWeek, eventDateMap, calc, fixedW, apArr, capInW, capOutW }) {
+  openingCash, setOpeningCash, floor, setFloor, base, horizon, evWeek, eventDateMap, calc, fixedW, apArr, capInW, capOutW, activeName, openScenarios }) {
 
   const updEvent = (rid, eid, patch) => setProjects((ps) => ps.map((p) => p.id === rid ? { ...p, events: p.events.map((e) => e.id === eid ? { ...e, ...patch } : e) } : p));
   const updFixed = (id, patch) => setFixed((xs) => xs.map((x) => (x.id === id ? { ...x, ...patch } : x)));
@@ -1462,10 +1464,11 @@ function SheetTab({ projects, setProjects, fixed, setFixed, ap, setAp, capital, 
 
   return (
     <>
-      <div style={{ display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap", alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap", alignItems: "flex-end" }}>
         <Field label="Opening cash" value={openingCash} onChange={setOpeningCash} />
         <Field label="Cash floor" value={floor} onChange={setFloor} hint="min you'll tolerate" />
         <button className="btn" disabled={exporting} onClick={exportXlsx} title="Download the full cash model as a formatted Excel workbook">{exporting ? "Exporting…" : "⬇ Export to Excel"}</button>
+        <button className="btn" style={{ marginLeft: "auto", fontWeight: 600 }} title="Switch, save, rename, or delete budget scenarios" onClick={openScenarios}>📁 {activeName} ▾</button>
       </div>
 
       <div style={{ marginTop: 14 }}>
