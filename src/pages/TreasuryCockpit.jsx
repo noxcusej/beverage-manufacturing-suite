@@ -59,25 +59,9 @@ const SEED_FIXED = [
   { id: uid(), label: "Software & tools", cat: "Software", cadence: "monthly", amount: 1500, day: 20, from: 0, to: null },
 ];
 
-/* Xero-bill-shaped sample. Dates are generated relative to today so the
-   board is always populated. This is the exact shape a Xero ACCPAY import
-   would map into (see mapping note in the UI). */
+/* Date helpers, relative to today (used by capital seeds and the AP tab). */
 const _t = new Date();
 const iso = (daysFromNow) => { const d = new Date(_t); d.setDate(d.getDate() + daysFromNow); return d.toISOString().slice(0, 10); };
-const SEED_AP = [
-  { id: uid(), vendor: "Crown Holdings", ref: "INV-44821", billDate: iso(-9), dueDate: iso(5),  amount: 48200, status: "AUTHORISED" },
-  { id: uid(), vendor: "Ardagh Glass",   ref: "AG-10567",  billDate: iso(-38), dueDate: iso(-8), amount: 22750, status: "AUTHORISED" },
-  { id: uid(), vendor: "Berlin Packaging (caps)", ref: "BP-7741", billDate: iso(-3), dueDate: iso(12), amount: 9400, status: "SUBMITTED" },
-  { id: uid(), vendor: "Multi-Color Labels", ref: "MCL-3320", billDate: iso(-5), dueDate: iso(20), amount: 6850, status: "AUTHORISED" },
-  { id: uid(), vendor: "WestRock (cartons)", ref: "WR-88120", billDate: iso(0), dueDate: iso(30), amount: 14300, status: "AUTHORISED" },
-  { id: uid(), vendor: "Flavorman", ref: "FM-2095", billDate: iso(-33), dueDate: iso(-3), amount: 18900, status: "AUTHORISED" },
-  { id: uid(), vendor: "Univar Solutions", ref: "UNI-55012", billDate: iso(-2), dueDate: iso(25), amount: 11200, status: "DRAFT" },
-  { id: uid(), vendor: "XPO Logistics (freight)", ref: "XPO-7741", billDate: iso(-6), dueDate: iso(9), amount: 7600, status: "AUTHORISED" },
-  { id: uid(), vendor: "Eurofins (COA lab)", ref: "EF-1188", billDate: iso(-4), dueDate: iso(16), amount: 3150, status: "SUBMITTED" },
-  { id: uid(), vendor: "PECO Energy", ref: "PECO-0921", billDate: iso(-20), dueDate: iso(-12), amount: 4200, status: "PAID" },
-  { id: uid(), vendor: "Pentair (line maint.)", ref: "PNR-4410", billDate: iso(2), dueDate: iso(42), amount: 5500, status: "AUTHORISED" },
-  { id: uid(), vendor: "ABC Compliance (TTB)", ref: "ABC-2261", billDate: iso(-1), dueDate: iso(7), amount: 2400, status: "AUTHORISED" },
-];
 const defaultInclude = (s) => s === "AUTHORISED" || s === "SUBMITTED";
 
 const SEED_CAPITAL = [
@@ -209,15 +193,8 @@ function mergeXeroBills(current, facts) {
  * highest saved id to keep new ids collision-free. The suite's own `runs` domain is
  * left untouched here — pointing the Gantt at it is Phase 2. */
 const STORE_KEY = "treasury_cockpit";
-function seedAP() {
-  const run = SEED_RUNS[0];
-  const carton = run.events.find((e) => e.label === "Cartoning");
-  return SEED_AP.map((b) => {
-    const row = { ...b, include: defaultInclude(b.status) };
-    if (b.vendor === "Multi-Color Labels" && carton) { row.runId = run.id; row.eventId = carton.id; }
-    return row;
-  });
-}
+/* AP starts empty — real bills come from Xero via "Import from Xero" on the AP tab. */
+function seedAP() { return []; }
 function bumpIds(s) {
   let maxId = _id;
   const scan = (arr) => { if (!Array.isArray(arr)) return; for (const x of arr) { if (x && typeof x.id === "number") maxId = Math.max(maxId, x.id); if (x && Array.isArray(x.events)) scan(x.events); } };
