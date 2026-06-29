@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { loadAppData, saveAppData } from "../data/supabase";
+import { computeRunResults } from "../utils/runResults";
 
 /* ------------------------------------------------------------------ *
  * Treasury Cockpit
@@ -184,6 +185,59 @@ function mergeXeroBills(current, facts) {
   return { merged, added: facts.filter((f) => f.xeroId && !seen.has(f.xeroId)).length, updated: seen.size };
 }
 
+/* ---- Quote → cash-timed run (Phase 2) ----
+ * A suite "run" is a co-packing quote (no schedule). We roll it up with the
+ * suite's own computeRunResults so numbers match the quoting screen, then emit
+ * two synthetic cash events: Tolling IN (the co-packer's margin, 50% deposit /
+ * 50% on completion) and Freight & BOM OUT (100% at start). Material pass-throughs
+ * (packaging/ingredients/taxes) are intentionally NOT modeled here — those are the
+ * real Xero AP bills already in the cockpit, so this avoids double-counting them.
+ * Schedule (startWeek/duration) is local to the cockpit; the quote carries none. */
+function quoteEvents(run) {
+  let tolling = 0, bom = 0;
+  try { const r = computeRunResults(run); tolling = r.costs.tollingCost || 0; bom = r.costs.bomCost || 0; }
+  catch { /* malformed quote — emit zeroed events so it still appears */ }
+  const half = Math.round(tolling / 2);
+  return [
+    { id: run.id + ":toll-dep", label: "Tolling deposit", dir: "in", amount: half, anchor: "start", offset: 0, auto: true },
+    { id: run.id + ":toll-bal", label: "Tolling balance", dir: "in", amount: Math.round(tolling) - half, anchor: "end", offset: 0, auto: true },
+    { id: run.id + ":bom", label: "Freight & BOM", dir: "out", amount: Math.round(bom), anchor: "start", offset: 0, auto: true },
+  ];
+}
+function quoteToProject(run, idx) {
+  return {
+    id: run.id, // stable Xero/suite id so re-import matches
+    name: run.name || run.client || "Run",
+    color: PALETTE[idx % PALETTE.length],
+    startWeek: 2 + (idx % 12), // staggered default; quote has no schedule — drag to set
+    duration: 3,
+    fromQuote: true,
+    client: run.client || "",
+    events: quoteEvents(run),
+  };
+}
+/* Merge derived quote-runs into the cockpit. Existing runs (matched by id) keep
+   their local schedule/color/manual events; only the auto Tolling/BOM amounts are
+   refreshed. New runs are appended. */
+function mergeQuoteRuns(current, runs) {
+  const byId = new Map(runs.map((r, i) => [r.id, { run: r, idx: i }]));
+  const seen = new Set();
+  const merged = current.map((p) => {
+    if (!byId.has(p.id)) return p;
+    seen.add(p.id);
+    const fresh = quoteEvents(byId.get(p.id).run);
+    const freshById = Object.fromEntries(fresh.map((e) => [e.id, e]));
+    // refresh auto events in place, keep manual ones, add any new auto events
+    const kept = p.events.map((e) => (e.auto && freshById[e.id] ? { ...e, amount: freshById[e.id].amount } : e));
+    const keptIds = new Set(kept.map((e) => e.id));
+    for (const e of fresh) if (!keptIds.has(e.id)) kept.push(e);
+    return { ...p, name: byId.get(p.id).run.name || p.name, fromQuote: true, events: kept };
+  });
+  let added = 0;
+  runs.forEach((r, i) => { if (!seen.has(r.id)) { merged.push(quoteToProject(r, i)); added++; } });
+  return { merged, added, updated: seen.size };
+}
+
 /* ---- persistence (Supabase app_data) ---- *
  * Phase 1 of the merge into the beverage suite: the cockpit's own plan is stored as
  * a single namespaced JSONB blob through the suite's Supabase store (same generic
@@ -256,6 +310,16 @@ export default function TreasuryCockpit() {
     if (!window.confirm("Reset everything to the sample data? Your saved plan will be lost.")) return;
     setProjects(SEED_RUNS); setFixed(SEED_FIXED); setAp(seedAP()); setCapital(SEED_CAPITAL);
     setOpeningCash(60000); setFloor(25000); setSelId(1); setTab("plan");
+  };
+
+  /* pull co-packing quotes from the suite's `runs` domain and turn each into a
+     cash-timed Gantt run; re-import refreshes amounts but keeps local schedules */
+  const importQuoteRuns = async () => {
+    const runs = await loadAppData("runs");
+    if (!Array.isArray(runs) || runs.length === 0) return { error: "No quotes found in Run Quoting yet." };
+    const { merged, added, updated } = mergeQuoteRuns(projects, runs);
+    setProjects(merged);
+    return { added, updated };
   };
 
   const evWeek = (p, e) => (e.anchor === "start" ? p.startWeek : p.startWeek + p.duration) + e.offset;
@@ -446,7 +510,7 @@ export default function TreasuryCockpit() {
 
         {tab === "plan" && (
           <PlanTab {...{ openingCash, setOpeningCash, floor, setFloor, calc, base, breach, weeklyBurn,
-            projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, onDown, evWeek,
+            projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, importQuoteRuns, onDown, evWeek,
             ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, capInW: capB.inW, capOutW: capB.outW,
             horizon, TL_W, bands, fixedW, apArr: apB.arr, maxNet, maxLane, cumY, cumPts, cumPath,
             floorY: cumY(floor), openingY: cumY(openingCash), zeroVisible: cumLo < 0 && cumHi > 0, zeroY: cumY(0) }} />
@@ -465,9 +529,11 @@ export default function TreasuryCockpit() {
 /* =====================  TAB 1  ===================== */
 function PlanTab(props) {
   const { openingCash, setOpeningCash, floor, setFloor, calc, base, breach, weeklyBurn,
-    projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, onDown, evWeek,
+    projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, importQuoteRuns, onDown, evWeek,
     ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, capInW, capOutW,
     horizon, TL_W, bands, fixedW, apArr, maxNet, maxLane, cumY, cumPts, cumPath, floorY, openingY, zeroVisible, zeroY } = props;
+  const [runImporting, setRunImporting] = useState(false);
+  const [runMsg, setRunMsg] = useState("");
   return (
     <>
       <div style={{ display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap" }}>
@@ -581,9 +647,15 @@ function PlanTab(props) {
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
         <button className="btn" onClick={addProject}>+ Add run</button>
         {sel && <button className="btn" onClick={() => dupProject(sel)}>Duplicate "{sel.name}"</button>}
+        <button className="btn" disabled={runImporting} title="Pull co-packing quotes from Run Quoting and time them on the Gantt (keeps your schedule on re-import)" onClick={async () => {
+          setRunImporting(true); setRunMsg("");
+          try { const r = await importQuoteRuns(); setRunMsg(r?.error ? r.error : `Imported ${r.added} new, ${r.updated} updated from quoting.`); }
+          finally { setRunImporting(false); }
+        }}>{runImporting ? "Importing…" : "↓ Import runs from quoting"}</button>
+        {runMsg && <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{runMsg}</span>}
       </div>
 
       {sel && (
