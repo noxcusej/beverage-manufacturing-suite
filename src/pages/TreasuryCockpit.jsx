@@ -321,12 +321,6 @@ export default function TreasuryCockpit() {
   /* flush any pending save when leaving the page so the last edit isn't lost */
   useEffect(() => () => { if (saveTimer.current) { clearTimeout(saveTimer.current); if (latest.current) saveAppData(STORE_KEY, latest.current); } }, []);
 
-  const resetData = () => {
-    if (!window.confirm("Reset everything to the sample data? Your saved plan will be lost.")) return;
-    setProjects(SEED_RUNS); setFixed(SEED_FIXED); setAp(seedAP()); setCapital(SEED_CAPITAL);
-    setOpeningCash(60000); setFloor(25000); setSelId(1); setTab("plan");
-  };
-
   /* merge a user-selected set of quotes (from the picker) into the planner;
      re-import refreshes amounts but keeps local schedules/edits */
   const addQuoteRuns = (selectedRuns) => {
@@ -516,8 +510,6 @@ export default function TreasuryCockpit() {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--muted)" }}>
               <span title="Your plan is saved to the cloud (Supabase) and restored on every device">auto-saved</span>
-              <span>·</span>
-              <button className="btn-x" style={{ fontSize: 11 }} onClick={resetData} title="Clear saved data and restore the sample plan">↺ Reset to sample</button>
             </div>
           </div>
         </div>
