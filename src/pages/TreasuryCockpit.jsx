@@ -858,7 +858,7 @@ function APTab({ ap, setAp, base, horizon, apTotalWindow, cum, floor, openingCas
       <MiniPosition {...{ cum, floor, openingCash, base, horizon, TL_W, laneData: apArr, laneColor: "var(--ap)", title: "Cash position with bills", hint: "slate bars = bills scheduled to pay that week · keep the line above the floor", markers: capMarks, bands }} />
 
       <div style={{ marginTop: 14, border: "1px solid #d9e0d2", background: "#f3f6ee", color: "#4d5a3f", borderRadius: 9, padding: "9px 13px", fontSize: 12.5, lineHeight: 1.55 }}>
-        <b>Sample data — not yet connected.</b> When wired to Xero, this pulls bills where <span className="num">Type = ACCPAY</span> and <span className="num">Status ≠ PAID/VOIDED</span>. Map: Contact.Name → Vendor · Reference → Ref · Date → Bill date · DueDate → Due date · AmountDue → Amount · Status → Status. Pay date defaults to the due date; change it to time the payment against the position above.
+        <b>Connected to Xero (via Maton).</b> <b>Import from Xero</b> pulls bills where <span className="num">Type = ACCPAY</span> and <span className="num">Status ≠ PAID/VOIDED</span>. Map: Contact.Name → Vendor · Reference (or Invoice #) → Ref · Date → Bill date · DueDate → Due date · AmountDue → Amount · Status → Status. Re-importing refreshes the Xero facts but keeps your local edits (include toggle, pay date, run links). Pay date defaults to the due date; change it to time the payment against the position above.
       </div>
 
       <div className="card" style={{ marginTop: 14, padding: 16, overflowX: "auto" }}>
