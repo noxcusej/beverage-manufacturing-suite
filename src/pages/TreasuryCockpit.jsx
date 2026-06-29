@@ -535,7 +535,7 @@ export default function TreasuryCockpit() {
   return (
     <div className="tcockpit" style={{ background: "var(--canvas)", color: "var(--ink)" }}>
       <style>{`
-        .tcockpit{--canvas:#F4F2EC;--panel:#FFFFFF;--ink:#1B1F24;--muted:#727880;--line:#E4E0D6;--line2:#EDEAE2;--in:#1F7A6B;--out:#B14A3B;--pos:#34468A;--danger:#C0392B;--chip:#F0EDE4;--fixed:#9A6B5E;--ap:#5F6B78;--cap:#6D5B8A;width:100%;min-height:100vh}
+        .tcockpit{--canvas:#F4F2EC;--panel:#FFFFFF;--ink:#1B1F24;--muted:#727880;--line:#E4E0D6;--line2:#EDEAE2;--in:#1F7A6B;--out:#B14A3B;--pos:#34468A;--danger:#C0392B;--warn:#B7791F;--chip:#F0EDE4;--fixed:#9A6B5E;--ap:#5F6B78;--cap:#6D5B8A;width:100%;min-height:100vh}
         .tcockpit *{box-sizing:border-box}
         .tcockpit .tc{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
         .tcockpit .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
@@ -1395,6 +1395,8 @@ function CapitalTab({ capital, setCapital, base, horizon, capB, cum, floor, open
 
 /* shared weekly cash-flow statement */
 function WeeklyCashFlow({ calc, fixedW, apArr, capInW, capOutW, base, horizon, floor, openingCash, note }) {
+  // below 0 = red, 0-to-floor = amber warning, at/above floor = normal
+  const posColor = (v) => (v < 0 ? "var(--danger)" : v < floor ? "var(--warn)" : "var(--pos)");
   const rows = [
     { label: "Receipts — runs", vals: calc.inW, sign: 1, tone: "in" },
     { label: "Capital in", vals: capInW, sign: 1, tone: "cap" },
@@ -1438,8 +1440,8 @@ function WeeklyCashFlow({ calc, fixedW, apArr, capInW, capOutW, base, horizon, f
             </tr>
             <tr>
               <td style={{ ...stickyL, fontWeight: 700 }}>Closing position</td>
-              {calc.cum.map((v, i) => (<td key={i} style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600, color: v < floor ? "var(--danger)" : "var(--pos)" }}>{fmtK(v)}</td>))}
-              <td style={{ padding: "4px 10px", textAlign: "right", fontWeight: 700, borderLeft: "1px solid var(--line)", color: calc.ending < floor ? "var(--danger)" : "var(--pos)" }}>{fmtK(calc.ending)}</td>
+              {calc.cum.map((v, i) => (<td key={i} style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600, color: posColor(v) }}>{fmtK(v)}</td>))}
+              <td style={{ padding: "4px 10px", textAlign: "right", fontWeight: 700, borderLeft: "1px solid var(--line)", color: posColor(calc.ending) }}>{fmtK(calc.ending)}</td>
             </tr>
           </tbody>
         </table>
