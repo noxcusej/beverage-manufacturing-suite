@@ -540,6 +540,77 @@ export default function TreasuryCockpit() {
   );
 }
 
+/* ---- Optimize run timing ----
+ * Re-times runs (shifts startWeek — the same lever as dragging) to push the first
+ * floor breach as late as possible, then deepen the trough. Pure hill-climb over
+ * the very same cash math the board displays (fixed costs / AP / capital held
+ * constant; hidden runs skipped; the model's overlap freedom is allowed). */
+function evDatesOf(projects, base, evWeek) {
+  const m = {};
+  for (const p of projects) for (const e of p.events) { const d = addWeeks(base, evWeek(p, e)); m[e.id] = (d < base ? base : d).toISOString().slice(0, 10); }
+  return m;
+}
+function simulatePosition(projects, ctx) {
+  const { ap, fixedW, capInW, capOutW, base, horizon, openingCash, floor, evWeek } = ctx;
+  const apB = buildAP(ap, base, horizon, evDatesOf(projects, base, evWeek));
+  const billed = {};
+  for (const b of ap) if ((b.include ?? defaultInclude(b.status)) && b.eventId) billed[b.eventId] = (billed[b.eventId] || 0) + b.amount;
+  const inW = new Array(horizon).fill(0), outW = new Array(horizon).fill(0);
+  for (const p of projects) {
+    if (p.hidden) continue;
+    for (const e of p.events) {
+      const w = evWeek(p, e); if (w < 0 || w >= horizon) continue;
+      if (e.dir === "in") inW[w] += e.amount;
+      else outW[w] += Math.max(0, e.amount - (billed[e.id] || 0));
+    }
+  }
+  let run = openingCash, firstBreach = horizon, trough = Infinity;
+  for (let i = 0; i < horizon; i++) {
+    run += inW[i] + capInW[i] - outW[i] - fixedW[i] - apB.arr[i] - capOutW[i];
+    if (run < trough) trough = run;
+    if (run < floor && firstBreach === horizon) firstBreach = i;
+  }
+  return { firstBreach, trough, ending: run };
+}
+// greener first (later first breach), then a deeper trough, then more ending cash
+const betterPos = (a, b) => {
+  if (a.firstBreach !== b.firstBreach) return a.firstBreach > b.firstBreach;
+  if (a.trough !== b.trough) return a.trough > b.trough;
+  return a.ending > b.ending;
+};
+// latest start that still keeps every one of a run's events inside the horizon, so
+// "optimize" re-times runs rather than shoving their receivables off the board
+function maxStartFor(p, horizon) {
+  let rel = 0;
+  for (const e of (p.events || [])) rel = Math.max(rel, (e.anchor === "end" ? (p.duration || 0) : 0) + (Number(e.offset) || 0));
+  return Math.max(0, horizon - 1 - rel);
+}
+function optimizeTiming(ctx) {
+  const { projects, horizon } = ctx;
+  let cur = projects.map((p) => ({ ...p }));
+  let curScore = simulatePosition(cur, ctx);
+  const before = curScore;
+  let improved = true, guard = 0;
+  while (improved && guard++ < 60) {
+    improved = false;
+    for (let r = 0; r < cur.length; r++) {
+      if (cur[r].hidden || !cur[r].events || !cur[r].events.length) continue;
+      const maxW = maxStartFor(cur[r], horizon);
+      let bestW = cur[r].startWeek, bestScore = curScore;
+      for (let w = 0; w <= maxW; w++) {
+        if (w === cur[r].startWeek) continue;
+        const trial = cur.slice(); trial[r] = { ...cur[r], startWeek: w };
+        const s = simulatePosition(trial, ctx);
+        if (betterPos(s, bestScore)) { bestScore = s; bestW = w; }
+      }
+      if (bestW !== cur[r].startWeek) { cur = cur.slice(); cur[r] = { ...cur[r], startWeek: bestW }; curScore = bestScore; improved = true; }
+    }
+  }
+  const moves = [];
+  projects.forEach((p, i) => { if (cur[i].startWeek !== p.startWeek) moves.push({ id: p.id, name: p.name, from: p.startWeek, to: cur[i].startWeek }); });
+  return { moves, before, after: curScore };
+}
+
 /* Quote picker modal — choose which co-packing quotes to bring onto the Gantt. */
 function QuotePicker({ existingIds, onClose, onImport }) {
   const [quotes, setQuotes] = useState(null); // null = loading
@@ -613,6 +684,14 @@ function PlanTab(props) {
     horizon, TL_W, bands, fixedW, apArr, maxNet, maxLane, cumY, cumPts, cumPath, floorY, openingY, zeroVisible, zeroY } = props;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [runMsg, setRunMsg] = useState("");
+  const [opt, setOpt] = useState(null); // { moves, before, after, applied }
+  const runOptimize = () => {
+    const res = optimizeTiming({ projects, ap, fixedW, capInW, capOutW, base, horizon, openingCash, floor, evWeek });
+    setOpt({ ...res, applied: false });
+  };
+  const applyOptimize = () => { opt.moves.forEach((m) => patch(m.id, (p) => ({ ...p, startWeek: m.to }))); setOpt((o) => ({ ...o, applied: true })); };
+  const undoOptimize = () => { opt.moves.forEach((m) => patch(m.id, (p) => ({ ...p, startWeek: m.from }))); setOpt(null); };
+  const breachLabel = (fb) => (fb >= horizon ? "no dip (full horizon)" : "week of " + dateLabel(base, fb));
   return (
     <>
       <div style={{ display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap" }}>
@@ -730,8 +809,41 @@ function PlanTab(props) {
         <button className="btn" onClick={addProject}>+ Add run</button>
         {sel && <button className="btn" onClick={() => dupProject(sel)}>Duplicate "{sel.name}"</button>}
         <button className="btn" title="Choose which co-packing quotes to bring onto the Gantt" onClick={() => setPickerOpen(true)}>↓ Import runs from quoting…</button>
+        <button className="btn" title="Re-time runs to keep the position above the floor as long as possible" onClick={runOptimize} style={{ fontWeight: 600 }}>✨ Optimize timing</button>
         {runMsg && <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{runMsg}</span>}
       </div>
+
+      {opt && (
+        <div className="card" style={{ marginTop: 12, padding: "11px 14px", borderColor: opt.moves.length ? "#cdd8c9" : "var(--line)", background: opt.moves.length ? "#f3f6ee" : "#FBFAF6" }}>
+          {opt.moves.length === 0 ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13 }}>
+              <span><b>Already optimal.</b> No re-timing keeps you above the floor longer — first dip stays {breachLabel(opt.before.firstBreach)}.</span>
+              <div style={{ flex: 1 }} />
+              <button className="btn-x" onClick={() => setOpt(null)}>Dismiss</button>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+                <span className="eyebrow" style={{ color: "var(--in)" }}>{opt.applied ? "Optimized — applied" : "Optimize — proposed"}</span>
+                <span style={{ fontSize: 13 }}>
+                  First floor dip: <b>{breachLabel(opt.before.firstBreach)}</b> → <b style={{ color: "var(--in)" }}>{breachLabel(opt.after.firstBreach)}</b>
+                  {opt.after.firstBreach > opt.before.firstBreach && <span style={{ color: "var(--in)" }}> (+{opt.after.firstBreach - opt.before.firstBreach} wks runway)</span>}
+                  <span style={{ color: "var(--muted)" }}> · trough {fmt(opt.before.trough)} → {fmt(opt.after.trough)} · {opt.moves.length} run{opt.moves.length === 1 ? "" : "s"} moved</span>
+                </span>
+                <div style={{ flex: 1 }} />
+                {!opt.applied
+                  ? (<><button className="btn" onClick={applyOptimize} style={{ fontWeight: 600 }}>Apply</button><button className="btn-x" onClick={() => setOpt(null)}>Cancel</button></>)
+                  : (<button className="btn" onClick={undoOptimize}>↺ Undo</button>)}
+              </div>
+              <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: "2px 16px" }}>
+                {opt.moves.map((m) => (
+                  <span key={m.id} className="num" style={{ fontSize: 11.5, color: "var(--muted)" }}>{m.name}: {dateLabel(base, m.from)} → <span style={{ color: "var(--ink)" }}>{dateLabel(base, m.to)}</span></span>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
       {pickerOpen && (
         <QuotePicker
           existingIds={new Set(projects.map((p) => p.id))}
