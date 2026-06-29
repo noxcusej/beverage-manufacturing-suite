@@ -264,11 +264,30 @@ function mergeQuoteRuns(current, runs) {
 const STORE_KEY = "treasury_cockpit";
 /* AP starts empty — real bills come from Xero via "Import from Xero" on the AP tab. */
 function seedAP() { return []; }
-function bumpIds(s) {
+/* A scenario = a named full-plan snapshot. We keep ONE Supabase row and evolve its
+   shape to v2 { version, activeId, scenarios:[{id,name,updatedAt,state}] } where
+   `state` is the exact flat snapshot persisted before. Migration is a read-time wrap:
+   a legacy flat blob becomes a single "Base case" scenario, its bytes preserved
+   verbatim, so the first v2 save loses nothing. */
+function migrateStore(raw) {
+  if (raw && raw.version === 2 && Array.isArray(raw.scenarios) && raw.scenarios.length) return raw;
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const state = { openingCash: raw.openingCash, floor: raw.floor, projects: raw.projects, fixed: raw.fixed, ap: raw.ap, capital: raw.capital, tab: raw.tab, selId: raw.selId };
+    return { version: 2, activeId: null, scenarios: [{ id: null, name: "Base case", updatedAt: Date.now(), state }] }; // id assigned after bumpIdsAll
+  }
+  return null;
+}
+/* Bump the uid() counter past every id in EVERY scenario (projects/fixed/ap/capital
+   and the scenario ids themselves) so new ids never collide across forks. */
+function bumpIdsAll(store) {
   let maxId = _id;
   const scan = (arr) => { if (!Array.isArray(arr)) return; for (const x of arr) { if (x && typeof x.id === "number") maxId = Math.max(maxId, x.id); if (x && Array.isArray(x.events)) scan(x.events); } };
-  scan(s.projects); scan(s.fixed); scan(s.ap); scan(s.capital);
-  _id = maxId; // ensure subsequent uid() values exceed every persisted id
+  for (const sc of (store.scenarios || [])) {
+    if (typeof sc.id === "number") maxId = Math.max(maxId, sc.id);
+    const st = sc.state || {};
+    scan(st.projects); scan(st.fixed); scan(st.ap); scan(st.capital);
+  }
+  _id = maxId;
 }
 
 export default function TreasuryCockpit() {
@@ -283,43 +302,92 @@ export default function TreasuryCockpit() {
   const [selId, setSelId] = useState(1);
   const [drag, setDrag] = useState(null);
   const [capital, setCapital] = useState(SEED_CAPITAL);
+  // scenarios: state is authoritative for INACTIVE scenarios; the active scenario's
+  // truth is the live flat state above, folded in at save/switch time.
+  const [scenarios, setScenarios] = useState([]); // [{id,name,updatedAt,state}]
+  const [activeId, setActiveId] = useState(null);
+  const [scenarioPickerOpen, setScenarioPickerOpen] = useState(false);
 
   /* standalone window — give it its own document title */
   useEffect(() => { const prev = document.title; document.title = "Treasury Cockpit"; return () => { document.title = prev; }; }, []);
 
-  /* hydrate the saved plan from Supabase once on mount; falls back to seed data */
+  /* set the live flat state from a scenario snapshot (same per-field guards as before) */
+  const applyState = useCallback((st) => {
+    if (!st) return;
+    if (Array.isArray(st.projects)) setProjects(st.projects);
+    if (Array.isArray(st.fixed)) setFixed(st.fixed);
+    if (Array.isArray(st.ap)) setAp(st.ap);
+    if (Array.isArray(st.capital)) setCapital(st.capital);
+    if (typeof st.openingCash === "number") setOpeningCash(st.openingCash);
+    if (typeof st.floor === "number") setFloor(st.floor);
+    if (typeof st.tab === "string") setTab(st.tab);
+    if (st.selId != null) setSelId(st.selId);
+  }, []);
+
+  /* hydrate scenarios from Supabase once on mount; a legacy flat blob → "Base case" */
   useEffect(() => {
     let alive = true;
     (async () => {
-      const s = await loadAppData(STORE_KEY);
-      if (alive && s && typeof s === "object" && !Array.isArray(s)) {
-        bumpIds(s);
-        if (Array.isArray(s.projects)) setProjects(s.projects);
-        if (Array.isArray(s.fixed)) setFixed(s.fixed);
-        if (Array.isArray(s.ap)) setAp(s.ap);
-        if (Array.isArray(s.capital)) setCapital(s.capital);
-        if (typeof s.openingCash === "number") setOpeningCash(s.openingCash);
-        if (typeof s.floor === "number") setFloor(s.floor);
-        if (typeof s.tab === "string") setTab(s.tab);
-        if (s.selId != null) setSelId(s.selId);
+      const store = migrateStore(await loadAppData(STORE_KEY));
+      if (alive && store) {
+        bumpIdsAll(store);
+        for (const sc of store.scenarios) if (sc.id == null) sc.id = uid(); // assign Base-case id past all state ids
+        if (store.activeId == null || !store.scenarios.some((s) => s.id === store.activeId)) store.activeId = store.scenarios[0].id;
+        setScenarios(store.scenarios);
+        setActiveId(store.activeId);
+        applyState(store.scenarios.find((s) => s.id === store.activeId).state);
       }
       if (alive) setHydrated(true);
     })();
     return () => { alive = false; };
-  }, []);
+  }, [applyState]);
 
-  /* write-through to Supabase, debounced so a drag (which updates state every frame)
-     coalesces into a single network save instead of hammering the DB */
+  /* write-through (debounced): fold the live snapshot into the active scenario and
+     persist the whole v2 store as a single row. Never setScenarios here (self-loop). */
   const saveTimer = useRef(null);
   const latest = useRef(null);
   useEffect(() => {
-    if (!hydrated) return;
-    latest.current = { openingCash, floor, projects, fixed, ap, capital, tab, selId };
+    if (!hydrated || activeId == null) return;
+    const state = { openingCash, floor, projects, fixed, ap, capital, tab, selId };
+    const list = scenarios.length ? scenarios : [{ id: activeId, name: "Base case", updatedAt: Date.now(), state }];
+    const merged = list.map((s) => (s.id === activeId ? { ...s, state, updatedAt: Date.now() } : s));
+    latest.current = { version: 2, activeId, scenarios: merged };
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => saveAppData(STORE_KEY, latest.current), 600);
-  }, [hydrated, openingCash, floor, projects, fixed, ap, capital, tab, selId]);
+  }, [hydrated, activeId, scenarios, openingCash, floor, projects, fixed, ap, capital, tab, selId]);
   /* flush any pending save when leaving the page so the last edit isn't lost */
   useEffect(() => () => { if (saveTimer.current) { clearTimeout(saveTimer.current); if (latest.current) saveAppData(STORE_KEY, latest.current); } }, []);
+
+  /* ---- scenario handlers ---- */
+  const activeName = (scenarios.find((s) => s.id === activeId) || {}).name || "Base case";
+  const switchScenario = (id) => {
+    if (id === activeId) return;
+    const outgoing = { openingCash, floor, projects, fixed, ap, capital, tab, selId };
+    const list = scenarios.map((s) => (s.id === activeId ? { ...s, state: outgoing, updatedAt: Date.now() } : s));
+    const target = list.find((s) => s.id === id);
+    if (!target) return;
+    setScenarios(list);
+    applyState(target.state);
+    setActiveId(id);
+  };
+  const saveAsScenario = (name) => {
+    const id = uid();
+    const state = { openingCash, floor, projects, fixed, ap, capital, tab, selId };
+    setScenarios((prev) => [
+      ...prev.map((s) => (s.id === activeId ? { ...s, state: { ...state }, updatedAt: Date.now() } : s)),
+      { id, name: (name && name.trim()) || "Untitled scenario", updatedAt: Date.now(), state },
+    ]);
+    setActiveId(id); // fork becomes active; live state already equals the fork
+  };
+  const renameScenario = (id, name) => setScenarios((prev) => prev.map((s) => (s.id === id ? { ...s, name: (name && name.trim()) || s.name, updatedAt: Date.now() } : s)));
+  const deleteScenario = (id) => {
+    setScenarios((prev) => {
+      const remaining = prev.filter((s) => s.id !== id);
+      if (remaining.length === 0) { const nid = uid(); const st = { openingCash, floor, projects, fixed, ap, capital, tab, selId }; setActiveId(nid); return [{ id: nid, name: "Base case", updatedAt: Date.now(), state: st }]; }
+      if (id === activeId) { const next = remaining[0]; applyState(next.state); setActiveId(next.id); }
+      return remaining;
+    });
+  };
 
   /* merge a user-selected set of quotes (from the picker) into the planner;
      re-import refreshes amounts but keeps local schedules/edits */
@@ -508,11 +576,23 @@ export default function TreasuryCockpit() {
               <button className={"tabbtn" + (tab === "capital" ? " on" : "")} onClick={() => setTab("capital")}>Capital</button>
               <button className={"tabbtn" + (tab === "sheet" ? " on" : "")} onClick={() => setTab("sheet")}>Spreadsheet</button>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--muted)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--muted)" }}>
+              <button className="btn" style={{ fontSize: 12, padding: "5px 10px", fontWeight: 600 }} title="Switch, save, rename, or delete budget scenarios" onClick={() => setScenarioPickerOpen(true)}>📁 {activeName} ▾</button>
               <span title="Your plan is saved to the cloud (Supabase) and restored on every device">auto-saved</span>
             </div>
           </div>
         </div>
+
+        {scenarioPickerOpen && (
+          <ScenarioPicker
+            scenarios={scenarios} activeId={activeId}
+            onClose={() => setScenarioPickerOpen(false)}
+            onSwitch={(id) => { switchScenario(id); setScenarioPickerOpen(false); }}
+            onSaveAs={(name) => { saveAsScenario(name); setScenarioPickerOpen(false); }}
+            onRename={renameScenario}
+            onDelete={deleteScenario}
+          />
+        )}
 
         {tab === "plan" && (
           <PlanTab {...{ openingCash, setOpeningCash, floor, setFloor, calc, base, breach, weeklyBurn,
@@ -604,6 +684,43 @@ function optimizeTiming(ctx) {
   const moves = [];
   projects.forEach((p, i) => { if (cur[i].startWeek !== p.startWeek) moves.push({ id: p.id, name: p.name, from: p.startWeek, to: cur[i].startWeek }); });
   return { moves, before, after: curScore, target, reachedTarget: curScore.firstBreach > target };
+}
+
+/* Scenario picker modal — switch / save-as / rename / delete budget scenarios.
+   Modeled on QuotePicker (same overlay/card/.tag conventions). */
+function ScenarioPicker({ scenarios, activeId, onClose, onSwitch, onSaveAs, onRename, onDelete }) {
+  const [newName, setNewName] = useState("");
+  const fmtWhen = (ts) => { if (!ts) return ""; const d = new Date(ts); return MON[d.getMonth()] + " " + d.getDate(); };
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(20,22,26,.45)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div className="card" onClick={(e) => e.stopPropagation()} style={{ width: "min(560px, 96vw)", maxHeight: "82vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 12 }}>
+          <span className="eyebrow">Budget scenarios</span>
+          <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--muted)" }}>click a scenario to switch</span>
+          <button className="btn-x" onClick={onClose} title="Close">✕</button>
+        </div>
+        <div style={{ overflowY: "auto", flex: 1 }}>
+          {scenarios.map((s) => {
+            const active = s.id === activeId;
+            return (
+              <div key={s.id} onClick={() => onSwitch(s.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderBottom: "1px solid var(--line2)", cursor: "pointer", background: active ? "#F1EFE7" : "transparent" }}>
+                <span style={{ fontWeight: 600, fontSize: 13 }}>{s.name}</span>
+                {active && <span className="tag" style={{ color: "#1f5e54", background: "#dcefe9" }}>active</span>}
+                <span style={{ fontSize: 11, color: "var(--muted)" }}>updated {fmtWhen(s.updatedAt)}</span>
+                <div style={{ flex: 1 }} />
+                <button className="btn-x" style={{ fontSize: 11 }} title="Rename" onClick={(e) => { e.stopPropagation(); const n = window.prompt("Rename scenario:", s.name); if (n) onRename(s.id, n); }}>Rename</button>
+                {scenarios.length > 1 && <button className="btn-x" style={{ fontSize: 11 }} title="Delete" onClick={(e) => { e.stopPropagation(); if (window.confirm('Delete scenario "' + s.name + '"? This can\'t be undone.')) onDelete(s.id); }}>Delete</button>}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ padding: "10px 16px", borderTop: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 8 }}>
+          <input className="inp" placeholder="New scenario name…" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newName.trim()) onSaveAs(newName.trim()); }} style={{ flex: 1 }} />
+          <button className="btn" disabled={!newName.trim()} style={{ fontWeight: 600, opacity: newName.trim() ? 1 : 0.5 }} onClick={() => newName.trim() && onSaveAs(newName.trim())} title="Fork the current plan into a new named scenario">+ Save current as new</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* Quote picker modal — choose which co-packing quotes to bring onto the Gantt. */
