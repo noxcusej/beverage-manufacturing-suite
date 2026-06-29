@@ -1395,8 +1395,8 @@ function CapitalTab({ capital, setCapital, base, horizon, capB, cum, floor, open
 
 /* shared weekly cash-flow statement */
 function WeeklyCashFlow({ calc, fixedW, apArr, capInW, capOutW, base, horizon, floor, openingCash, note }) {
-  // below 0 = red, 0-to-floor = amber warning, at/above floor = normal
-  const posColor = (v) => (v < 0 ? "var(--danger)" : v < floor ? "var(--warn)" : "var(--pos)");
+  // below 0 = red text, 0-to-floor = clear yellow highlight, at/above floor = normal
+  const posStyle = (v) => (v < 0 ? { color: "var(--danger)" } : v < floor ? { color: "#7c5e00", background: "#FDE047" } : { color: "var(--pos)" });
   const rows = [
     { label: "Receipts — runs", vals: calc.inW, sign: 1, tone: "in" },
     { label: "Capital in", vals: capInW, sign: 1, tone: "cap" },
@@ -1440,8 +1440,8 @@ function WeeklyCashFlow({ calc, fixedW, apArr, capInW, capOutW, base, horizon, f
             </tr>
             <tr>
               <td style={{ ...stickyL, fontWeight: 700 }}>Closing position</td>
-              {calc.cum.map((v, i) => (<td key={i} style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600, color: posColor(v) }}>{fmtK(v)}</td>))}
-              <td style={{ padding: "4px 10px", textAlign: "right", fontWeight: 700, borderLeft: "1px solid var(--line)", color: posColor(calc.ending) }}>{fmtK(calc.ending)}</td>
+              {calc.cum.map((v, i) => (<td key={i} style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600, ...posStyle(v) }}>{fmtK(v)}</td>))}
+              <td style={{ padding: "4px 10px", textAlign: "right", fontWeight: 700, borderLeft: "1px solid var(--line)", ...posStyle(calc.ending) }}>{fmtK(calc.ending)}</td>
             </tr>
           </tbody>
         </table>
