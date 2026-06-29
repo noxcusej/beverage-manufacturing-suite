@@ -59,8 +59,9 @@ export default function App() {
             <Route path="/clients" element={<ClientProfile />} />
             <Route path="/clients/:clientName" element={<ClientProfile />} />
             <Route path="/services" element={<Services />} />
-            <Route path="/cash-floor" element={<TreasuryCockpit />} />
           </Route>
+          {/* Standalone — no suite Layout/sidebar. Launches in its own window. */}
+          <Route path="/treasury" element={<TreasuryCockpit />} />
         </Routes>
       </Suspense>
     </BrowserRouter>

@@ -156,6 +156,50 @@ function buildAP(bills, base, horizon, evDates) {
   return { arr, total };
 }
 
+/* ---- Xero AP import ----
+ * Xero owns the bill facts; the cockpit keeps a local planning layer on top
+ * (include override, payDate, runId, eventId). Bills are matched across syncs by
+ * their Xero InvoiceID so re-importing refreshes the facts without clobbering the
+ * user's planning edits. The live feed isn't wired yet — `importXeroBills` reads a
+ * mapped snapshot from the Supabase `xero_bills` key (to be populated by the Xero
+ * connector / a backend sync); the mapping + merge below are the durable part. */
+const XERO_SNAPSHOT_KEY = "xero_bills";
+function xeroDate(d) {
+  if (!d) return "";
+  const m = /\/Date\((\d+)/.exec(String(d)); // Xero sometimes returns /Date(ms+0000)/
+  const dt = m ? new Date(Number(m[1])) : new Date(d);
+  return isNaN(dt.getTime()) ? "" : dt.toISOString().slice(0, 10);
+}
+/* Map one Xero ACCPAY invoice to the cockpit's bill facts (AmountDue, not Total,
+   so partial payments are reflected). Returns facts only — no local id. */
+function mapXeroBill(inv) {
+  return {
+    xeroId: inv.InvoiceID || inv.invoiceID || inv.id,
+    vendor: inv.Contact?.Name || inv.contact?.name || "(unknown vendor)",
+    ref: inv.Reference || inv.InvoiceNumber || inv.reference || "",
+    billDate: xeroDate(inv.Date || inv.date),
+    dueDate: xeroDate(inv.DueDate || inv.dueDate) || xeroDate(inv.Date || inv.date),
+    amount: Number(inv.AmountDue ?? inv.amountDue ?? inv.Total ?? 0),
+    status: inv.Status || inv.status || "AUTHORISED",
+  };
+}
+/* Merge mapped Xero facts into the current AP list: refresh facts on bills already
+   linked by xeroId (keeping include/payDate/runId/eventId), append the rest. */
+function mergeXeroBills(current, facts) {
+  const byXero = new Map(facts.map((f) => [f.xeroId, f]));
+  const seen = new Set();
+  const merged = current.map((b) => {
+    if (b.xeroId && byXero.has(b.xeroId)) {
+      seen.add(b.xeroId);
+      const f = byXero.get(b.xeroId);
+      return { ...b, vendor: f.vendor, ref: f.ref, billDate: f.billDate, dueDate: f.dueDate, amount: f.amount, status: f.status };
+    }
+    return b;
+  });
+  for (const f of facts) if (f.xeroId && !seen.has(f.xeroId)) merged.push({ id: uid(), include: defaultInclude(f.status), ...f });
+  return { merged, added: facts.filter((f) => f.xeroId && !seen.has(f.xeroId)).length, updated: seen.size };
+}
+
 /* ---- persistence (Supabase app_data) ---- *
  * Phase 1 of the merge into the beverage suite: the cockpit's own plan is stored as
  * a single namespaced JSONB blob through the suite's Supabase store (same generic
@@ -193,6 +237,9 @@ export default function TreasuryCockpit() {
   const [selId, setSelId] = useState(1);
   const [drag, setDrag] = useState(null);
   const [capital, setCapital] = useState(SEED_CAPITAL);
+
+  /* standalone window — give it its own document title */
+  useEffect(() => { const prev = document.title; document.title = "Treasury Cockpit"; return () => { document.title = prev; }; }, []);
 
   /* hydrate the saved plan from Supabase once on mount; falls back to seed data */
   useEffect(() => {
@@ -365,7 +412,7 @@ export default function TreasuryCockpit() {
   return (
     <div className="tcockpit" style={{ background: "var(--canvas)", color: "var(--ink)" }}>
       <style>{`
-        .tcockpit{--canvas:#F4F2EC;--panel:#FFFFFF;--ink:#1B1F24;--muted:#727880;--line:#E4E0D6;--line2:#EDEAE2;--in:#1F7A6B;--out:#B14A3B;--pos:#34468A;--danger:#C0392B;--chip:#F0EDE4;--fixed:#9A6B5E;--ap:#5F6B78;--cap:#6D5B8A;width:100%;min-height:100%}
+        .tcockpit{--canvas:#F4F2EC;--panel:#FFFFFF;--ink:#1B1F24;--muted:#727880;--line:#E4E0D6;--line2:#EDEAE2;--in:#1F7A6B;--out:#B14A3B;--pos:#34468A;--danger:#C0392B;--chip:#F0EDE4;--fixed:#9A6B5E;--ap:#5F6B78;--cap:#6D5B8A;width:100%;min-height:100vh}
         .tcockpit *{box-sizing:border-box}
         .tcockpit .tc{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
         .tcockpit .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
@@ -395,7 +442,7 @@ export default function TreasuryCockpit() {
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
           <div>
             <div className="eyebrow">Production cash timing</div>
-            <h1 style={{ fontSize: 26, fontWeight: 700, margin: "4px 0 0", letterSpacing: "-0.02em" }}>Cash Floor Gantt</h1>
+            <h1 style={{ fontSize: 26, fontWeight: 700, margin: "4px 0 0", letterSpacing: "-0.02em" }}>Treasury Cockpit</h1>
             <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 3 }}>
               {tab === "plan" ? "Drag a run to reschedule. Position nets runs, fixed costs, bills and capital."
                 : tab === "fixed" ? "Recurring outflows with active windows. These feed the run planner."
@@ -758,6 +805,29 @@ function APTab({ ap, setAp, base, horizon, apTotalWindow, cum, floor, openingCas
   const add = () => setAp((xs) => [...xs, { id: uid(), vendor: "New vendor", ref: "", billDate: iso(0), dueDate: iso(14), amount: 5000, status: "AUTHORISED", include: true }]);
   const linkMap = useMemo(() => { const m = {}; for (const p of projects) for (const e of p.events) m[e.id] = { run: p.name, label: e.label, color: p.color }; return m; }, [projects]);
 
+  /* pull bills from the Xero snapshot in Supabase and merge them in, preserving
+     local planning edits (include/payDate/links). Live OAuth feed is still pending. */
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState("");
+  const importXero = async () => {
+    setImporting(true); setImportMsg("");
+    try {
+      const snapshot = await loadAppData(XERO_SNAPSHOT_KEY);
+      if (!Array.isArray(snapshot) || snapshot.length === 0) {
+        setImportMsg("No Xero bills found yet — connect the Xero feed to sync ACCPAY bills.");
+        return;
+      }
+      const facts = snapshot.map(mapXeroBill).filter((f) => f.xeroId);
+      const { merged, added, updated } = mergeXeroBills(ap, facts);
+      setAp(merged);
+      setImportMsg(`Imported from Xero — ${added} new, ${updated} updated.`);
+    } catch (err) {
+      setImportMsg("Xero import failed: " + (err?.message || "unknown error"));
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const inc = (b) => b.include ?? defaultInclude(b.status);
   const today = useMemo(() => { const d = new Date(_t); d.setHours(0, 0, 0, 0); return d; }, []);
   const minISO = base.toISOString().slice(0, 10);
@@ -823,7 +893,11 @@ function APTab({ ap, setAp, base, horizon, apTotalWindow, cum, floor, openingCas
             })}
           </tbody>
         </table>
-        <button className="btn" style={{ marginTop: 12 }} onClick={add}>+ Add bill</button>
+        <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <button className="btn" onClick={add}>+ Add bill</button>
+          <button className="btn" onClick={importXero} disabled={importing} title="Pull ACCPAY bills from Xero (preserves your pay-date and link overrides)">{importing ? "Importing…" : "↓ Import from Xero"}</button>
+          {importMsg && <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{importMsg}</span>}
+        </div>
       </div>
 
       <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 16, lineHeight: 1.6 }}>

@@ -55,10 +55,6 @@ export default function Layout() {
               <span className="nav-icon">&#x2B1C;</span>
               {!collapsed && 'Run Quoting'}
             </NavLink>
-            <NavLink to="/cash-floor" className={({ isActive }) => isActive ? 'active' : ''} title="Cash Floor">
-              <span className="nav-icon">&#x1F4C9;</span>
-              {!collapsed && 'Cash Floor'}
-            </NavLink>
             <NavLink to="/clients" className={({ isActive }) => isActive ? 'active' : ''} title="Clients">
               <span className="nav-icon">&#x263A;</span>
               {!collapsed && 'Clients'}
@@ -83,6 +79,21 @@ export default function Layout() {
               <span className="nav-icon">&#x2692;</span>
               {!collapsed && 'Services'}
             </NavLink>
+
+            {/* Treasury Cockpit launches in its own standalone window (no suite chrome). */}
+            <a
+              href="/treasury"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Treasury Cockpit — opens in a new window"
+              style={{ marginTop: 'auto', borderTop: '1px solid var(--border)', paddingTop: 14 }}
+            >
+              <span className="nav-icon" style={{ position: 'relative' }}>
+                &#x1F4B5;
+                <span aria-hidden="true" style={{ position: 'absolute', top: -7, right: -9, fontSize: 11, fontWeight: 700, color: 'var(--brand)' }}>&#x2197;</span>
+              </span>
+              {!collapsed && 'Treasury Cockpit'}
+            </a>
           </nav>
 
           <div className="sidebar-footer">
