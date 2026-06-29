@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { loadAppData, saveAppData } from "../data/supabase";
 import { computeRunResults } from "../utils/runResults";
+import { exportTreasuryToExcel } from "../utils/exportTreasury";
 
 /* ------------------------------------------------------------------ *
  * Treasury Cockpit
@@ -1223,11 +1224,21 @@ function SheetTab({ projects, setProjects, fixed, setFixed, ap, setAp, capital, 
 
   const num = (val, on, w = 104) => <NumberInput value={val} onChange={on} className="inp num" style={{ width: w, textAlign: "right" }} />;
 
+  const [exporting, setExporting] = useState(false);
+  const exportXlsx = async () => {
+    setExporting(true);
+    try {
+      await exportTreasuryToExcel({ base, horizon, openingCash, floor, calc, fixedW, apArr, capInW, capOutW, projects, fixed, ap, capital, evWeek, eventDateMap });
+    } catch (e) { window.alert("Excel export failed: " + (e?.message || e)); }
+    finally { setExporting(false); }
+  };
+
   return (
     <>
-      <div style={{ display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap", alignItems: "center" }}>
         <Field label="Opening cash" value={openingCash} onChange={setOpeningCash} />
         <Field label="Cash floor" value={floor} onChange={setFloor} hint="min you'll tolerate" />
+        <button className="btn" disabled={exporting} onClick={exportXlsx} title="Download the full cash model as a formatted Excel workbook">{exporting ? "Exporting…" : "⬇ Export to Excel"}</button>
       </div>
 
       <div style={{ marginTop: 14 }}>
