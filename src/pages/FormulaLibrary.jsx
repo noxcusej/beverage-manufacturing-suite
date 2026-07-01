@@ -275,6 +275,7 @@ export default function FormulaLibrary() {
       batchSizeUnit: formula.batchSizeUnit,
       unitSizeVal: formula.unitSizeVal,
       unitSizeUnit: formula.unitSizeUnit,
+      abv: formula.abv,
       unitsPerCase: formula.unitsPerCase,
       lossPercent: formula.lossPercent,
       targetCases: formula.targetCases,

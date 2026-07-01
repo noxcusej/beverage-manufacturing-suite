@@ -59,6 +59,7 @@ export default function BatchCalculator() {
   const [targetCases, setTargetCases] = useState(0);
   const [unitSizeVal, setUnitSizeVal] = useState(12);
   const [unitSizeUnit, setUnitSizeUnitState] = useState('oz');
+  const [abv, setAbv] = useState(0); // % alcohol by volume — stored on the formula, drives proof gallons downstream
   const [unitsPerCase, setUnitsPerCase] = useState(24);
   const [lossPercent, setLossPercent] = useState(5);
   const [ingredients, setIngredients] = useState([]);
@@ -100,6 +101,7 @@ export default function BatchCalculator() {
       if (batch.batchSizeUnit !== undefined) setBatchSizeUnit(batch.batchSizeUnit);
       if (batch.unitSizeVal !== undefined) setUnitSizeVal(batch.unitSizeVal);
       if (batch.unitSizeUnit !== undefined) setUnitSizeUnitState(batch.unitSizeUnit);
+      if (batch.abv !== undefined) setAbv(batch.abv);
       if (batch.unitsPerCase !== undefined) setUnitsPerCase(batch.unitsPerCase);
       if (batch.lossPercent !== undefined) setLossPercent(batch.lossPercent);
       if (batch.ingredients) setIngredients(batch.ingredients.map((ing) => ing._uid ? ing : { ...ing, _uid: makeIngredientUid() }));
@@ -140,6 +142,7 @@ export default function BatchCalculator() {
     setUnitSizeUnitState(newUnitSizeUnit);
     setUnitsPerCase(newUnitsPerCase);
     setLossPercent(newLossPercent);
+    setAbv(formula.abv || 0);
     if (formula.ingredients) setIngredients(formula.ingredients.map((ing) => ing._uid ? ing : { ...ing, _uid: makeIngredientUid() }));
     const savedCases = formula.targetCases || 0;
     if (savedCases > 0) {
@@ -202,13 +205,13 @@ export default function BatchCalculator() {
       saveBatch({
         formulaName, formulaClient,
         batchSize, batchSizeUnit, baseYield, baseYieldUnit,
-        unitSizeVal, unitSizeUnit, unitsPerCase, lossPercent,
+        unitSizeVal, unitSizeUnit, abv, unitsPerCase, lossPercent,
         targetCases, sizeMode,
         ingredients: JSON.parse(JSON.stringify(ingredients)),
       });
     }, 500);
     return () => clearTimeout(autoSaveRef.current);
-  }, [formulaName, formulaClient, batchSize, batchSizeUnit, baseYield, baseYieldUnit, unitSizeVal, unitSizeUnit, unitsPerCase, lossPercent, targetCases, sizeMode, ingredients]);
+  }, [formulaName, formulaClient, batchSize, batchSizeUnit, baseYield, baseYieldUnit, unitSizeVal, unitSizeUnit, abv, unitsPerCase, lossPercent, targetCases, sizeMode, ingredients]);
 
   // scaleFactor must be dimensionless — normalize batchSize and baseYield
   // to gal before dividing. Without this, mismatched units (e.g. batchSize
@@ -515,6 +518,7 @@ export default function BatchCalculator() {
       baseYield, baseYieldUnit,
       batchSize, batchSizeUnit,
       unitSizeVal, unitSizeUnit,
+      abv,
       unitsPerCase, lossPercent,
       targetCases,
       ingredients,
@@ -536,7 +540,7 @@ export default function BatchCalculator() {
       formulaId: loadedFormulaId, // keep the formula binding across reload
       formulaName, formulaClient,
       batchSize, batchSizeUnit, baseYield, baseYieldUnit,
-      unitSizeVal, unitSizeUnit, unitsPerCase, lossPercent,
+      unitSizeVal, unitSizeUnit, abv, unitsPerCase, lossPercent,
       targetCases, sizeMode,
       totalUnits: unitEcon.totalUnits,
       ingredients: JSON.parse(JSON.stringify(ingredients)),
@@ -583,6 +587,7 @@ export default function BatchCalculator() {
     setUnitSizeUnitState(newUnitSizeUnit);
     setUnitsPerCase(newUnitsPerCase);
     setLossPercent(newLossPercent);
+    setAbv(formula.abv || 0);
     if (formula.ingredients) setIngredients(formula.ingredients.map((ing) => ing._uid ? ing : { ...ing, _uid: makeIngredientUid() }));
 
     // Recalculate batchSize from saved targetCases if available, else reset to base yield
@@ -1091,6 +1096,10 @@ export default function BatchCalculator() {
                       <option value="L">L</option>
                     </select>
                   </div>
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label">ABV %</label>
+                  <input type="number" value={abv} step="0.1" min="0" max="100" onChange={(e) => setAbv(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)} />
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label">Units per Case</label>

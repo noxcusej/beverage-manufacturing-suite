@@ -13,7 +13,6 @@ import { FEE_TYPES } from '../utils/feeTypes';
 
 // ── Constants ──
 
-const PACK_SIZES = [4, 6, 8, 12];
 
 const PRINT_TYPES = [
   { value: 'digital', label: 'Digital Print' },
@@ -138,6 +137,7 @@ function makeDefaultPackaging() {
     { id: 'pkg-trays', name: 'Trays', category: 'cases', feeType: 'per-case', rate: 1.10, qty: 0, qtyManual: false },
     { id: 'pkg-carriers', name: 'PakTech Carriers', category: 'carriers', feeType: 'per-paktech-pack', rate: 0.12, qty: 0, qtyManual: false },
     { id: 'pkg-wrap', name: 'Stretch Wrap', category: 'wrap', feeType: 'per-pallet', rate: 4.00, qty: 0, qtyManual: false },
+    { id: 'pkg-pallets', name: 'Pallets', category: 'pallets', feeType: 'per-pallet', rate: 7.50, qty: 0, qtyManual: false },
   ];
 }
 
@@ -259,7 +259,7 @@ function stripLegacyFlavorFields(flavor) {
   const next = { ...flavor };
   delete next.stabilizationCost;
   delete next.ingredientCostAuto;
-  delete next.ingredientCostOverride;
+  // ingredientCostOverride is a supported field again (manual $/can) — preserve it on load
   return next;
 }
 
@@ -289,7 +289,6 @@ export default function CoPackingCalculator() {
   const [fillVolumeUnit, setFillVolumeUnit] = useState('oz');
   const [packSize, setPackSize] = useState(4);
   const [carrierType, setCarrierType] = useState('paktech');
-  const [abv, setAbv] = useState(0);
   const [unitsPerCase, setUnitsPerCase] = useState(24);
   const [casesPerPallet, setCasesPerPallet] = useState(80);
   const [palletsPerTruck, setPalletsPerTruck] = useState(20);
@@ -432,16 +431,20 @@ export default function CoPackingCalculator() {
   // ── Computed counts ──
 
   const counts = useMemo(() => {
+    const formulaById = Object.fromEntries(allFormulas.map((f) => [f.id, f]));
     let fillOz = fillVolume;
     if (fillVolumeUnit === 'mL') fillOz = fillVolume / 29.5735;
     else if (fillVolumeUnit === 'L') fillOz = fillVolume * 33.814;
 
     let totalGallons = 0;
+    let proofGal = 0;
     const flavorRows = flavors.map((f) => {
       const cases = f.cases || 0;
       const cans = cases * unitsPerCase;
       const gallons = fillOz > 0 ? (cans * fillOz) / 128 : 0;
       totalGallons += gallons;
+      const formulaAbv = Number(formulaById[f.formulaId]?.abv) || 0; // ABV now lives on the formula
+      proofGal += gallons * (formulaAbv / 100) * 2;
       const pallets = casesPerPallet > 0 ? Math.ceil(cases / casesPerPallet) : 0;
       return { ...f, gallons, cans, cases, pallets };
     });
@@ -452,11 +455,11 @@ export default function CoPackingCalculator() {
     const totalPacks = packSize > 0 ? Math.ceil(totalUnits / packSize) : 0;
     const totalTrucks = palletsPerTruck > 0 ? Math.ceil(totalPallets / palletsPerTruck) : 0;
     const totalShifts = cansPerMinute > 0 ? totalUnits / cansPerMinute / 480 : 0;
-    const proofGallons = Math.round(totalGallons * (abv / 100) * 2 * 100) / 100;
+    const proofGallons = Math.round(proofGal * 100) / 100;
 
     const flavorCount = flavors.length;
     return { flavorRows, flavorCount, totalGallons, totalUnits, totalPacks, totalCases, totalPallets, totalTrucks, totalShifts, proofGallons };
-  }, [flavors, fillVolume, fillVolumeUnit, packSize, unitsPerCase, casesPerPallet, palletsPerTruck, cansPerMinute, abv]);
+  }, [flavors, allFormulas, fillVolume, fillVolumeUnit, packSize, unitsPerCase, casesPerPallet, palletsPerTruck, cansPerMinute]);
 
   // Effective Drayhorse SKU count: in plan mode, defaults to the count of
   // distinct carton groups (each pack group = one carton artwork SKU)
@@ -888,7 +891,21 @@ export default function CoPackingCalculator() {
     return rawMaterialPO.costPerCanByFormulaId[flavor.formulaId] || 0;
   }, [rawMaterialPO.costPerCanByFormulaId]);
 
-  const getEffectiveIngredientCostPerCan = useCallback((flavor) => getCalculatedIngredientCostPerCan(flavor), [getCalculatedIngredientCostPerCan]);
+  // A flavor may carry a manual ingredient cost ($/can). When set, it overrides the
+  // calculated optimized-PO blend everywhere costs are rolled up.
+  const getEffectiveIngredientCostPerCan = useCallback((flavor) => {
+    const o = flavor.ingredientCostOverride;
+    if (o !== undefined && o !== null && o !== '' && Number.isFinite(Number(o))) return Number(o);
+    return getCalculatedIngredientCostPerCan(flavor);
+  }, [getCalculatedIngredientCostPerCan]);
+
+  // Set/clear a flavor's manual ingredient cost ($/can). Blank or invalid → clear (use calculated).
+  const setIngredientOverride = useCallback((idx, raw) => setFlavors((p) => p.map((f, i) => {
+    if (i !== idx) return f;
+    const s = String(raw).trim();
+    if (s === '' || !Number.isFinite(+s)) { const n = { ...f }; delete n.ingredientCostOverride; return n; }
+    return { ...f, ingredientCostOverride: +s };
+  })), []);
 
   // ── Cost calculations ──
 
@@ -1165,7 +1182,7 @@ export default function CoPackingCalculator() {
 
   function collectRunState() {
     return {
-      config: { fillVolume, fillVolumeUnit, packSize, carrierType, abv, unitsPerCase, casesPerPallet, palletsPerTruck, cansPerMinute },
+      config: { fillVolume, fillVolumeUnit, packSize, carrierType, unitsPerCase, casesPerPallet, palletsPerTruck, cansPerMinute },
       flavors: flavors.map((flavor) => ({
         ...flavor,
         ingredientCost: getEffectiveIngredientCostPerCan(flavor),
@@ -1185,7 +1202,7 @@ export default function CoPackingCalculator() {
     exportClientQuote({
       client: runClient.trim(),
       runName: runName.trim() || 'Production Quote',
-      config: { fillVolume, fillVolumeUnit, packSize, carrierType, abv, unitsPerCase, casesPerPallet, palletsPerTruck, cansPerMinute },
+      config: { fillVolume, fillVolumeUnit, packSize, carrierType, unitsPerCase, casesPerPallet, palletsPerTruck, cansPerMinute },
       counts: effectiveCounts,
       costs,
       breakdown,
@@ -1229,7 +1246,6 @@ export default function CoPackingCalculator() {
     if (c.fillVolumeUnit) setFillVolumeUnit(c.fillVolumeUnit);
     if (c.packSize) setPackSize(c.packSize);
     if (c.carrierType) setCarrierType(c.carrierType);
-    if (c.abv !== undefined) setAbv(c.abv);
     if (c.unitsPerCase) setUnitsPerCase(c.unitsPerCase);
     if (c.casesPerPallet) setCasesPerPallet(c.casesPerPallet);
     if (c.palletsPerTruck) setPalletsPerTruck(c.palletsPerTruck);
@@ -1373,7 +1389,7 @@ export default function CoPackingCalculator() {
     setRunName('');
     setRunClient('');
     setFillVolume(12); setFillVolumeUnit('oz'); setPackSize(4); setCarrierType('paktech');
-    setAbv(0); setUnitsPerCase(24); setCasesPerPallet(80); setPalletsPerTruck(20); setCansPerMinute(400);
+    setUnitsPerCase(24); setCasesPerPallet(80); setPalletsPerTruck(20); setCansPerMinute(400);
     setFlavors([makeDefaultFlavor()]);
     setCartonProduct('sleek-4pk'); setSkuCount(1); setSkuCountManual(false); setIncludeNewArt(false); setCartonExtras({});
     setPackagingItems(makeDefaultPackaging());
@@ -1914,35 +1930,8 @@ export default function CoPackingCalculator() {
 
       {/* Compact Run Settings */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', padding: '10px 16px', background: 'var(--surface)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius)', marginBottom: 20, fontSize: 13, boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>Fill</span>
-              <input type="number" value={fillVolume} step="0.1" style={{ width: 55, textAlign: 'right' }} onChange={(e) => setFillVolume(e.target.value === '' ? 0 : +e.target.value)} />
-              <select value={fillVolumeUnit} style={{ fontSize: 12 }} onChange={(e) => setFillVolumeUnit(e.target.value)}>
-                <option value="oz">oz</option><option value="mL">mL</option><option value="L">L</option>
-              </select>
-            </label>
-            <span style={{ color: 'var(--border)' }}>|</span>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>Pack</span>
-              <select value={packSize} style={{ fontSize: 12 }} onChange={(e) => setPackSize(parseInt(e.target.value))}>
-                {PACK_SIZES.map((s) => <option key={s} value={s}>{s}-pk</option>)}
-              </select>
-            </label>
-            <span style={{ color: 'var(--border)' }}>|</span>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>Carrier</span>
-              <select value={carrierType} style={{ fontSize: 12 }} onChange={(e) => setCarrierType(e.target.value)}>
-                <option value="paktech">PakTech</option>
-                <option value="carton">Carton</option>
-              </select>
-            </label>
-            <span style={{ color: 'var(--border)' }}>|</span>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 }}>ABV</span>
-              <input type="number" value={abv} step="0.1" min="0" max="100" style={{ width: 50, textAlign: 'right' }} onChange={(e) => setAbv(e.target.value === '' ? 0 : +e.target.value)} />
-              <span style={{ color: 'var(--text-muted)' }}>%</span>
-            </label>
-            <span style={{ color: 'var(--border)' }}>|</span>
+            {/* Fill (from the formula), Pack + Carrier (from the packaging plan), and
+                ABV (from the formula) are no longer edited here — they're sourced upstream. */}
             <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <input type="number" value={unitsPerCase} style={{ width: 40, textAlign: 'right' }} onChange={(e) => setUnitsPerCase(parseInt(e.target.value) || 1)} />
               <span style={{ color: 'var(--text-muted)' }}>/ case</span>
@@ -2094,16 +2083,33 @@ export default function CoPackingCalculator() {
                     <input type="number" value={row.cases} min="0" style={{ width: 80, textAlign: 'right' }}
                       onChange={(e) => setFlavors((p) => p.map((f, i) => i === idx ? { ...f, cases: parseInt(e.target.value) || 0 } : f))} />
                   </td>
-                  <td style={{ textAlign: 'right', minWidth: 150 }}>
-                    <div
-                      title={row.formulaId ? 'Calculated from the consolidated raw-material PO after shared MOQ and on-hand inventory.' : 'Select a formula to calculate ingredient cost.'}
-                      style={{ fontFamily: 'monospace', fontWeight: 800 }}
-                    >
-                      ${row.formulaId ? getCalculatedIngredientCostPerCan(row).toFixed(4) : '0.0000'}
-                    </div>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3 }}>
-                      optimized PO blend
-                    </div>
+                  <td style={{ textAlign: 'right', minWidth: 160 }}>
+                    {(() => {
+                      const overridden = row.ingredientCostOverride !== undefined && row.ingredientCostOverride !== null && row.ingredientCostOverride !== '';
+                      const calc = row.formulaId ? getCalculatedIngredientCostPerCan(row) : 0;
+                      return (
+                        <>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
+                            <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>$</span>
+                            <input
+                              key={`ic-${row.id}-${stateVersion}`}
+                              type="text" inputMode="decimal"
+                              defaultValue={overridden ? row.ingredientCostOverride : ''}
+                              placeholder={calc.toFixed(4)}
+                              title="Manual ingredient cost per can. Leave blank to use the calculated optimized-PO blend."
+                              style={{ width: 90, textAlign: 'right', fontFamily: 'monospace', fontWeight: overridden ? 800 : 500, color: overridden ? 'var(--accent, #2563eb)' : undefined }}
+                              onChange={(e) => setIngredientOverride(idx, e.target.value)}
+                              onBlur={(e) => setIngredientOverride(idx, e.target.value)}
+                            />
+                          </div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3 }}>
+                            {overridden
+                              ? <>manual · calc ${calc.toFixed(4)} <button type="button" onClick={() => setIngredientOverride(idx, '')} style={{ border: 'none', background: 'none', color: 'var(--accent, #2563eb)', cursor: 'pointer', padding: 0, fontSize: 10, textDecoration: 'underline' }}>reset</button></>
+                              : 'optimized PO blend'}
+                          </div>
+                        </>
+                      );
+                    })()}
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
@@ -2955,7 +2961,7 @@ export default function CoPackingCalculator() {
           <div className="projection-row"><span className="label">Freight & Other</span><span className="value">${costs.bomCost.toFixed(2)}</span></div>
           {costs.totalBatchingFees > 0 && <div className="projection-row"><span className="label">Batching Fees</span><span className="value">${costs.totalBatchingFees.toFixed(2)}</span></div>}
           <div className="projection-row"><span className="label">Taxes & Regulatory</span><span className="value">${costs.taxCost.toFixed(2)}</span></div>
-          {abv > 0 && <div className="projection-row"><span className="label">Proof Gallons</span><span className="value">{counts.proofGallons.toLocaleString()} PG</span></div>}
+          {counts.proofGallons > 0 && <div className="projection-row"><span className="label">Proof Gallons</span><span className="value">{counts.proofGallons.toLocaleString()} PG</span></div>}
         </div>
         <div className="section" style={{ margin: 0 }}>
           <div className="section-header">
