@@ -1524,7 +1524,7 @@ function WeeklyCashFlow({ calc, fixedW, apArr, capInW, capOutW, base, horizon, f
           </colgroup>
           <thead>
             <tr>
-              <th style={{ ...stickyH, fontWeight: 600 }} className="th">Week ending</th>
+              <th style={{ ...stickyH, fontWeight: 600 }} className="th">Week beginning</th>
               {Array.from({ length: horizon }).map((_, i) => (<th key={i} className="th" style={{ padding: "6px 6px", textAlign: "right", fontWeight: 600 }}>{dateLabel(base, i, true)}</th>))}
               <th className="th" style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700, borderLeft: "1px solid var(--line)" }}>Total</th>
             </tr>
