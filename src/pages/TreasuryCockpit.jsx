@@ -11,7 +11,7 @@ import { exportTreasuryToExcel } from "../utils/exportTreasury";
  *  Tabs 2 & 3 both flow into Tab 1's cash position.
  * ------------------------------------------------------------------ */
 
-const WEEK_W = 46;
+const WEEK_W = 54;
 const HEADER_H = 46;
 const ROW_H = 46;
 const NET_H = 104;
@@ -386,18 +386,20 @@ export default function TreasuryCockpit() {
     setActiveId(id);
     showToast("Switched to " + target.name);
   };
-  const saveAsScenario = (name) => {
+  const saveAsScenario = (name, group) => {
     const id = uid();
     const nm = (name && name.trim()) || "Untitled scenario";
+    const grp = (group && group.trim()) || undefined;
     const state = { openingCash, floor, projects, fixed, ap, capital, tab, selId, manualAdj };
     setScenarios((prev) => [
       ...prev.map((s) => (s.id === activeId ? { ...s, state: { ...state }, updatedAt: Date.now() } : s)),
-      { id, name: nm, updatedAt: Date.now(), state },
+      { id, name: nm, group: grp, updatedAt: Date.now(), state },
     ]);
     setActiveId(id); // fork becomes active; live state already equals the fork
     showToast('Created "' + nm + '" — now editing it');
   };
   const renameScenario = (id, name) => setScenarios((prev) => prev.map((s) => (s.id === id ? { ...s, name: (name && name.trim()) || s.name, updatedAt: Date.now() } : s)));
+  const setScenarioGroup = (id, group) => setScenarios((prev) => prev.map((s) => (s.id === id ? { ...s, group: (group && group.trim()) || undefined, updatedAt: Date.now() } : s)));
   const deleteScenario = (id) => {
     setScenarios((prev) => {
       const remaining = prev.filter((s) => s.id !== id);
@@ -606,9 +608,10 @@ export default function TreasuryCockpit() {
             scenarios={scenarios} activeId={activeId}
             onClose={() => setScenarioPickerOpen(false)}
             onSwitch={(id) => { switchScenario(id); setScenarioPickerOpen(false); }}
-            onSaveAs={(name) => { saveAsScenario(name); setScenarioPickerOpen(false); }}
+            onSaveAs={(name, group) => { saveAsScenario(name, group); setScenarioPickerOpen(false); }}
             onRename={renameScenario}
             onDelete={deleteScenario}
+            onSetGroup={setScenarioGroup}
           />
         )}
         {toast && (
@@ -711,9 +714,40 @@ function optimizeTiming(ctx) {
 
 /* Scenario picker modal — switch / save-as / rename / delete budget scenarios.
    Modeled on QuotePicker (same overlay/card/.tag conventions). */
-function ScenarioPicker({ scenarios, activeId, onClose, onSwitch, onSaveAs, onRename, onDelete }) {
+function ScenarioPicker({ scenarios, activeId, onClose, onSwitch, onSaveAs, onRename, onDelete, onSetGroup }) {
   const [newName, setNewName] = useState("");
+  const [newGroup, setNewGroup] = useState("");
+  const [collapsed, setCollapsed] = useState(() => new Set());
   const fmtWhen = (ts) => { if (!ts) return ""; const d = new Date(ts); return MON[d.getMonth()] + " " + d.getDate(); };
+
+  // bucket scenarios by group, preserving first-appearance order, ungrouped first
+  const groups = [];
+  const idx = {};
+  for (const s of scenarios) {
+    const g = s.group || "";
+    if (!(g in idx)) { idx[g] = groups.length; groups.push({ name: g, items: [] }); }
+    groups[idx[g]].items.push(s);
+  }
+  groups.sort((a, b) => (a.name === "" ? -1 : b.name === "" ? 1 : 0));
+  const groupNames = [...new Set(scenarios.map((s) => s.group).filter(Boolean))];
+  const sectioned = groups.length > 1 || (groups.length === 1 && groups[0].name !== "");
+  const toggle = (g) => setCollapsed((c) => { const n = new Set(c); n.has(g) ? n.delete(g) : n.add(g); return n; });
+
+  const row = (s) => {
+    const active = s.id === activeId;
+    return (
+      <div key={s.id} onClick={() => onSwitch(s.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderBottom: "1px solid var(--line2)", cursor: "pointer", background: active ? "#F1EFE7" : "transparent" }}>
+        <span style={{ fontWeight: 600, fontSize: 13 }}>{s.name}</span>
+        {active && <span className="tag" style={{ color: "#1f5e54", background: "#dcefe9" }}>active</span>}
+        <span style={{ fontSize: 11, color: "var(--muted)" }}>updated {fmtWhen(s.updatedAt)}</span>
+        <div style={{ flex: 1 }} />
+        <button className="btn-x" style={{ fontSize: 11 }} title="Assign to a group" onClick={(e) => { e.stopPropagation(); const n = window.prompt("Group name (leave blank to ungroup):", s.group || ""); if (n !== null) onSetGroup(s.id, n); }}>Group</button>
+        <button className="btn-x" style={{ fontSize: 11 }} title="Rename" onClick={(e) => { e.stopPropagation(); const n = window.prompt("Rename scenario:", s.name); if (n) onRename(s.id, n); }}>Rename</button>
+        {scenarios.length > 1 && <button className="btn-x" style={{ fontSize: 11 }} title="Delete" onClick={(e) => { e.stopPropagation(); if (window.confirm('Delete scenario "' + s.name + '"? This can\'t be undone.')) onDelete(s.id); }}>Delete</button>}
+      </div>
+    );
+  };
+
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(20,22,26,.45)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div className="card" onClick={(e) => e.stopPropagation()} style={{ width: "min(560px, 96vw)", maxHeight: "82vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -723,23 +757,28 @@ function ScenarioPicker({ scenarios, activeId, onClose, onSwitch, onSaveAs, onRe
           <button className="btn-x" onClick={onClose} title="Close">✕</button>
         </div>
         <div style={{ overflowY: "auto", flex: 1 }}>
-          {scenarios.map((s) => {
-            const active = s.id === activeId;
-            return (
-              <div key={s.id} onClick={() => onSwitch(s.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderBottom: "1px solid var(--line2)", cursor: "pointer", background: active ? "#F1EFE7" : "transparent" }}>
-                <span style={{ fontWeight: 600, fontSize: 13 }}>{s.name}</span>
-                {active && <span className="tag" style={{ color: "#1f5e54", background: "#dcefe9" }}>active</span>}
-                <span style={{ fontSize: 11, color: "var(--muted)" }}>updated {fmtWhen(s.updatedAt)}</span>
-                <div style={{ flex: 1 }} />
-                <button className="btn-x" style={{ fontSize: 11 }} title="Rename" onClick={(e) => { e.stopPropagation(); const n = window.prompt("Rename scenario:", s.name); if (n) onRename(s.id, n); }}>Rename</button>
-                {scenarios.length > 1 && <button className="btn-x" style={{ fontSize: 11 }} title="Delete" onClick={(e) => { e.stopPropagation(); if (window.confirm('Delete scenario "' + s.name + '"? This can\'t be undone.')) onDelete(s.id); }}>Delete</button>}
-              </div>
-            );
-          })}
+          {!sectioned
+            ? scenarios.map(row)
+            : groups.map((g) => {
+                const label = g.name || "Ungrouped";
+                const isOpen = !collapsed.has(g.name || " ");
+                return (
+                  <div key={g.name || "__ungrouped"}>
+                    <div onClick={() => toggle(g.name || " ")} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 16px", background: "#F1EFE7", borderBottom: "1px solid var(--line)", cursor: "pointer", position: "sticky", top: 0, zIndex: 1 }}>
+                      <span style={{ fontSize: 10, color: "var(--muted)", width: 10 }}>{isOpen ? "▾" : "▸"}</span>
+                      <span className="eyebrow" style={{ color: g.name ? "var(--ink)" : "var(--muted)" }}>{label}</span>
+                      <span style={{ fontSize: 11, color: "var(--muted)" }}>{g.items.length}</span>
+                    </div>
+                    {isOpen && g.items.map(row)}
+                  </div>
+                );
+              })}
         </div>
-        <div style={{ padding: "10px 16px", borderTop: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 8 }}>
-          <input className="inp" placeholder="New scenario name…" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newName.trim()) onSaveAs(newName.trim()); }} style={{ flex: 1 }} />
-          <button className="btn" disabled={!newName.trim()} style={{ fontWeight: 600, opacity: newName.trim() ? 1 : 0.5 }} onClick={() => newName.trim() && onSaveAs(newName.trim())} title="Fork the current plan into a new named scenario">+ Save current as new</button>
+        <div style={{ padding: "10px 16px", borderTop: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <input className="inp" placeholder="New scenario name…" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newName.trim()) onSaveAs(newName.trim(), newGroup.trim()); }} style={{ flex: 2, minWidth: 160 }} />
+          <input className="inp" placeholder="Group (optional)" list="tc-group-names" value={newGroup} onChange={(e) => setNewGroup(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newName.trim()) onSaveAs(newName.trim(), newGroup.trim()); }} style={{ flex: 1, minWidth: 110 }} />
+          <datalist id="tc-group-names">{groupNames.map((g) => <option key={g} value={g} />)}</datalist>
+          <button className="btn" disabled={!newName.trim()} style={{ fontWeight: 600, opacity: newName.trim() ? 1 : 0.5 }} onClick={() => newName.trim() && onSaveAs(newName.trim(), newGroup.trim())} title="Fork the current plan into a new named scenario">+ Save current as new</button>
         </div>
       </div>
     </div>
@@ -818,6 +857,8 @@ function PlanTab(props) {
     ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, capInW, capOutW, activeName, openScenarios,
     horizon, TL_W, bands, fixedW, apArr, maxNet, maxLane, cumY, cumPts, cumPath, floorY, openingY, zeroVisible, zeroY, manualAdj, setAdj } = props;
   const [pickerOpen, setPickerOpen] = useState(false);
+  const cfScroll = useRef(null), ganttScroll = useRef(null); // keep cash-flow + Gantt columns scrolled in lockstep so weeks line up
+  const mirror = (from, to) => { if (from.current && to.current && to.current.scrollLeft !== from.current.scrollLeft) to.current.scrollLeft = from.current.scrollLeft; };
   const [runMsg, setRunMsg] = useState("");
   const [opt, setOpt] = useState(null); // { moves, before, after, target, reachedTarget, applied }
   const [greenUntil, setGreenUntil] = useState(() => addWeeks(base, 12).toISOString().slice(0, 10));
@@ -840,7 +881,7 @@ function PlanTab(props) {
       </div>
 
       <div style={{ marginTop: 14 }}>
-        <WeeklyCashFlow {...{ calc, fixedW, apArr, capInW, capOutW, base, horizon, floor, openingCash, manualAdj, setAdj }} />
+        <WeeklyCashFlow {...{ calc, fixedW, apArr, capInW, capOutW, base, horizon, floor, openingCash, manualAdj, setAdj, scrollRef: cfScroll, onScrollSync: () => mirror(cfScroll, ganttScroll) }} />
       </div>
 
       {breach && (
@@ -879,7 +920,7 @@ function PlanTab(props) {
             </div>
           </div>
 
-          <div style={{ overflowX: "auto", flex: 1 }}>
+          <div ref={ganttScroll} onScroll={() => mirror(ganttScroll, cfScroll)} style={{ overflowX: "auto", flex: 1 }}>
             <div style={{ width: TL_W, position: "relative" }}>
               <div style={{ height: HEADER_H, borderBottom: "1px solid var(--line)", position: "relative" }}>
                 {bands.map((b, i) => (<div key={i} style={{ position: "absolute", left: b.start * WEEK_W, width: b.span * WEEK_W, top: 0, height: 20, borderRight: "1px solid var(--line)", padding: "3px 7px" }}><span className="th" style={{ fontSize: 10, letterSpacing: ".06em", textTransform: "uppercase" }}>{b.label}</span></div>))}
@@ -1407,7 +1448,7 @@ function CapitalTab({ capital, setCapital, base, horizon, capB, cum, floor, open
 }
 
 /* shared weekly cash-flow statement */
-function WeeklyCashFlow({ calc, fixedW, apArr, capInW, capOutW, base, horizon, floor, openingCash, note, manualAdj, setAdj }) {
+function WeeklyCashFlow({ calc, fixedW, apArr, capInW, capOutW, base, horizon, floor, openingCash, note, manualAdj, setAdj, scrollRef, onScrollSync }) {
   // below 0 = red text, 0-to-floor = clear yellow highlight, at/above floor = normal
   const posStyle = (v) => (v < 0 ? { color: "var(--danger)" } : v < floor ? { color: "#7c5e00", background: "#FDE047" } : { color: "var(--pos)" });
   const rows = [
@@ -1419,9 +1460,11 @@ function WeeklyCashFlow({ calc, fixedW, apArr, capInW, capOutW, base, horizon, f
     { label: "Debt service", vals: capOutW, sign: -1, tone: "out" },
   ];
   const toneColor = (t) => t === "in" ? "var(--in)" : t === "out" ? "var(--out)" : t === "fixed" ? "var(--fixed)" : t === "ap" ? "var(--ap)" : t === "cap" ? "var(--cap)" : "var(--ink)";
-  const CFW = 60;
-  const stickyL = { position: "sticky", left: 0, background: "#FBFAF6", zIndex: 1, borderRight: "1px solid var(--line)", padding: "5px 10px", whiteSpace: "nowrap" };
-  const stickyH = { position: "sticky", left: 0, background: "#F1EFE7", zIndex: 2, borderRight: "1px solid var(--line)", padding: "6px 10px", textAlign: "left" };
+  const CFW = WEEK_W; // week columns match the Gantt exactly so they line up vertically
+  const TOTW = WEEK_W + 20;
+  const railW = { width: RAIL_W, minWidth: RAIL_W, maxWidth: RAIL_W }; // label column == Gantt rail width
+  const stickyL = { ...railW, position: "sticky", left: 0, background: "#FBFAF6", zIndex: 1, borderRight: "1px solid var(--line)", padding: "5px 10px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
+  const stickyH = { ...railW, position: "sticky", left: 0, background: "#F1EFE7", zIndex: 2, borderRight: "1px solid var(--line)", padding: "6px 10px", textAlign: "left" };
   let tI = 0, t = calc.cum.length ? calc.cum[0] : openingCash;
   calc.cum.forEach((v, i) => { if (v < t) { t = v; tI = i; } });
   return (
@@ -1430,13 +1473,18 @@ function WeeklyCashFlow({ calc, fixedW, apArr, capInW, capOutW, base, horizon, f
         <span className="eyebrow">Weekly cash flow</span>
         <span className="num" style={{ fontSize: 11.5, color: "var(--muted)" }}>ending {fmt(calc.ending)} · lowest {fmt(t)} week of {dateLabel(base, tI)}</span>
       </div>
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ borderCollapse: "collapse", fontSize: 11.5 }} className="num">
+      <div ref={scrollRef} onScroll={onScrollSync} style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", fontSize: 11.5, tableLayout: "fixed", width: RAIL_W + horizon * CFW + TOTW }} className="num">
+          <colgroup>
+            <col style={{ width: RAIL_W }} />
+            {Array.from({ length: horizon }).map((_, i) => (<col key={i} style={{ width: CFW }} />))}
+            <col style={{ width: TOTW }} />
+          </colgroup>
           <thead>
             <tr>
               <th style={{ ...stickyH, fontWeight: 600 }} className="th">Week ending</th>
-              {Array.from({ length: horizon }).map((_, i) => (<th key={i} className="th" style={{ minWidth: CFW, padding: "6px 6px", textAlign: "right", fontWeight: 600 }}>{dateLabel(base, i, true)}</th>))}
-              <th className="th" style={{ minWidth: CFW + 10, padding: "6px 10px", textAlign: "right", fontWeight: 700, borderLeft: "1px solid var(--line)" }}>Total</th>
+              {Array.from({ length: horizon }).map((_, i) => (<th key={i} className="th" style={{ padding: "6px 6px", textAlign: "right", fontWeight: 600 }}>{dateLabel(base, i, true)}</th>))}
+              <th className="th" style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700, borderLeft: "1px solid var(--line)" }}>Total</th>
             </tr>
           </thead>
           <tbody>
@@ -1453,7 +1501,7 @@ function WeeklyCashFlow({ calc, fixedW, apArr, capInW, capOutW, base, horizon, f
                   <td key={i} style={{ padding: "2px 3px", textAlign: "right" }}>
                     {setAdj
                       ? <NumberInput value={(manualAdj || {})[i] ?? ""} onChange={(nv) => setAdj(i, nv)} emptyValue={0} placeholder="·"
-                          style={{ width: CFW - 6, padding: "2px 4px", textAlign: "right", fontSize: 11, color: v > 0 ? "var(--in)" : v < 0 ? "var(--out)" : "var(--ink)" }} />
+                          style={{ width: "100%", boxSizing: "border-box", padding: "2px 3px", textAlign: "right", fontSize: 11, color: v > 0 ? "var(--in)" : v < 0 ? "var(--out)" : "var(--ink)" }} />
                       : <span style={{ color: v === 0 ? "#cfcabb" : v > 0 ? "var(--in)" : "var(--out)" }}>{v === 0 ? "·" : fmtK(v)}</span>}
                   </td>); })}
                 <td style={{ padding: "4px 10px", textAlign: "right", fontWeight: 700, color: adjTot > 0 ? "var(--in)" : adjTot < 0 ? "var(--out)" : "var(--muted)", borderLeft: "1px solid var(--line)" }}>{adjTot === 0 ? "·" : fmtK(adjTot)}</td>
