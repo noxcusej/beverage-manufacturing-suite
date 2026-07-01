@@ -67,6 +67,7 @@ function buildSummary(ws, d) {
     ['Fixed costs (out)', -calc.totalFixed],
     ['Bills (out)', -calc.totalAP],
     ['Debt service (out)', -calc.totalCapSvc],
+    ['Manual adjustment', (calc.adjW || []).reduce((t, v) => t + v, 0)],
   ];
   totals.forEach(([label, val]) => {
     put(ws, 'A' + r, label, { color: C.ink, border: true });
@@ -87,6 +88,7 @@ function buildCashFlow(ws, d) {
     { label: 'Fixed costs', vals: fixedW, sign: -1 },
     { label: 'Bills', vals: apArr, sign: -1 },
     { label: 'Debt service', vals: capOutW, sign: -1 },
+    { label: 'Manual adjustment', vals: calc.adjW || [], sign: 1 },
   ];
   band(ws, 1, horizon + 2, 'Weekly Cash Flow  ·  opening ' + Math.round(openingCash).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }) + '  ·  floor ' + Math.round(floor).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }), C.dark, C.white, 13, 24);
 

@@ -272,7 +272,7 @@ function seedAP() { return []; }
 function migrateStore(raw) {
   if (raw && raw.version === 2 && Array.isArray(raw.scenarios) && raw.scenarios.length) return raw;
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    const state = { openingCash: raw.openingCash, floor: raw.floor, projects: raw.projects, fixed: raw.fixed, ap: raw.ap, capital: raw.capital, tab: raw.tab, selId: raw.selId };
+    const state = { openingCash: raw.openingCash, floor: raw.floor, projects: raw.projects, fixed: raw.fixed, ap: raw.ap, capital: raw.capital, tab: raw.tab, selId: raw.selId, manualAdj: raw.manualAdj };
     return { version: 2, activeId: null, scenarios: [{ id: null, name: "Base case", updatedAt: Date.now(), state }] }; // id assigned after bumpIdsAll
   }
   return null;
@@ -302,6 +302,7 @@ export default function TreasuryCockpit() {
   const [selId, setSelId] = useState(1);
   const [drag, setDrag] = useState(null);
   const [capital, setCapital] = useState(SEED_CAPITAL);
+  const [manualAdj, setManualAdj] = useState({}); // { [weekIndex]: signed $ } — unplanned one-off adjustments
   // scenarios: state is authoritative for INACTIVE scenarios; the active scenario's
   // truth is the live flat state above, folded in at save/switch time.
   const [scenarios, setScenarios] = useState([]); // [{id,name,updatedAt,state}]
@@ -322,6 +323,17 @@ export default function TreasuryCockpit() {
     if (typeof st.floor === "number") setFloor(st.floor);
     if (typeof st.tab === "string") setTab(st.tab);
     if (st.selId != null) setSelId(st.selId);
+    setManualAdj(st.manualAdj && typeof st.manualAdj === "object" && !Array.isArray(st.manualAdj) ? st.manualAdj : {});
+  }, []);
+
+  /* edit one week's manual adjustment (signed: + adds cash, − is an unplanned expense) */
+  const setAdj = useCallback((i, v) => {
+    setManualAdj((prev) => {
+      const next = { ...prev };
+      const n = Number(v) || 0;
+      if (n === 0) delete next[i]; else next[i] = n;
+      return next;
+    });
   }, []);
 
   /* hydrate scenarios from Supabase once on mount; a legacy flat blob → "Base case" */
@@ -348,13 +360,13 @@ export default function TreasuryCockpit() {
   const latest = useRef(null);
   useEffect(() => {
     if (!hydrated || activeId == null) return;
-    const state = { openingCash, floor, projects, fixed, ap, capital, tab, selId };
+    const state = { openingCash, floor, projects, fixed, ap, capital, tab, selId, manualAdj };
     const list = scenarios.length ? scenarios : [{ id: activeId, name: "Base case", updatedAt: Date.now(), state }];
     const merged = list.map((s) => (s.id === activeId ? { ...s, state, updatedAt: Date.now() } : s));
     latest.current = { version: 2, activeId, scenarios: merged };
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => saveAppData(STORE_KEY, latest.current), 600);
-  }, [hydrated, activeId, scenarios, openingCash, floor, projects, fixed, ap, capital, tab, selId]);
+  }, [hydrated, activeId, scenarios, openingCash, floor, projects, fixed, ap, capital, tab, selId, manualAdj]);
   /* flush any pending save when leaving the page so the last edit isn't lost */
   useEffect(() => () => { if (saveTimer.current) { clearTimeout(saveTimer.current); if (latest.current) saveAppData(STORE_KEY, latest.current); } }, []);
 
@@ -365,7 +377,7 @@ export default function TreasuryCockpit() {
   const showToast = (msg) => { setToast(msg); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(""), 2600); };
   const switchScenario = (id) => {
     if (id === activeId) return;
-    const outgoing = { openingCash, floor, projects, fixed, ap, capital, tab, selId };
+    const outgoing = { openingCash, floor, projects, fixed, ap, capital, tab, selId, manualAdj };
     const list = scenarios.map((s) => (s.id === activeId ? { ...s, state: outgoing, updatedAt: Date.now() } : s));
     const target = list.find((s) => s.id === id);
     if (!target) return;
@@ -377,7 +389,7 @@ export default function TreasuryCockpit() {
   const saveAsScenario = (name) => {
     const id = uid();
     const nm = (name && name.trim()) || "Untitled scenario";
-    const state = { openingCash, floor, projects, fixed, ap, capital, tab, selId };
+    const state = { openingCash, floor, projects, fixed, ap, capital, tab, selId, manualAdj };
     setScenarios((prev) => [
       ...prev.map((s) => (s.id === activeId ? { ...s, state: { ...state }, updatedAt: Date.now() } : s)),
       { id, name: nm, updatedAt: Date.now(), state },
@@ -389,7 +401,7 @@ export default function TreasuryCockpit() {
   const deleteScenario = (id) => {
     setScenarios((prev) => {
       const remaining = prev.filter((s) => s.id !== id);
-      if (remaining.length === 0) { const nid = uid(); const st = { openingCash, floor, projects, fixed, ap, capital, tab, selId }; setActiveId(nid); return [{ id: nid, name: "Base case", updatedAt: Date.now(), state: st }]; }
+      if (remaining.length === 0) { const nid = uid(); const st = { openingCash, floor, projects, fixed, ap, capital, tab, selId, manualAdj }; setActiveId(nid); return [{ id: nid, name: "Base case", updatedAt: Date.now(), state: st }]; }
       if (id === activeId) { const next = remaining[0]; applyState(next.state); setActiveId(next.id); }
       return remaining;
     });
@@ -454,15 +466,16 @@ export default function TreasuryCockpit() {
       }
       perProject[p.id] = net;
     }
-    const net = inW.map((v, i) => v + capB.inW[i] - outW[i] - fixedW[i] - apB.arr[i] - capB.outW[i]);
+    const adjW = inW.map((_, i) => Number(manualAdj[i]) || 0); // signed one-off adjustments (+ in / − out)
+    const net = inW.map((v, i) => v + capB.inW[i] - outW[i] - fixedW[i] - apB.arr[i] - capB.outW[i] + adjW[i]);
     const cum = []; let run = openingCash;
     for (let i = 0; i < horizon; i++) { run += net[i]; cum.push(run); }
     let troughI = 0, trough = cum[0] ?? openingCash;
     cum.forEach((v, i) => { if (v < trough) { trough = v; troughI = i; } });
     const totalFixed = fixedW.reduce((s, v) => s + v, 0);
     const totalAP = apB.arr.reduce((s, v) => s + v, 0);
-    return { inW, outW, net, cum, totalIn, totalOut, totalFixed, totalAP, totalCapIn: capB.totalIn, totalCapSvc: capB.totalSvc, billedByEvent, perProject, trough, troughI, ending: cum[horizon - 1] ?? openingCash };
-  }, [projects, ap, fixedW, apB, capB, openingCash, horizon]);
+    return { inW, outW, adjW, net, cum, totalIn, totalOut, totalFixed, totalAP, totalCapIn: capB.totalIn, totalCapSvc: capB.totalSvc, billedByEvent, perProject, trough, troughI, ending: cum[horizon - 1] ?? openingCash };
+  }, [projects, ap, fixedW, apB, capB, openingCash, horizon, manualAdj]);
 
   /* capital injection markers for the position chart */
   const capMarks = useMemo(() => {
@@ -607,7 +620,7 @@ export default function TreasuryCockpit() {
             activeName, openScenarios: () => setScenarioPickerOpen(true),
             projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, addQuoteRuns, onDown, evWeek,
             ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, capInW: capB.inW, capOutW: capB.outW,
-            horizon, TL_W, bands, fixedW, apArr: apB.arr, maxNet, maxLane, cumY, cumPts, cumPath,
+            horizon, TL_W, bands, fixedW, apArr: apB.arr, maxNet, maxLane, cumY, cumPts, cumPath, manualAdj, setAdj,
             floorY: cumY(floor), openingY: cumY(openingCash), zeroVisible: cumLo < 0 && cumHi > 0, zeroY: cumY(0) }} />
         )}
         {tab === "fixed" && <FixedTab {...{ fixed, setFixed, base, horizon, fixedW, weeklyBurn, bands, TL_W }} />}
@@ -615,7 +628,7 @@ export default function TreasuryCockpit() {
         {tab === "capital" && <CapitalTab {...{ capital, setCapital, base, horizon, capB, cum: calc.cum, floor, openingCash, bands, TL_W, capMarks }} />}
         {tab === "sheet" && <SheetTab {...{ projects, setProjects, fixed, setFixed, ap, setAp, capital, setCapital,
           openingCash, setOpeningCash, floor, setFloor, base, horizon, evWeek, eventDateMap, calc, fixedW,
-          activeName, openScenarios: () => setScenarioPickerOpen(true),
+          activeName, openScenarios: () => setScenarioPickerOpen(true), manualAdj, setAdj,
           apArr: apB.arr, capInW: capB.inW, capOutW: capB.outW }} />}
       </div>
     </div>
@@ -633,7 +646,7 @@ function evDatesOf(projects, base, evWeek) {
   return m;
 }
 function simulatePosition(projects, ctx) {
-  const { ap, fixedW, capInW, capOutW, base, horizon, openingCash, floor, evWeek } = ctx;
+  const { ap, fixedW, capInW, capOutW, base, horizon, openingCash, floor, evWeek, manualAdj = {} } = ctx;
   const apB = buildAP(ap, base, horizon, evDatesOf(projects, base, evWeek));
   const billed = {};
   for (const b of ap) if ((b.include ?? defaultInclude(b.status)) && b.eventId) billed[b.eventId] = (billed[b.eventId] || 0) + b.amount;
@@ -648,7 +661,7 @@ function simulatePosition(projects, ctx) {
   }
   let run = openingCash, firstBreach = horizon, trough = Infinity;
   for (let i = 0; i < horizon; i++) {
-    run += inW[i] + capInW[i] - outW[i] - fixedW[i] - apB.arr[i] - capOutW[i];
+    run += inW[i] + capInW[i] - outW[i] - fixedW[i] - apB.arr[i] - capOutW[i] + (Number(manualAdj[i]) || 0);
     if (run < trough) trough = run;
     if (run < floor && firstBreach === horizon) firstBreach = i;
   }
@@ -803,7 +816,7 @@ function PlanTab(props) {
   const { openingCash, setOpeningCash, floor, setFloor, calc, base, breach, weeklyBurn,
     projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, addQuoteRuns, onDown, evWeek,
     ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, capInW, capOutW, activeName, openScenarios,
-    horizon, TL_W, bands, fixedW, apArr, maxNet, maxLane, cumY, cumPts, cumPath, floorY, openingY, zeroVisible, zeroY } = props;
+    horizon, TL_W, bands, fixedW, apArr, maxNet, maxLane, cumY, cumPts, cumPath, floorY, openingY, zeroVisible, zeroY, manualAdj, setAdj } = props;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [runMsg, setRunMsg] = useState("");
   const [opt, setOpt] = useState(null); // { moves, before, after, target, reachedTarget, applied }
@@ -811,7 +824,7 @@ function PlanTab(props) {
   const tgtLabel = (iso) => { const [, m, d] = (iso || "").split("-").map(Number); return m ? MON[m - 1] + " " + d : iso; }; // local, no TZ shift
   const runOptimize = () => {
     const targetWeek = Math.max(0, Math.min(horizon, wkOfDate(greenUntil, base))); // green THROUGH the week containing the target date
-    const res = optimizeTiming({ projects, ap, fixedW, capInW, capOutW, base, horizon, openingCash, floor, evWeek, targetWeek });
+    const res = optimizeTiming({ projects, ap, fixedW, capInW, capOutW, base, horizon, openingCash, floor, evWeek, targetWeek, manualAdj });
     setOpt({ ...res, applied: false });
   };
   const applyOptimize = () => { opt.moves.forEach((m) => patch(m.id, (p) => ({ ...p, startWeek: m.to }))); setOpt((o) => ({ ...o, applied: true })); };
@@ -827,7 +840,7 @@ function PlanTab(props) {
       </div>
 
       <div style={{ marginTop: 14 }}>
-        <WeeklyCashFlow {...{ calc, fixedW, apArr, capInW, capOutW, base, horizon, floor, openingCash }} />
+        <WeeklyCashFlow {...{ calc, fixedW, apArr, capInW, capOutW, base, horizon, floor, openingCash, manualAdj, setAdj }} />
       </div>
 
       {breach && (
@@ -1394,7 +1407,7 @@ function CapitalTab({ capital, setCapital, base, horizon, capB, cum, floor, open
 }
 
 /* shared weekly cash-flow statement */
-function WeeklyCashFlow({ calc, fixedW, apArr, capInW, capOutW, base, horizon, floor, openingCash, note }) {
+function WeeklyCashFlow({ calc, fixedW, apArr, capInW, capOutW, base, horizon, floor, openingCash, note, manualAdj, setAdj }) {
   // below 0 = red text, 0-to-floor = clear yellow highlight, at/above floor = normal
   const posStyle = (v) => (v < 0 ? { color: "var(--danger)" } : v < floor ? { color: "#7c5e00", background: "#FDE047" } : { color: "var(--pos)" });
   const rows = [
@@ -1433,6 +1446,18 @@ function WeeklyCashFlow({ calc, fixedW, apArr, capInW, capOutW, base, horizon, f
                 {r.vals.map((v, i) => { const x = v * r.sign; return (<td key={i} style={{ padding: "4px 6px", textAlign: "right", color: x === 0 ? "#cfcabb" : toneColor(r.tone) }}>{x === 0 ? "·" : fmtK(x)}</td>); })}
                 <td style={{ padding: "4px 10px", textAlign: "right", fontWeight: 700, color: toneColor(r.tone), borderLeft: "1px solid var(--line)" }}>{fmtK(tot)}</td>
               </tr>); })}
+            {(() => { const adj = calc.adjW || []; const adjTot = adj.reduce((s, v) => s + v, 0); return (
+              <tr>
+                <td style={{ ...stickyL, color: "var(--out)", fontWeight: 600 }} title="Unplanned one-off per week. Positive adds cash, negative is an expense.">Manual adjustment</td>
+                {Array.from({ length: horizon }).map((_, i) => { const v = adj[i] || 0; return (
+                  <td key={i} style={{ padding: "2px 3px", textAlign: "right" }}>
+                    {setAdj
+                      ? <NumberInput value={(manualAdj || {})[i] ?? ""} onChange={(nv) => setAdj(i, nv)} emptyValue={0} placeholder="·"
+                          style={{ width: CFW - 6, padding: "2px 4px", textAlign: "right", fontSize: 11, color: v > 0 ? "var(--in)" : v < 0 ? "var(--out)" : "var(--ink)" }} />
+                      : <span style={{ color: v === 0 ? "#cfcabb" : v > 0 ? "var(--in)" : "var(--out)" }}>{v === 0 ? "·" : fmtK(v)}</span>}
+                  </td>); })}
+                <td style={{ padding: "4px 10px", textAlign: "right", fontWeight: 700, color: adjTot > 0 ? "var(--in)" : adjTot < 0 ? "var(--out)" : "var(--muted)", borderLeft: "1px solid var(--line)" }}>{adjTot === 0 ? "·" : fmtK(adjTot)}</td>
+              </tr>); })()}
             <tr>
               <td style={{ ...stickyL, fontWeight: 700, borderTop: "1px solid var(--line)" }}>Net change</td>
               {calc.net.map((v, i) => (<td key={i} style={{ padding: "4px 6px", textAlign: "right", borderTop: "1px solid var(--line)", color: v === 0 ? "#cfcabb" : v > 0 ? "var(--in)" : "var(--out)" }}>{v === 0 ? "·" : fmtK(v)}</td>))}
@@ -1455,7 +1480,7 @@ function WeeklyCashFlow({ calc, fixedW, apArr, capInW, capOutW, base, horizon, f
 
 /* =====================  TAB 6  ===================== */
 function SheetTab({ projects, setProjects, fixed, setFixed, ap, setAp, capital, setCapital,
-  openingCash, setOpeningCash, floor, setFloor, base, horizon, evWeek, eventDateMap, calc, fixedW, apArr, capInW, capOutW, activeName, openScenarios }) {
+  openingCash, setOpeningCash, floor, setFloor, base, horizon, evWeek, eventDateMap, calc, fixedW, apArr, capInW, capOutW, activeName, openScenarios, manualAdj, setAdj }) {
 
   const updEvent = (rid, eid, patch) => setProjects((ps) => ps.map((p) => p.id === rid ? { ...p, events: p.events.map((e) => e.id === eid ? { ...e, ...patch } : e) } : p));
   const updFixed = (id, patch) => setFixed((xs) => xs.map((x) => (x.id === id ? { ...x, ...patch } : x)));
@@ -1483,7 +1508,7 @@ function SheetTab({ projects, setProjects, fixed, setFixed, ap, setAp, capital, 
       </div>
 
       <div style={{ marginTop: 14 }}>
-        <WeeklyCashFlow {...{ calc, fixedW, apArr, capInW, capOutW, base, horizon, floor, openingCash, note: <>Opening cash {fmt(openingCash)} · red closing = below the {fmt(floor)} floor. Edits below flow straight into these columns and every other tab.</> }} />
+        <WeeklyCashFlow {...{ calc, fixedW, apArr, capInW, capOutW, base, horizon, floor, openingCash, manualAdj, setAdj, note: <>Opening cash {fmt(openingCash)} · red closing = below the {fmt(floor)} floor. Manual adjustment cells are editable and flow into every tab.</> }} />
       </div>
 
       {/* editable line-item grid */}
