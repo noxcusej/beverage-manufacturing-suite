@@ -345,9 +345,11 @@ export default function TreasuryCockpit() {
         bumpIdsAll(store);
         for (const sc of store.scenarios) if (sc.id == null) sc.id = uid(); // assign Base-case id past all state ids
         if (store.activeId == null || !store.scenarios.some((s) => s.id === store.activeId)) store.activeId = store.scenarios[0].id;
+        adopting.current = true; // loading remote is not a user edit — don't echo it back as a (possibly racing) save
         setScenarios(store.scenarios);
         setActiveId(store.activeId);
         applyState(store.scenarios.find((s) => s.id === store.activeId).state);
+        setTimeout(() => { adopting.current = false; }, 0);
       }
       if (alive) setHydrated(true);
     })();
@@ -358,23 +360,63 @@ export default function TreasuryCockpit() {
      persist the whole v2 store as a single row. Never setScenarios here (self-loop). */
   const saveTimer = useRef(null);
   const latest = useRef(null);
+  // cross-window coordination: the app opens in its own window, so a user can have
+  // two cockpit windows on the same shared record. Only the FOCUSED window writes;
+  // others mirror its broadcasts. This stops a stale/duplicate window from clobbering.
+  const winFocused = useRef(true); // optimistic: a lone window always writes
+  const bc = useRef(null);
+  const adopting = useRef(false);  // suppress the echo-save that adopting a broadcast triggers
+  const showToastRef = useRef(() => {});
   useEffect(() => {
     if (!hydrated || activeId == null) return;
     const state = { openingCash, floor, projects, fixed, ap, capital, tab, selId, manualAdj };
     const list = scenarios.length ? scenarios : [{ id: activeId, name: "Base case", updatedAt: Date.now(), state }];
     const merged = list.map((s) => (s.id === activeId ? { ...s, state, updatedAt: Date.now() } : s));
-    latest.current = { version: 2, activeId, scenarios: merged };
+    const store = { version: 2, activeId, scenarios: merged };
+    latest.current = store;
+    if (adopting.current || !winFocused.current) return; // background/duplicate windows don't persist
     clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => saveAppData(STORE_KEY, latest.current), 600);
+    saveTimer.current = setTimeout(() => { saveAppData(STORE_KEY, store); if (bc.current) bc.current.postMessage({ t: "store", store }); }, 600);
   }, [hydrated, activeId, scenarios, openingCash, floor, projects, fixed, ap, capital, tab, selId, manualAdj]);
   /* flush any pending save when leaving the page so the last edit isn't lost */
   useEffect(() => () => { if (saveTimer.current) { clearTimeout(saveTimer.current); if (latest.current) saveAppData(STORE_KEY, latest.current); } }, []);
+
+  /* keep sibling cockpit windows in sync via BroadcastChannel; focused window is the writer */
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const ch = new BroadcastChannel("treasury_cockpit_sync");
+    bc.current = ch;
+    ch.onmessage = (ev) => {
+      const m = ev.data;
+      if (!m || m.t !== "store" || !m.store || !Array.isArray(m.store.scenarios)) return;
+      adopting.current = true; // this state update must NOT echo back out as a save
+      setScenarios(m.store.scenarios);
+      setActiveId(m.store.activeId);
+      const act = m.store.scenarios.find((s) => s.id === m.store.activeId);
+      if (act) applyState(act.state);
+      showToastRef.current("Synced changes from another window");
+      setTimeout(() => { adopting.current = false; }, 0);
+    };
+    const onFocus = () => { winFocused.current = true; };
+    const onBlur = () => {
+      winFocused.current = false;
+      if (saveTimer.current && latest.current) { // flush + broadcast the last edit before another window takes over
+        clearTimeout(saveTimer.current); saveTimer.current = null;
+        saveAppData(STORE_KEY, latest.current);
+        if (bc.current) bc.current.postMessage({ t: "store", store: latest.current });
+      }
+    };
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onBlur);
+    return () => { window.removeEventListener("focus", onFocus); window.removeEventListener("blur", onBlur); ch.close(); bc.current = null; };
+  }, [applyState]);
 
   /* ---- scenario handlers ---- */
   const activeName = (scenarios.find((s) => s.id === activeId) || {}).name || "Base case";
   const [toast, setToast] = useState("");
   const toastTimer = useRef(null);
   const showToast = (msg) => { setToast(msg); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(""), 2600); };
+  useEffect(() => { showToastRef.current = showToast; }); // let the cross-window sync effect surface a toast without re-subscribing
   const switchScenario = (id) => {
     if (id === activeId) return;
     const outgoing = { openingCash, floor, projects, fixed, ap, capital, tab, selId, manualAdj };
