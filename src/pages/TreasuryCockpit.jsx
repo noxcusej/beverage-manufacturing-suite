@@ -289,6 +289,14 @@ function bumpIdsAll(store) {
   }
   _id = maxId;
 }
+/* canonical content signature of a store for dirty-checking: key-order independent
+   and ignores updatedAt timestamps, so loaded == derived compares reliably */
+const canon = (v) => {
+  if (Array.isArray(v)) return v.map(canon);
+  if (v && typeof v === "object") return Object.keys(v).filter((k) => k !== "updatedAt").sort().reduce((o, k) => { o[k] = canon(v[k]); return o; }, {});
+  return v;
+};
+const storeSig = (store) => JSON.stringify(canon(store));
 
 export default function TreasuryCockpit() {
   const [base] = useState(() => mondayOf(new Date()));
@@ -307,6 +315,8 @@ export default function TreasuryCockpit() {
   // truth is the live flat state above, folded in at save/switch time.
   const [scenarios, setScenarios] = useState([]); // [{id,name,updatedAt,state}]
   const [activeId, setActiveId] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [savedSig, setSavedSig] = useState(null); // signature of the last saved/loaded store; drives the dirty flag
   const [scenarioPickerOpen, setScenarioPickerOpen] = useState(false);
 
   /* standalone window — give it its own document title */
@@ -343,45 +353,82 @@ export default function TreasuryCockpit() {
       const store = migrateStore(await loadAppData(STORE_KEY));
       if (alive && store) {
         bumpIdsAll(store);
-        for (const sc of store.scenarios) if (sc.id == null) sc.id = uid(); // assign Base-case id past all state ids
+        for (const sc of store.scenarios) {
+          if (sc.id == null) sc.id = uid(); // assign Base-case id past all state ids
+          if (!sc.state) sc.state = {};
+          // normalize so the saved signature matches the live-derived one (older data omits manualAdj)
+          if (!(sc.state.manualAdj && typeof sc.state.manualAdj === "object" && !Array.isArray(sc.state.manualAdj))) sc.state.manualAdj = {};
+        }
         if (store.activeId == null || !store.scenarios.some((s) => s.id === store.activeId)) store.activeId = store.scenarios[0].id;
-        adopting.current = true; // loading remote is not a user edit — don't echo it back as a (possibly racing) save
         setScenarios(store.scenarios);
         setActiveId(store.activeId);
         applyState(store.scenarios.find((s) => s.id === store.activeId).state);
-        setTimeout(() => { adopting.current = false; }, 0);
+        setSavedSig(storeSig(store)); // loaded == saved, so we start clean (not dirty)
       }
+      // brand-new user (no saved data): savedSig stays null so Save is enabled to persist the seed
       if (alive) setHydrated(true);
     })();
     return () => { alive = false; };
   }, [applyState]);
 
-  /* write-through (debounced): fold the live snapshot into the active scenario and
-     persist the whole v2 store as a single row. Never setScenarios here (self-loop). */
-  const saveTimer = useRef(null);
-  const latest = useRef(null);
-  // cross-window coordination: the app opens in its own window, so a user can have
-  // two cockpit windows on the same shared record. Only the FOCUSED window writes;
-  // others mirror its broadcasts. This stops a stale/duplicate window from clobbering.
-  const winFocused = useRef(true); // optimistic: a lone window always writes
+  /* ---- persistence: MANUAL save (no autosave) ---- */
   const bc = useRef(null);
-  const adopting = useRef(false);  // suppress the echo-save that adopting a broadcast triggers
+  const dirtyRef = useRef(false);
   const showToastRef = useRef(() => {});
-  useEffect(() => {
-    if (!hydrated || activeId == null) return;
-    const state = { openingCash, floor, projects, fixed, ap, capital, tab, selId, manualAdj };
-    const list = scenarios.length ? scenarios : [{ id: activeId, name: "Base case", updatedAt: Date.now(), state }];
-    const merged = list.map((s) => (s.id === activeId ? { ...s, state, updatedAt: Date.now() } : s));
-    const store = { version: 2, activeId, scenarios: merged };
-    latest.current = store;
-    if (adopting.current || !winFocused.current) return; // background/duplicate windows don't persist
-    clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => { saveAppData(STORE_KEY, store); if (bc.current) bc.current.postMessage({ t: "store", store }); }, 600);
-  }, [hydrated, activeId, scenarios, openingCash, floor, projects, fixed, ap, capital, tab, selId, manualAdj]);
-  /* flush any pending save when leaving the page so the last edit isn't lost */
-  useEffect(() => () => { if (saveTimer.current) { clearTimeout(saveTimer.current); if (latest.current) saveAppData(STORE_KEY, latest.current); } }, []);
+  const saveNowRef = useRef(() => {});
 
-  /* keep sibling cockpit windows in sync via BroadcastChannel; focused window is the writer */
+  /* assemble the whole v2 store from the live state + in-memory scenarios */
+  const buildStore = () => {
+    const state = { openingCash, floor, projects, fixed, ap, capital, tab, selId, manualAdj };
+    let id = activeId, list = scenarios;
+    if (id == null || !list.length) { id = uid(); list = [{ id, name: "Base case", group: undefined, updatedAt: Date.now(), state }]; }
+    const merged = list.map((s) => (s.id === id ? { ...s, state, updatedAt: Date.now() } : s));
+    return { version: 2, activeId: id, scenarios: merged };
+  };
+
+  /* DERIVE unsaved-changes state (no effect/flag): compare the current plan to the
+     last saved/loaded signature. Round-tripping edits back to saved cleanly clears it. */
+  const currentSig = useMemo(() => storeSig({
+    version: 2, activeId,
+    scenarios: scenarios.map((s) => (s.id === activeId
+      ? { ...s, state: { openingCash, floor, projects, fixed, ap, capital, tab, selId, manualAdj } } : s)),
+  }), [activeId, scenarios, openingCash, floor, projects, fixed, ap, capital, tab, selId, manualAdj]);
+  const dirty = hydrated && savedSig != null && currentSig !== savedSig;
+  const canSave = hydrated && (dirty || savedSig == null);
+  useEffect(() => { dirtyRef.current = dirty; });
+
+  /* persist on demand and let sibling windows adopt the saved truth */
+  const saveNow = async () => {
+    if (saving || !canSave) return;
+    setSaving(true);
+    const store = buildStore();
+    try {
+      await saveAppData(STORE_KEY, store);
+      if (activeId !== store.activeId) setActiveId(store.activeId); // brand-new bootstrap
+      setSavedSig(storeSig(store));
+      if (bc.current) bc.current.postMessage({ t: "store", store });
+      showToastRef.current("Saved");
+    } catch { showToastRef.current("Save failed — try again"); }
+    setSaving(false);
+  };
+  useEffect(() => { saveNowRef.current = saveNow; });
+
+  /* guard against closing with unsaved work */
+  useEffect(() => {
+    const h = (e) => { if (dirtyRef.current) { e.preventDefault(); e.returnValue = ""; } };
+    window.addEventListener("beforeunload", h);
+    return () => window.removeEventListener("beforeunload", h);
+  }, []);
+
+  /* ⌘S / Ctrl+S saves */
+  useEffect(() => {
+    const h = (e) => { if ((e.metaKey || e.ctrlKey) && (e.key === "s" || e.key === "S")) { e.preventDefault(); saveNowRef.current(); } };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
+
+  /* keep sibling cockpit windows in sync: adopt another window's SAVE — but only if
+     this window has no unsaved edits (otherwise keep ours and warn, never clobber) */
   useEffect(() => {
     if (typeof BroadcastChannel === "undefined") return;
     const ch = new BroadcastChannel("treasury_cockpit_sync");
@@ -389,26 +436,15 @@ export default function TreasuryCockpit() {
     ch.onmessage = (ev) => {
       const m = ev.data;
       if (!m || m.t !== "store" || !m.store || !Array.isArray(m.store.scenarios)) return;
-      adopting.current = true; // this state update must NOT echo back out as a save
+      if (dirtyRef.current) { showToastRef.current("Another window saved — reload to sync (you have unsaved changes)"); return; }
       setScenarios(m.store.scenarios);
       setActiveId(m.store.activeId);
       const act = m.store.scenarios.find((s) => s.id === m.store.activeId);
       if (act) applyState(act.state);
+      setSavedSig(storeSig(m.store));
       showToastRef.current("Synced changes from another window");
-      setTimeout(() => { adopting.current = false; }, 0);
     };
-    const onFocus = () => { winFocused.current = true; };
-    const onBlur = () => {
-      winFocused.current = false;
-      if (saveTimer.current && latest.current) { // flush + broadcast the last edit before another window takes over
-        clearTimeout(saveTimer.current); saveTimer.current = null;
-        saveAppData(STORE_KEY, latest.current);
-        if (bc.current) bc.current.postMessage({ t: "store", store: latest.current });
-      }
-    };
-    window.addEventListener("focus", onFocus);
-    window.addEventListener("blur", onBlur);
-    return () => { window.removeEventListener("focus", onFocus); window.removeEventListener("blur", onBlur); ch.close(); bc.current = null; };
+    return () => { ch.close(); bc.current = null; };
   }, [applyState]);
 
   /* ---- scenario handlers ---- */
@@ -426,7 +462,7 @@ export default function TreasuryCockpit() {
     setScenarios(list);
     applyState(target.state);
     setActiveId(id);
-    showToast("Switched to " + target.name);
+    showToast("Switched to " + target.name); // switching leaves unsaved state — the Save button reflects it
   };
   const saveAsScenario = (name, group) => {
     const id = uid();
@@ -639,8 +675,18 @@ export default function TreasuryCockpit() {
               <button className={"tabbtn" + (tab === "capital" ? " on" : "")} onClick={() => setTab("capital")}>Capital</button>
               <button className={"tabbtn" + (tab === "sheet" ? " on" : "")} onClick={() => setTab("sheet")}>Spreadsheet</button>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--muted)" }}>
-              <span title="Your plan is saved to the cloud (Supabase) and restored on every device">auto-saved</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+              <span style={{ color: canSave && !saving ? "#B7791F" : "var(--muted)", fontWeight: canSave && !saving ? 600 : 400 }}>
+                {saving ? "Saving…" : dirty ? "● Unsaved changes" : savedSig == null ? "● Not saved yet" : "All changes saved"}
+              </span>
+              <button className="btn" disabled={saving || !canSave} onClick={saveNow}
+                title="Save your plan to the cloud (⌘S / Ctrl+S)"
+                style={{ fontWeight: 700, opacity: saving || !canSave ? 0.55 : 1,
+                  background: canSave && !saving ? "var(--pos)" : undefined,
+                  color: canSave && !saving ? "#fff" : undefined,
+                  borderColor: canSave && !saving ? "var(--pos)" : undefined }}>
+                {saving ? "Saving…" : "Save"}
+              </button>
             </div>
           </div>
         </div>
@@ -820,7 +866,7 @@ function ScenarioPicker({ scenarios, activeId, onClose, onSwitch, onSaveAs, onRe
           <input className="inp" placeholder="New scenario name…" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newName.trim()) onSaveAs(newName.trim(), newGroup.trim()); }} style={{ flex: 2, minWidth: 160 }} />
           <input className="inp" placeholder="Group (optional)" list="tc-group-names" value={newGroup} onChange={(e) => setNewGroup(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newName.trim()) onSaveAs(newName.trim(), newGroup.trim()); }} style={{ flex: 1, minWidth: 110 }} />
           <datalist id="tc-group-names">{groupNames.map((g) => <option key={g} value={g} />)}</datalist>
-          <button className="btn" disabled={!newName.trim()} style={{ fontWeight: 600, opacity: newName.trim() ? 1 : 0.5 }} onClick={() => newName.trim() && onSaveAs(newName.trim(), newGroup.trim())} title="Fork the current plan into a new named scenario">+ Save current as new</button>
+          <button className="btn" disabled={!newName.trim()} style={{ fontWeight: 600, opacity: newName.trim() ? 1 : 0.5 }} onClick={() => newName.trim() && onSaveAs(newName.trim(), newGroup.trim())} title="Fork the current plan into a new named scenario (remember to Save afterward)">+ Create scenario from current</button>
         </div>
       </div>
     </div>
