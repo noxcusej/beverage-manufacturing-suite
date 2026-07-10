@@ -589,6 +589,19 @@ export default function TreasuryCockpit() {
   const sel = projects.find((p) => p.id === selId) || null;
   const patch = (id, fn) => setProjects((ps) => ps.map((p) => (p.id === id ? fn(p) : p)));
   const toggleHide = (id) => patch(id, (p) => ({ ...p, hidden: !p.hidden }));
+  /* drag-to-reorder a run in the list; `after` drops it below the target row */
+  const reorderProject = (fromId, toId, after) => setProjects((ps) => {
+    if (fromId === toId) return ps;
+    const from = ps.findIndex((p) => p.id === fromId);
+    if (from < 0) return ps;
+    const next = ps.slice();
+    const [moved] = next.splice(from, 1);
+    let to = next.findIndex((p) => p.id === toId);
+    if (to < 0) { next.splice(from, 0, moved); return next; }
+    if (after) to += 1;
+    next.splice(to, 0, moved);
+    return next;
+  });
   const addProject = () => { const id = uid(); setProjects((ps) => [...ps, { id, name: "New run", color: PALETTE[ps.length % PALETTE.length], startWeek: 2, duration: 3, events: defaultEvents(100000) }]); setSelId(id); };
   const dupProject = (p) => { const id = uid(); setProjects((ps) => [...ps, { ...p, id, name: p.name + " (copy)", startWeek: p.startWeek + p.duration + 1, events: p.events.map((e) => ({ ...e, id: uid() })) }]); setSelId(id); };
   const delProject = (id) => {
@@ -709,7 +722,7 @@ export default function TreasuryCockpit() {
         {tab === "plan" && (
           <PlanTab {...{ openingCash, setOpeningCash, floor, setFloor, calc, base, breach, weeklyBurn,
             activeName, openScenarios: () => setScenarioPickerOpen(true),
-            projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, addQuoteRuns, onDown, evWeek,
+            projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, reorderProject, addQuoteRuns, onDown, evWeek,
             ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, capInW: capB.inW, capOutW: capB.outW,
             horizon, TL_W, bands, fixedW, apArr: apB.arr, maxNet, maxLane, cumY, cumPts, cumPath, manualAdj, setAdj,
             floorY: cumY(floor), openingY: cumY(openingCash), zeroVisible: cumLo < 0 && cumHi > 0, zeroY: cumY(0) }} />
@@ -941,10 +954,11 @@ function QuotePicker({ existingIds, onClose, onImport }) {
 /* =====================  TAB 1  ===================== */
 function PlanTab(props) {
   const { openingCash, setOpeningCash, floor, setFloor, calc, base, breach, weeklyBurn,
-    projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, addQuoteRuns, onDown, evWeek,
+    projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, reorderProject, addQuoteRuns, onDown, evWeek,
     ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, capInW, capOutW, activeName, openScenarios,
     horizon, TL_W, bands, fixedW, apArr, maxNet, maxLane, cumY, cumPts, cumPath, floorY, openingY, zeroVisible, zeroY, manualAdj, setAdj } = props;
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [dnd, setDnd] = useState(null); // drag-to-reorder runs: { dragId, overId, after }
   const cfScroll = useRef(null), ganttScroll = useRef(null); // keep cash-flow + Gantt columns scrolled in lockstep so weeks line up
   const mirror = (from, to) => { if (from.current && to.current && to.current.scrollLeft !== from.current.scrollLeft) to.current.scrollLeft = from.current.scrollLeft; };
   const [runMsg, setRunMsg] = useState("");
@@ -983,7 +997,16 @@ function PlanTab(props) {
           <div style={{ width: RAIL_W, flex: "0 0 " + RAIL_W + "px", borderRight: "1px solid var(--line)", background: "#FBFAF6" }}>
             <div style={{ height: HEADER_H, borderBottom: "1px solid var(--line)", display: "flex", alignItems: "flex-end", padding: "0 12px 6px" }}><span className="eyebrow">Runs</span></div>
             {projects.map((p) => (
-              <div key={p.id} onClick={() => setSelId(p.id)} style={{ height: ROW_H, borderBottom: "1px solid var(--line2)", padding: "0 6px 0 12px", display: "flex", alignItems: "center", gap: 6, cursor: "pointer", background: p.id === selId ? "#F1EFE7" : "transparent" }}>
+              <div key={p.id}
+                draggable
+                onDragStart={(e) => { setDnd({ dragId: p.id, overId: p.id, after: false }); e.dataTransfer.effectAllowed = "move"; }}
+                onDragOver={(e) => { e.preventDefault(); if (!dnd) return; const r = e.currentTarget.getBoundingClientRect(); const after = e.clientY - r.top > r.height / 2; if (dnd.overId !== p.id || dnd.after !== after) setDnd({ ...dnd, overId: p.id, after }); }}
+                onDrop={(e) => { e.preventDefault(); if (dnd && dnd.dragId !== p.id) reorderProject(dnd.dragId, p.id, dnd.after); setDnd(null); }}
+                onDragEnd={() => setDnd(null)}
+                onClick={() => setSelId(p.id)}
+                style={{ height: ROW_H, borderBottom: "1px solid var(--line2)", padding: "0 6px 0 6px", display: "flex", alignItems: "center", gap: 6, cursor: "pointer", background: p.id === selId ? "#F1EFE7" : "transparent", opacity: dnd && dnd.dragId === p.id ? 0.4 : 1,
+                  boxShadow: dnd && dnd.dragId !== p.id && dnd.overId === p.id ? (dnd.after ? "inset 0 -2px 0 var(--pos)" : "inset 0 2px 0 var(--pos)") : undefined }}>
+                <span title="Drag to reorder" onClick={(ev) => ev.stopPropagation()} style={{ cursor: "grab", color: "var(--muted)", fontSize: 13, lineHeight: 1, flex: "0 0 auto", userSelect: "none" }}>⠿</span>
                 <span style={{ width: 9, height: 9, borderRadius: 3, background: p.color, flex: "0 0 auto", opacity: p.hidden ? 0.4 : 1 }} />
                 <span className="barlabel" style={{ flex: 1, color: p.hidden ? "var(--muted)" : "inherit", textDecoration: p.hidden ? "line-through" : "none" }}>{p.name}</span>
                 <span className="num" style={{ fontSize: 11, color: p.hidden ? "var(--muted)" : (calc.perProject[p.id] >= 0 ? "var(--in)" : "var(--out)") }}>{fmtK(calc.perProject[p.id])}</span>
