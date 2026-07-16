@@ -2946,6 +2946,13 @@ export default function CoPackingCalculator() {
             () => setTaxItems((p) => [...p, { id: 'tax-' + Date.now(), name: '', feeType: 'per-unit', rate: 0, qty: getFeeAutoQty('per-unit', effectiveCounts), qtyManual: false }]),
             'Add Tax / Fee', costs.taxCost, taxDrag
           )}
+          {taxItems.some((t) => t.feeType === 'per-proof-gallon') && counts.proofGallons === 0 && (
+            <div style={{ marginTop: 10, padding: '9px 12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, fontSize: 12.5, color: '#9a3412', lineHeight: 1.45 }}>
+              ⚠ <strong>Proof gallons are 0</strong>, so per-proof-gallon taxes (e.g. Federal Excise Tax) come out to $0.
+              Proof gallons are now derived from each formula's <strong>ABV %</strong> — set it on the run's formula(s) in the
+              <strong> Formula Calculator</strong> and this will calculate automatically. (You can also switch the line to a fixed amount and enter the tax manually.)
+            </div>
+          )}
         </div>
       </div>
 
