@@ -625,15 +625,31 @@ export default function Inventory() {
                           key={`max-${selectedItem.id}-${index}`}
                         />
                       </div>
-                      <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                        <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>$</span>
                         <input
                           type="number"
                           className="tier-input"
                           step="0.0001"
                           defaultValue={tier.price}
+                          style={{ flex: 1, minWidth: 0 }}
                           onBlur={(e) => updatePriceTier(selectedItem.id, index, 'price', parseFloat(e.target.value) || 0)}
                           key={`price-${selectedItem.id}-${index}`}
                         />
+                        <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>/</span>
+                        <select
+                          className="tier-input"
+                          value={tier.buyUnit || selectedItem.unit || 'gal'}
+                          onChange={(e) => updatePriceTier(selectedItem.id, index, 'buyUnit', e.target.value)}
+                          style={{ width: 54, flex: '0 0 auto', padding: '4px 2px' }}
+                          aria-label="Price unit"
+                        >
+                          <option value="gal">gal</option>
+                          <option value="L">L</option>
+                          <option value="lbs">lbs</option>
+                          <option value="kg">kg</option>
+                          <option value="oz">oz</option>
+                        </select>
                       </div>
                       <div>
                         <input
