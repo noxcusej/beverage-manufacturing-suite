@@ -759,20 +759,23 @@ export default function CoPackingCalculator() {
       caseCounts[flavor.formulaId] = (caseCounts[flavor.formulaId] || 0) + flavor.cases;
     });
 
-    // Use the run's pack/fill configuration to compute liquid volume — the run's
-    // unitsPerCase + fillVolume are the source of truth for "what we're producing now,"
-    // not the formula's stored format (which may be a different SKU size).
+    // Liquid volume drives ingredient demand. Fill size comes from EACH formula
+    // (its unitSizeVal), matching the export — not a single run-level fill applied
+    // to every flavor. Otherwise a run mixing e.g. 250 mL and 12 oz products is
+    // mis-costed (the whole run gets one size). Units-per-case stays run-level
+    // (how the run is packed) so the per-can rollup below stays consistent.
     const runUnitsPerCase = unitsPerCase || 24;
-    let runUnitOz = fillVolume || 12;
-    if (fillVolumeUnit === 'mL' || fillVolumeUnit === 'ml') runUnitOz = runUnitOz / 29.5735;
-    else if (fillVolumeUnit === 'L') runUnitOz = runUnitOz * 33.814;
 
     const rowsByKey = {};
     Object.entries(caseCounts).forEach(([formulaId, cases]) => {
       const formula = formulaById[formulaId];
       if (!formula?.ingredients?.length || cases <= 0) return;
+      let unitOz = formula.unitSizeVal || fillVolume || 12;
+      const fu = formula.unitSizeUnit;
+      if (fu === 'ml' || fu === 'mL') unitOz = unitOz / 29.5735;
+      else if (fu === 'L') unitOz = unitOz * 33.814;
       const units = cases * runUnitsPerCase;
-      const batchGal = (units * runUnitOz) / 128;
+      const batchGal = (units * unitOz) / 128;
       let baseYieldGal = formula.baseYield || 100;
       if (formula.baseYieldUnit === 'L') baseYieldGal = baseYieldGal / 3.78541;
       const scaleFactor = baseYieldGal > 0 ? batchGal / baseYieldGal : 1;
@@ -885,7 +888,7 @@ export default function CoPackingCalculator() {
       totalCost: rows.reduce((sum, row) => sum + row.lineCost, 0),
       missingPriceCount: rows.filter((row) => row.price <= 0 && row.orderQty > 0).length,
     };
-  }, [allFormulas, counts.flavorRows, fillVolume, fillVolumeUnit, inventoryMap, unitsPerCase]);
+  }, [allFormulas, counts.flavorRows, fillVolume, inventoryMap, unitsPerCase]);
 
   const getCalculatedIngredientCostPerCan = useCallback((flavor) => {
     return rawMaterialPO.costPerCanByFormulaId[flavor.formulaId] || 0;
