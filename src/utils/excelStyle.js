@@ -100,8 +100,19 @@ export function filename(value) {
 // ExcelJS is heavy (~270KB gzip). Load it on demand so it stays out of the
 // route bundle until the user actually clicks an export button.
 export async function loadExcelJS() {
-  const mod = await import('exceljs');
-  return mod.default;
+  // Flag the in-flight heavy import so the global vite:preloadError handler
+  // (see main.jsx) doesn't auto-reload — a reload here would wipe unsaved work.
+  if (typeof window !== 'undefined') window.__loadingHeavyChunk = true;
+  try {
+    const mod = await import('exceljs');
+    return mod.default;
+  } catch {
+    // A new deploy replaced hashed chunk filenames; this tab is running an old
+    // build whose ExcelJS chunk is gone (404). Give an actionable message.
+    throw new Error('The app was updated in the background. Please refresh the page (Cmd/Ctrl+Shift+R) and try the export again.');
+  } finally {
+    if (typeof window !== 'undefined') window.__loadingHeavyChunk = false;
+  }
 }
 
 // Build the workbook buffer and trigger a browser download.
