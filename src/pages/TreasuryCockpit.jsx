@@ -30,6 +30,12 @@ function mondayOf(d) { const x = new Date(d); const day = (x.getDay() + 6) % 7; 
 function addWeeks(d, n) { const x = new Date(d); x.setDate(x.getDate() + n * 7); return x; }
 const MS_WK = 604800000;
 const wkOfDate = (iso, base) => Math.floor((new Date(iso) - base) / MS_WK);
+/* `new Date("YYYY-MM-DD")` parses as UTC midnight, which sits *before* a local
+   `base` (local midnight) and can floor a week early. For user-picked dates,
+   parse and format in local time so the week math lines up with `base`. */
+const parseLocalDate = (iso) => { const [y, m, d] = String(iso).split("-").map(Number); return new Date(y, (m || 1) - 1, d || 1); };
+const wkOfLocalDate = (iso, base) => Math.floor((parseLocalDate(iso) - base) / MS_WK);
+const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 function fmtDate(iso) { const d = new Date(iso); return MON[d.getMonth()] + " " + d.getDate(); }
 
@@ -496,21 +502,26 @@ export default function TreasuryCockpit() {
     return { added, updated };
   };
 
-  const evWeek = (p, e) => (e.anchor === "start" ? p.startWeek : p.startWeek + p.duration) + e.offset;
+  /* A cash event normally floats with the run (anchor + offset). An optional
+     explicit `date` pins it to the calendar instead, so it holds its place when
+     the run is dragged or its duration changes. */
+  const evWeek = useCallback((p, e) => (e.date
+    ? Math.max(0, wkOfLocalDate(e.date, base))
+    : (e.anchor === "start" ? p.startWeek : p.startWeek + p.duration) + e.offset), [base]);
 
   /* eventId -> ISO date the budgeted line lands (week start, not before today) */
   const eventDateMap = useMemo(() => {
     const m = {};
     for (const p of projects) for (const e of p.events) { const d = addWeeks(base, evWeek(p, e)); m[e.id] = (d < base ? base : d).toISOString().slice(0, 10); }
     return m;
-  }, [projects, base]);
+  }, [projects, base, evWeek]);
 
   const horizon = useMemo(() => {
     let max = 20;
     for (const p of projects) { max = Math.max(max, p.startWeek + p.duration + 1); for (const e of p.events) max = Math.max(max, evWeek(p, e) + 2); }
     for (const b of ap) { if (b.include ?? defaultInclude(b.status)) max = Math.max(max, apPayWeek(b, base, eventDateMap) + 2); }
     return Math.min(max, 80);
-  }, [projects, ap, base, eventDateMap]);
+  }, [projects, ap, base, eventDateMap, evWeek]);
   const TL_W = horizon * WEEK_W;
 
   const fixedW = useMemo(() => buildFixed(fixed, base, horizon), [fixed, base, horizon]);
@@ -555,7 +566,7 @@ export default function TreasuryCockpit() {
     const totalFixed = fixedW.reduce((s, v) => s + v, 0);
     const totalAP = apB.arr.reduce((s, v) => s + v, 0);
     return { inW, outW, adjW, net, cum, totalIn, totalOut, totalFixed, totalAP, totalCapIn: capB.totalIn, totalCapSvc: capB.totalSvc, billedByEvent, perProject, trough, troughI, ending: cum[horizon - 1] ?? openingCash };
-  }, [projects, ap, fixedW, apB, capB, openingCash, horizon, manualAdj]);
+  }, [projects, ap, fixedW, apB, capB, openingCash, horizon, manualAdj, evWeek]);
 
   /* capital injection markers for the position chart */
   const capMarks = useMemo(() => {
@@ -775,7 +786,11 @@ function simulatePosition(projects, ctx) {
 // "optimize" re-times runs rather than shoving their receivables off the board
 function maxStartFor(p, horizon) {
   let rel = 0;
-  for (const e of (p.events || [])) rel = Math.max(rel, (e.anchor === "end" ? (p.duration || 0) : 0) + (Number(e.offset) || 0));
+  // Date-pinned events don't move with the run, so they can't push it off the board.
+  for (const e of (p.events || [])) {
+    if (e.date) continue;
+    rel = Math.max(rel, (e.anchor === "end" ? (p.duration || 0) : 0) + (Number(e.offset) || 0));
+  }
   return Math.max(0, horizon - 1 - rel);
 }
 function optimizeTiming(ctx) {
@@ -1157,7 +1172,7 @@ function PlanTab(props) {
             <button className="btn-x" onClick={() => delProject(sel.id)}>Remove run</button>
           </div>
           <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 14 }}>
-            <thead><tr>{["Cash event", "Direction", "Amount", "Anchor", "Offset (wks)", "Lands", ""].map((h, i) => (<th key={i} className="th" style={{ textAlign: i === 2 ? "right" : "left", padding: "0 6px 6px", fontWeight: 600 }}>{h}</th>))}</tr></thead>
+            <thead><tr>{["Cash event", "Direction", "Amount", "Anchor", "Offset (wks)", "Lands / pin date", ""].map((h, i) => (<th key={i} className="th" style={{ textAlign: i === 2 ? "right" : "left", padding: "0 6px 6px", fontWeight: 600 }}>{h}</th>))}</tr></thead>
             <tbody>
               {sel.events.map((e) => {
                 const w = evWeek(sel, e);
@@ -1166,9 +1181,27 @@ function PlanTab(props) {
                   <td><input className="inp" value={e.label} onChange={(ev) => setE("label", ev.target.value)} /></td>
                   <td><select className="sel" value={e.dir} onChange={(ev) => setE("dir", ev.target.value)}><option value="in">In ▲</option><option value="out">Out ▼</option></select></td>
                   <td style={{ textAlign: "right" }}><NumberInput value={e.amount} onChange={(v) => setE("amount", v)} className="inp num" style={{ width: 110, textAlign: "right" }} /></td>
-                  <td><select className="sel" value={e.anchor} onChange={(ev) => setE("anchor", ev.target.value)}><option value="start">Start</option><option value="end">End</option></select></td>
-                  <td><NumberInput value={e.offset} onChange={(v) => setE("offset", v)} integer className="inp num" style={{ width: 64 }} /></td>
-                  <td className="num" style={{ fontSize: 12, color: w < 0 || w >= horizon ? "var(--muted)" : "var(--ink)" }}>{dateLabel(base, w)}</td>
+                  <td><select className="sel" value={e.anchor} disabled={!!e.date}
+                    title={e.date ? "Ignored while this event is pinned to a date" : undefined}
+                    style={{ opacity: e.date ? 0.45 : 1 }}
+                    onChange={(ev) => setE("anchor", ev.target.value)}><option value="start">Start</option><option value="end">End</option></select></td>
+                  <td><NumberInput value={e.offset} onChange={(v) => setE("offset", v)} integer disabled={!!e.date}
+                    title={e.date ? "Ignored while this event is pinned to a date" : undefined}
+                    className="inp num" style={{ width: 64, opacity: e.date ? 0.45 : 1 }} /></td>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <input type="date" className="inp num"
+                        style={{ width: 132, fontSize: 11.5, fontWeight: e.date ? 700 : 400, color: e.date ? "var(--ink)" : "var(--muted)" }}
+                        value={e.date || isoLocal(addWeeks(base, Math.max(0, w)))}
+                        title={e.date
+                          ? "Pinned to this date — it stays put when the run moves. Clear to float with the run again."
+                          : "Floating with the run (anchor + offset). Pick a date to pin this event."}
+                        onChange={(ev) => setE("date", ev.target.value || undefined)} />
+                      {e.date
+                        ? <button className="btn-x" title="Unpin — go back to anchor + offset" onClick={() => setE("date", undefined)}>↺</button>
+                        : <span style={{ width: 18, display: "inline-block" }} />}
+                    </div>
+                  </td>
                   <td><button className="btn-x" onClick={() => removeEvent(sel.id, e.id)}>✕</button></td>
                 </tr>);
               })}
@@ -1738,7 +1771,7 @@ function SheetTab({ projects, setProjects, fixed, setFixed, ap, setAp, capital, 
    and partial input (a lone "-" or "12.") was dropped. This keeps a local string buffer while
    the field is focused, so what you type is exactly what you see, and still emits a parsed
    number to the live cash model on every keystroke. On blur it normalizes and clamps. */
-function NumberInput({ value, onChange, min, max, step = 1, integer = false, emptyValue, className = "inp num", style, placeholder, title }) {
+function NumberInput({ value, onChange, min, max, step = 1, integer = false, emptyValue, className = "inp num", style, placeholder, title, disabled = false }) {
   const [buf, setBuf] = useState(null);
   const empty = emptyValue !== undefined ? emptyValue : (min != null ? min : 0);
   const re = integer ? /^-?\d*$/ : /^-?\d*\.?\d*$/;
@@ -1781,7 +1814,7 @@ function NumberInput({ value, onChange, min, max, step = 1, integer = false, emp
     onChange(n);
   };
   return (
-    <input type="text" inputMode={integer ? "numeric" : "decimal"} className={className} style={style}
+    <input type="text" inputMode={integer ? "numeric" : "decimal"} className={className} style={style} disabled={disabled}
       placeholder={placeholder} title={title} value={shown} onChange={onChangeRaw} onBlur={onBlur} onKeyDown={onKeyDown} />
   );
 }
