@@ -484,6 +484,9 @@ export default function TreasuryCockpit() {
   };
   const renameScenario = (id, name) => setScenarios((prev) => prev.map((s) => (s.id === id ? { ...s, name: (name && name.trim()) || s.name, updatedAt: Date.now() } : s)));
   const setScenarioGroup = (id, group) => setScenarios((prev) => prev.map((s) => (s.id === id ? { ...s, group: (group && group.trim()) || undefined, updatedAt: Date.now() } : s)));
+  /* free-text notes about a scenario (assumptions, what changed, what to revisit) */
+  const setScenarioNotes = (id, notes) => setScenarios((prev) => prev.map((s) => (s.id === id ? { ...s, notes: notes || undefined, updatedAt: Date.now() } : s)));
+  const activeNotes = (scenarios.find((s) => s.id === activeId) || {}).notes || "";
   const deleteScenario = (id) => {
     setScenarios((prev) => {
       const remaining = prev.filter((s) => s.id !== id);
@@ -733,6 +736,7 @@ export default function TreasuryCockpit() {
         {tab === "plan" && (
           <PlanTab {...{ openingCash, setOpeningCash, floor, setFloor, calc, base, breach, weeklyBurn,
             activeName, openScenarios: () => setScenarioPickerOpen(true),
+            activeNotes, setActiveNotes: (v) => setScenarioNotes(activeId, v),
             projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, reorderProject, addQuoteRuns, onDown, evWeek,
             ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, capInW: capB.inW, capOutW: capB.outW,
             horizon, TL_W, bands, fixedW, apArr: apB.arr, maxNet, maxLane, cumY, cumPts, cumPath, manualAdj, setAdj,
@@ -852,14 +856,21 @@ function ScenarioPicker({ scenarios, activeId, onClose, onSwitch, onSaveAs, onRe
   const row = (s) => {
     const active = s.id === activeId;
     return (
-      <div key={s.id} onClick={() => onSwitch(s.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderBottom: "1px solid var(--line2)", cursor: "pointer", background: active ? "#F1EFE7" : "transparent" }}>
-        <span style={{ fontWeight: 600, fontSize: 13 }}>{s.name}</span>
-        {active && <span className="tag" style={{ color: "#1f5e54", background: "#dcefe9" }}>active</span>}
-        <span style={{ fontSize: 11, color: "var(--muted)" }}>updated {fmtWhen(s.updatedAt)}</span>
-        <div style={{ flex: 1 }} />
-        <button className="btn-x" style={{ fontSize: 11 }} title="Assign to a group" onClick={(e) => { e.stopPropagation(); const n = window.prompt("Group name (leave blank to ungroup):", s.group || ""); if (n !== null) onSetGroup(s.id, n); }}>Group</button>
-        <button className="btn-x" style={{ fontSize: 11 }} title="Rename" onClick={(e) => { e.stopPropagation(); const n = window.prompt("Rename scenario:", s.name); if (n) onRename(s.id, n); }}>Rename</button>
-        {scenarios.length > 1 && <button className="btn-x" style={{ fontSize: 11 }} title="Delete" onClick={(e) => { e.stopPropagation(); if (window.confirm('Delete scenario "' + s.name + '"? This can\'t be undone.')) onDelete(s.id); }}>Delete</button>}
+      <div key={s.id} onClick={() => onSwitch(s.id)} style={{ padding: "10px 16px", borderBottom: "1px solid var(--line2)", cursor: "pointer", background: active ? "#F1EFE7" : "transparent" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontWeight: 600, fontSize: 13 }}>{s.name}</span>
+          {active && <span className="tag" style={{ color: "#1f5e54", background: "#dcefe9" }}>active</span>}
+          <span style={{ fontSize: 11, color: "var(--muted)" }}>updated {fmtWhen(s.updatedAt)}</span>
+          <div style={{ flex: 1 }} />
+          <button className="btn-x" style={{ fontSize: 11 }} title="Assign to a group" onClick={(e) => { e.stopPropagation(); const n = window.prompt("Group name (leave blank to ungroup):", s.group || ""); if (n !== null) onSetGroup(s.id, n); }}>Group</button>
+          <button className="btn-x" style={{ fontSize: 11 }} title="Rename" onClick={(e) => { e.stopPropagation(); const n = window.prompt("Rename scenario:", s.name); if (n) onRename(s.id, n); }}>Rename</button>
+          {scenarios.length > 1 && <button className="btn-x" style={{ fontSize: 11 }} title="Delete" onClick={(e) => { e.stopPropagation(); if (window.confirm('Delete scenario "' + s.name + '"? This can\'t be undone.')) onDelete(s.id); }}>Delete</button>}
+        </div>
+        {s.notes && (
+          <div style={{ marginTop: 3, fontSize: 11.5, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={s.notes}>
+            📝 {s.notes}
+          </div>
+        )}
       </div>
     );
   };
@@ -970,7 +981,7 @@ function QuotePicker({ existingIds, onClose, onImport }) {
 function PlanTab(props) {
   const { openingCash, setOpeningCash, floor, setFloor, calc, base, breach, weeklyBurn,
     projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, reorderProject, addQuoteRuns, onDown, evWeek,
-    ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, capInW, capOutW, activeName, openScenarios,
+    ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, capInW, capOutW, activeName, openScenarios, activeNotes, setActiveNotes,
     horizon, TL_W, bands, fixedW, apArr, maxNet, maxLane, cumY, cumPts, cumPath, floorY, openingY, zeroVisible, zeroY, manualAdj, setAdj } = props;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [dnd, setDnd] = useState(null); // drag-to-reorder runs: { dragId, overId, after }
@@ -995,6 +1006,25 @@ function PlanTab(props) {
         <Field label="Cash floor" value={floor} onChange={setFloor} hint="min you'll tolerate" />
         <div className="card" style={{ padding: "7px 11px" }}><div className="eyebrow">Fixed burn / wk</div><div className="num" style={{ fontSize: 16, fontWeight: 700, color: "var(--fixed)", marginTop: 4 }}>{fmt(weeklyBurn)}</div></div>
         <button className="btn" style={{ marginLeft: "auto", alignSelf: "flex-end", fontWeight: 600 }} title="Switch, save, rename, or delete budget scenarios" onClick={openScenarios}>📁 {activeName} ▾</button>
+      </div>
+
+      {/* Free-text notes for the ACTIVE scenario — assumptions, what changed, what to revisit. */}
+      <div className="card" style={{ marginTop: 12, padding: "10px 14px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <span className="eyebrow">📝 Notes</span>
+          <span style={{ fontSize: 11.5, color: "var(--muted)" }}>for <strong style={{ color: "var(--ink)" }}>{activeName}</strong> · saved with the scenario</span>
+        </div>
+        <textarea
+          value={activeNotes}
+          onChange={(e) => setActiveNotes(e.target.value)}
+          rows={2}
+          placeholder="What this scenario assumes, what you changed, what to revisit…"
+          style={{
+            width: "100%", boxSizing: "border-box", resize: "vertical", minHeight: 42,
+            font: "inherit", fontSize: 12.5, lineHeight: 1.5, color: "var(--ink)",
+            padding: "7px 9px", border: "1px solid var(--line)", borderRadius: 7, background: "#fff",
+          }}
+        />
       </div>
 
       <div style={{ marginTop: 14 }}>
