@@ -984,6 +984,7 @@ function PlanTab(props) {
     ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, capInW, capOutW, activeName, openScenarios, activeNotes, setActiveNotes,
     horizon, TL_W, bands, fixedW, apArr, maxNet, maxLane, cumY, cumPts, cumPath, floorY, openingY, zeroVisible, zeroY, manualAdj, setAdj } = props;
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [notesFull, setNotesFull] = useState(false); // notes expanded to a full-screen modal
   const [dnd, setDnd] = useState(null); // drag-to-reorder runs: { dragId, overId, after }
   const cfScroll = useRef(null), ganttScroll = useRef(null); // keep cash-flow + Gantt columns scrolled in lockstep so weeks line up
   const mirror = (from, to) => { if (from.current && to.current && to.current.scrollLeft !== from.current.scrollLeft) to.current.scrollLeft = from.current.scrollLeft; };
@@ -991,6 +992,12 @@ function PlanTab(props) {
   const [opt, setOpt] = useState(null); // { moves, before, after, target, reachedTarget, applied }
   const [greenUntil, setGreenUntil] = useState(() => addWeeks(base, 12).toISOString().slice(0, 10));
   const tgtLabel = (iso) => { const [, m, d] = (iso || "").split("-").map(Number); return m ? MON[m - 1] + " " + d : iso; }; // local, no TZ shift
+  useEffect(() => { // Esc closes the expanded notes
+    if (!notesFull) return;
+    const h = (e) => { if (e.key === "Escape") setNotesFull(false); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [notesFull]);
   const runOptimize = () => {
     const targetWeek = Math.max(0, Math.min(horizon, wkOfDate(greenUntil, base))); // green THROUGH the week containing the target date
     const res = optimizeTiming({ projects, ap, fixedW, capInW, capOutW, base, horizon, openingCash, floor, evWeek, targetWeek, manualAdj });
@@ -1013,6 +1020,8 @@ function PlanTab(props) {
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
           <span className="eyebrow">📝 Notes</span>
           <span style={{ fontSize: 11.5, color: "var(--muted)" }}>for <strong style={{ color: "var(--ink)" }}>{activeName}</strong> · saved with the scenario</span>
+          <div style={{ flex: 1 }} />
+          <button className="btn-x" title="Expand notes to full screen" onClick={() => setNotesFull(true)}>⤢ Expand</button>
         </div>
         <textarea
           value={activeNotes}
@@ -1026,6 +1035,31 @@ function PlanTab(props) {
           }}
         />
       </div>
+
+      {notesFull && (
+        <div onClick={() => setNotesFull(false)} style={{ position: "fixed", inset: 0, background: "rgba(20,22,26,.45)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div className="card" onClick={(e) => e.stopPropagation()} style={{ width: "min(1040px, 96vw)", height: "88vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 12 }}>
+              <span className="eyebrow">📝 Notes</span>
+              <span style={{ fontSize: 11.5, color: "var(--muted)" }}>for <strong style={{ color: "var(--ink)" }}>{activeName}</strong> · saved with the scenario</span>
+              <div style={{ flex: 1 }} />
+              <span style={{ fontSize: 11.5, color: "var(--muted)" }}>Esc to close</span>
+              <button className="btn-x" title="Close" onClick={() => setNotesFull(false)}>✕</button>
+            </div>
+            <textarea
+              autoFocus
+              value={activeNotes}
+              onChange={(e) => setActiveNotes(e.target.value)}
+              placeholder="What this scenario assumes, what you changed, what to revisit…"
+              style={{
+                flex: 1, width: "100%", boxSizing: "border-box", resize: "none",
+                border: "none", outline: "none", background: "#fff",
+                font: "inherit", fontSize: 14, lineHeight: 1.65, color: "var(--ink)", padding: "16px 18px",
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       <div style={{ marginTop: 14 }}>
         <WeeklyCashFlow {...{ calc, fixedW, apArr, capInW, capOutW, base, horizon, floor, openingCash, manualAdj, setAdj, scrollRef: cfScroll, onScrollSync: () => mirror(cfScroll, ganttScroll) }} />
