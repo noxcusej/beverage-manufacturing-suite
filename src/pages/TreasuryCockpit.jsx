@@ -573,9 +573,10 @@ export default function TreasuryCockpit() {
 
   /* capital injection markers for the position chart */
   const capMarks = useMemo(() => {
-    const wkOf = (d) => Math.floor((new Date(d) - base) / MS_WK);
-    return capital.map((c) => ({ week: wkOf(c.date), label: c.label, amount: Number(c.amount) || 0, type: c.type })).filter((m) => m.week >= 0 && m.week < horizon);
+    return capital.map((c) => ({ id: c.id, week: wkOfLocalDate(c.date, base), label: c.label, amount: Number(c.amount) || 0, type: c.type })).filter((m) => m.week >= 0 && m.week < horizon);
   }, [capital, base, horizon]);
+  /* drag a capital injection along the planner timeline → set its date to that week */
+  const moveCapital = (id, week) => setCapital((xs) => xs.map((c) => (c.id === id ? { ...c, date: isoLocal(addWeeks(base, Math.max(0, Math.min(horizon - 1, week)))) } : c)));
 
   /* drag */
   const onDown = (e, p, mode) => { e.preventDefault(); e.stopPropagation(); setSelId(p.id); setDrag({ id: p.id, mode, x0: e.clientX, sw: p.startWeek, du: p.duration }); };
@@ -738,7 +739,7 @@ export default function TreasuryCockpit() {
             activeName, openScenarios: () => setScenarioPickerOpen(true),
             activeNotes, setActiveNotes: (v) => setScenarioNotes(activeId, v),
             projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, reorderProject, addQuoteRuns, onDown, evWeek,
-            ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, capInW: capB.inW, capOutW: capB.outW,
+            ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, moveCapital, capInW: capB.inW, capOutW: capB.outW,
             horizon, TL_W, bands, fixedW, apArr: apB.arr, maxNet, maxLane, cumY, cumPts, cumPath, manualAdj, setAdj,
             floorY: cumY(floor), openingY: cumY(openingCash), zeroVisible: cumLo < 0 && cumHi > 0, zeroY: cumY(0) }} />
         )}
@@ -981,11 +982,19 @@ function QuotePicker({ existingIds, onClose, onImport }) {
 function PlanTab(props) {
   const { openingCash, setOpeningCash, floor, setFloor, calc, base, breach, weeklyBurn,
     projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, reorderProject, addQuoteRuns, onDown, evWeek,
-    ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, capInW, capOutW, activeName, openScenarios, activeNotes, setActiveNotes,
+    ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, moveCapital, capInW, capOutW, activeName, openScenarios, activeNotes, setActiveNotes,
     horizon, TL_W, bands, fixedW, apArr, maxNet, maxLane, cumY, cumPts, cumPath, floorY, openingY, zeroVisible, zeroY, manualAdj, setAdj } = props;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [notesFull, setNotesFull] = useState(false); // notes expanded to a full-screen modal
   const [dnd, setDnd] = useState(null); // drag-to-reorder runs: { dragId, overId, after }
+  const [capDrag, setCapDrag] = useState(null); // dragging a capital marker along the timeline: { id, x0, startWeek }
+  useEffect(() => {
+    if (!capDrag) return;
+    const onMove = (e) => { const wk = capDrag.startWeek + Math.round((e.clientX - capDrag.x0) / WEEK_W); moveCapital(capDrag.id, wk); };
+    const onUp = () => setCapDrag(null);
+    window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, [capDrag, moveCapital]);
   const cfScroll = useRef(null), ganttScroll = useRef(null); // keep cash-flow + Gantt columns scrolled in lockstep so weeks line up
   const mirror = (from, to) => { if (from.current && to.current && to.current.scrollLeft !== from.current.scrollLeft) to.current.scrollLeft = from.current.scrollLeft; };
   const [runMsg, setRunMsg] = useState("");
@@ -1107,6 +1116,7 @@ function PlanTab(props) {
               <div className="eyebrow">Cash position</div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 11, color: "var(--muted)" }}><span style={{ width: 16, height: 2, background: "var(--pos)" }} /> running balance</div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 11, color: "var(--muted)" }}><span style={{ width: 16, height: 0, borderTop: "2px dashed var(--danger)" }} /> floor {fmtK(floor)}</div>
+              {capMarks.length > 0 && <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 11, color: "var(--muted)" }}><span style={{ width: 16, height: 0, borderTop: "2px dashed var(--cap)" }} /> capital · drag to re-time</div>}
             </div>
           </div>
 
@@ -1162,7 +1172,14 @@ function PlanTab(props) {
                   {breach && (<rect x={0} y={floorY} width={TL_W} height={Math.max(0, CUM_H - floorY)} fill="#C0392B" opacity={0.06} />)}
                   {zeroVisible && (<line x1={0} y1={zeroY} x2={TL_W} y2={zeroY} stroke="var(--line)" />)}
                   <line x1={0} y1={floorY} x2={TL_W} y2={floorY} stroke="var(--danger)" strokeWidth="1.4" strokeDasharray="5 4" opacity={0.8} />
-                  {capMarks.map((m, i) => { const x = m.week * WEEK_W + WEEK_W / 2; const col = m.type === "equity" ? "var(--in)" : "var(--cap)"; return (<g key={i}><line x1={x} y1={0} x2={x} y2={CUM_H} stroke={col} strokeWidth="1.2" strokeDasharray="2 3" opacity={0.7} /><polygon points={(x - 4) + ",2 " + (x + 4) + ",2 " + x + ",9"} fill={col} /><text x={x} y={CUM_H - 4} textAnchor="middle" fontSize="8.5" className="num" fill={col}>+{fmtK(m.amount)}</text></g>); })}
+                  {capMarks.map((m, i) => { const x = m.week * WEEK_W + WEEK_W / 2; const col = m.type === "equity" ? "var(--in)" : "var(--cap)"; const active = capDrag?.id === m.id; return (
+                    <g key={m.id ?? i} style={{ cursor: "ew-resize" }} onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setCapDrag({ id: m.id, x0: e.clientX, startWeek: m.week }); }}>
+                      <rect x={x - 8} y={0} width={16} height={CUM_H} fill="transparent" />
+                      <line x1={x} y1={0} x2={x} y2={CUM_H} stroke={col} strokeWidth={active ? 2.2 : 1.2} strokeDasharray="2 3" opacity={active ? 1 : 0.7} />
+                      <polygon points={(x - 5) + ",2 " + (x + 5) + ",2 " + x + ",10"} fill={col} />
+                      <text x={x} y={CUM_H - 4} textAnchor="middle" fontSize="8.5" className="num" fill={col}>+{fmtK(m.amount)}</text>
+                      <title>{m.label} · +{fmtK(m.amount)} · drag to move the injection date</title>
+                    </g>); })}
                   <line x1={0} y1={openingY} x2={WEEK_W / 2} y2={openingY} stroke="var(--pos)" strokeWidth="2" />
                   <path d={cumPath} fill="none" stroke="var(--pos)" strokeWidth="2.2" />
                   {cumPts.map((pt, i) => (<circle key={i} cx={pt[0]} cy={pt[1]} r={2} fill={calc.cum[i] < floor ? "var(--danger)" : "var(--pos)"} />))}
