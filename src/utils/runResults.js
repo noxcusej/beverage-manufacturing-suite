@@ -1,5 +1,6 @@
 import { getProducts, lookupPrice, NEW_ART_PREP_FEE } from '../data/drayhorsePricing';
 import { computePlanDerived } from '../pages/runQuoting/packagingPlan';
+import { getFormulas } from '../data/store';
 
 // Recomputes a saved run's counts / costs / breakdown from its stored state, so any
 // two saved runs can be compared (or exported) without the live calculator component.
@@ -32,7 +33,7 @@ function resolveQty(item, counts) {
   return getFeeAutoQty(item.feeType, counts);
 }
 
-function computeCounts(config, flavors) {
+function computeCounts(config, flavors, formulaById = {}) {
   const {
     fillVolume = 12,
     fillVolumeUnit = 'oz',
@@ -49,11 +50,13 @@ function computeCounts(config, flavors) {
   else if (fillVolumeUnit === 'L') fillOz = fillVolume * 33.814;
 
   let totalGallons = 0;
+  let proofGal = 0; // ABV now lives on the formula — sum per flavor (parity with the live calculator)
   const flavorRows = (flavors || []).map((f) => {
     const cases = f.cases || 0;
     const cans = cases * unitsPerCase;
     const gallons = fillOz > 0 ? (cans * fillOz) / 128 : 0;
     totalGallons += gallons;
+    proofGal += gallons * ((Number(formulaById[f.formulaId]?.abv) || 0) / 100) * 2;
     const pallets = casesPerPallet > 0 ? Math.ceil(cases / casesPerPallet) : 0;
     return { ...f, gallons, cans, cases, pallets };
   });
@@ -64,7 +67,10 @@ function computeCounts(config, flavors) {
   const totalPacks = packSize > 0 ? Math.ceil(totalUnits / packSize) : 0;
   const totalTrucks = palletsPerTruck > 0 ? Math.ceil(totalPallets / palletsPerTruck) : 0;
   const totalShifts = cansPerMinute > 0 ? totalUnits / cansPerMinute / 480 : 0;
-  const proofGallons = Math.round(totalGallons * (abv / 100) * 2 * 100) / 100;
+  // Prefer per-formula ABV; fall back to a legacy run-level config.abv for old runs saved before ABV moved to the formula.
+  const proofGallons = proofGal > 0
+    ? Math.round(proofGal * 100) / 100
+    : Math.round(totalGallons * (abv / 100) * 2 * 100) / 100;
   const flavorCount = flavorRows.length;
 
   return { flavorRows, flavorCount, totalGallons, totalUnits, totalPacks, totalCases, totalPallets, totalTrucks, totalShifts, proofGallons };
@@ -200,7 +206,7 @@ function computeCartonCost(carton, carrierType, packSize, totalUnits, planDerive
   };
 }
 
-export function computeRunResults(run) {
+export function computeRunResults(run, formulas) {
   const config = run.config || {};
   const carrierType = config.carrierType || 'paktech';
   const packSize = config.packSize || 4;
@@ -208,7 +214,10 @@ export function computeRunResults(run) {
   const casesPerPallet = config.casesPerPallet || 80;
   const palletsPerTruck = config.palletsPerTruck || 20;
 
-  const counts = computeCounts(config, run.flavors);
+  // ABV/proof gallons come from each flavor's formula. Default to the current
+  // library so callers (Summary, exports, comparisons) need no changes.
+  const formulaById = Object.fromEntries(((formulas || getFormulas()) || []).map((f) => [f.id, f]));
+  const counts = computeCounts(config, run.flavors, formulaById);
   const planDerived = computePlanDerived(
     run.packagingPlan || { groups: [] },
     counts.flavorRows,
