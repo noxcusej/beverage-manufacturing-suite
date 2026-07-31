@@ -78,29 +78,31 @@ const SEED_CAPITAL = [
 
 function buildCapital(items, base, horizon) {
   const inW = new Array(horizon).fill(0), outW = new Array(horizon).fill(0);
+  const inItems = Array.from({ length: horizon }, () => []), outItems = Array.from({ length: horizon }, () => []);
   const wkOf = (d) => Math.floor((d - base) / MS_WK);
   const perItem = {};
   for (const it of items) {
     const amt = Number(it.amount) || 0;
+    const nm = it.label || (it.type === "equity" ? "Equity injection" : "Debt draw");
     const fd = new Date(it.date);
     const fw = wkOf(fd);
-    if (fw >= 0 && fw < horizon) inW[fw] += amt;
+    if (fw >= 0 && fw < horizon) { inW[fw] += amt; if (amt) inItems[fw].push({ label: nm, amount: amt }); }
     let svcWindow = 0;
     if (it.type === "debt" && it.repay && it.repay !== "none" && amt > 0 && it.termMonths > 0) {
       const n = it.termMonths, r = (Number(it.rate) || 0) / 100 / 12;
       const day = fd.getDate(), fY = fd.getFullYear(), fM = fd.getMonth();
       if (it.repay === "amortizing") {
         const pmt = r > 0 ? amt * r / (1 - Math.pow(1 + r, -n)) : amt / n;
-        for (let m = 1; m <= n; m++) { const w = wkOf(new Date(fY, fM + m, day)); if (w >= 0 && w < horizon) { outW[w] += pmt; svcWindow += pmt; } }
+        for (let m = 1; m <= n; m++) { const w = wkOf(new Date(fY, fM + m, day)); if (w >= 0 && w < horizon) { outW[w] += pmt; svcWindow += pmt; outItems[w].push({ label: nm + " — P&I payment", amount: pmt }); } }
       } else if (it.repay === "interest-only") {
         const interest = amt * r;
-        for (let m = 1; m <= n; m++) { const pay = interest + (m === n ? amt : 0); const w = wkOf(new Date(fY, fM + m, day)); if (w >= 0 && w < horizon) { outW[w] += pay; svcWindow += pay; } }
+        for (let m = 1; m <= n; m++) { const pay = interest + (m === n ? amt : 0); const w = wkOf(new Date(fY, fM + m, day)); if (w >= 0 && w < horizon) { outW[w] += pay; svcWindow += pay; outItems[w].push({ label: nm + (m === n ? " — interest + balloon principal" : " — interest"), amount: pay }); } }
       }
     }
     perItem[it.id] = { in: amt, svcWindow };
   }
   const totalIn = inW.reduce((s, v) => s + v, 0), totalSvc = outW.reduce((s, v) => s + v, 0);
-  return { inW, outW, totalIn, totalSvc, perItem };
+  return { inW, outW, inItems, outItems, totalIn, totalSvc, perItem };
 }
 
 const weeklyEquiv = (it) => {
@@ -114,6 +116,7 @@ const weeklyEquiv = (it) => {
 
 function buildFixed(items, base, horizon) {
   const arr = new Array(horizon).fill(0);
+  const its = Array.from({ length: horizon }, () => []);
   const baseY = base.getFullYear(), baseM = base.getMonth();
   const last = addWeeks(base, horizon - 1);
   const monthsSpan = (last.getFullYear() - baseY) * 12 + (last.getMonth() - baseM) + 1;
@@ -121,16 +124,18 @@ function buildFixed(items, base, horizon) {
   const inWin = (it, w) => w >= (it.from || 0) && (it.to == null || it.to === "" || w <= it.to);
   for (const it of items) {
     const amt = Number(it.amount) || 0;
-    if (it.cadence === "weekly") { for (let i = 0; i < horizon; i++) if (inWin(it, i)) arr[i] += amt; }
-    else if (it.cadence === "biweekly") { const a = Math.max(0, it.anchorWeek || 0); for (let i = a; i < horizon; i += 2) if (inWin(it, i)) arr[i] += amt; }
-    else if (it.cadence === "one-time") { const w = it.week || 0; if (w >= 0 && w < horizon && inWin(it, w)) arr[w] += amt; }
+    const nm = it.label || it.cat || "Fixed cost";
+    const add = (w) => { arr[w] += amt; if (amt) its[w].push({ label: nm, amount: amt }); };
+    if (it.cadence === "weekly") { for (let i = 0; i < horizon; i++) if (inWin(it, i)) add(i); }
+    else if (it.cadence === "biweekly") { const a = Math.max(0, it.anchorWeek || 0); for (let i = a; i < horizon; i += 2) if (inWin(it, i)) add(i); }
+    else if (it.cadence === "one-time") { const w = it.week || 0; if (w >= 0 && w < horizon && inWin(it, w)) add(w); }
     else {
       const step = it.cadence === "monthly" ? 1 : it.cadence === "quarterly" ? 3 : 12;
       const day = Math.min(Math.max(1, it.day || 1), 28);
-      for (let m = 0; m < monthsSpan; m += step) { const w = wkOf(new Date(baseY, baseM + m, day)); if (w >= 0 && w < horizon && inWin(it, w)) arr[w] += amt; }
+      for (let m = 0; m < monthsSpan; m += step) { const w = wkOf(new Date(baseY, baseM + m, day)); if (w >= 0 && w < horizon && inWin(it, w)) add(w); }
     }
   }
-  return arr;
+  return { arr, items: its };
 }
 
 const defaultPayISO = (b, base) => { const due = new Date(b.dueDate); return (due < base ? base : due).toISOString().slice(0, 10); };
@@ -138,14 +143,15 @@ const apPayDate = (b, base, evDates) => b.payDate || (b.eventId && evDates && ev
 const apPayWeek = (b, base, evDates) => Math.max(0, wkOfDate(apPayDate(b, base, evDates), base));
 function buildAP(bills, base, horizon, evDates) {
   const arr = new Array(horizon).fill(0);
+  const items = Array.from({ length: horizon }, () => []);
   let total = 0;
   for (const b of bills) {
     if (!(b.include ?? defaultInclude(b.status))) continue;
     total += b.amount;
     const w = apPayWeek(b, base, evDates);
-    if (w >= 0 && w < horizon) arr[w] += b.amount;
+    if (w >= 0 && w < horizon) { arr[w] += b.amount; items[w].push({ label: (b.vendor || "Bill") + (b.ref ? " · " + b.ref : ""), amount: b.amount }); }
   }
-  return { arr, total };
+  return { arr, total, items };
 }
 
 /* ---- Xero AP import ----
@@ -527,7 +533,8 @@ export default function TreasuryCockpit() {
   }, [projects, ap, base, eventDateMap, evWeek]);
   const TL_W = horizon * WEEK_W;
 
-  const fixedW = useMemo(() => buildFixed(fixed, base, horizon), [fixed, base, horizon]);
+  const fixedB = useMemo(() => buildFixed(fixed, base, horizon), [fixed, base, horizon]);
+  const fixedW = fixedB.arr;
   const weeklyBurn = useMemo(() => fixed.reduce((s, it) => s + weeklyEquiv(it), 0), [fixed]);
   const apB = useMemo(() => buildAP(ap, base, horizon, eventDateMap), [ap, base, horizon, eventDateMap]);
   const capB = useMemo(() => buildCapital(capital, base, horizon), [capital, base, horizon]);
@@ -537,6 +544,7 @@ export default function TreasuryCockpit() {
     const billedByEvent = {};
     for (const b of ap) { if ((b.include ?? defaultInclude(b.status)) && b.eventId) billedByEvent[b.eventId] = (billedByEvent[b.eventId] || 0) + b.amount; }
     const inW = new Array(horizon).fill(0), outW = new Array(horizon).fill(0);
+    const inItems = Array.from({ length: horizon }, () => []), outItems = Array.from({ length: horizon }, () => []);
     let totalIn = 0, totalOut = 0; const perProject = {};
     for (const p of projects) {
       let net = 0;
@@ -546,7 +554,7 @@ export default function TreasuryCockpit() {
           net += e.amount;
           /* a hidden run is excluded from the position entirely (scenario toggle),
              but we still tally its standalone net so the rail can show what it would add */
-          if (!p.hidden) { totalIn += e.amount; if (within) inW[w] += e.amount; }
+          if (!p.hidden) { totalIn += e.amount; if (within) { inW[w] += e.amount; if (e.amount) inItems[w].push({ label: p.name + " — " + e.label, amount: e.amount }); } }
         } else {
           net -= e.amount;
           if (!p.hidden) {
@@ -554,7 +562,7 @@ export default function TreasuryCockpit() {
             /* actual linked bills replace the budgeted estimate; only the un-billed
                remainder of the budget still projects as expected cash at its planned week */
             const remaining = Math.max(0, e.amount - (billedByEvent[e.id] || 0));
-            if (within) outW[w] += remaining;
+            if (within && remaining > 0) { outW[w] += remaining; outItems[w].push({ label: p.name + " — " + e.label + (billedByEvent[e.id] > 0 ? " (net of linked bills)" : ""), amount: remaining }); }
           }
         }
       }
@@ -568,8 +576,10 @@ export default function TreasuryCockpit() {
     cum.forEach((v, i) => { if (v < trough) { trough = v; troughI = i; } });
     const totalFixed = fixedW.reduce((s, v) => s + v, 0);
     const totalAP = apB.arr.reduce((s, v) => s + v, 0);
-    return { inW, outW, adjW, net, cum, totalIn, totalOut, totalFixed, totalAP, totalCapIn: capB.totalIn, totalCapSvc: capB.totalSvc, billedByEvent, perProject, trough, troughI, ending: cum[horizon - 1] ?? openingCash };
-  }, [projects, ap, fixedW, apB, capB, openingCash, horizon, manualAdj, evWeek]);
+    // per-week line items behind each cash-flow row, for the hover breakdown
+    const breakdown = { in: inItems, cap: capB.inItems, out: outItems, fixed: fixedB.items, ap: apB.items, debt: capB.outItems };
+    return { inW, outW, adjW, net, cum, totalIn, totalOut, totalFixed, totalAP, totalCapIn: capB.totalIn, totalCapSvc: capB.totalSvc, billedByEvent, perProject, breakdown, trough, troughI, ending: cum[horizon - 1] ?? openingCash };
+  }, [projects, ap, fixedW, fixedB, apB, capB, openingCash, horizon, manualAdj, evWeek]);
 
   /* capital injection markers for the position chart */
   const capMarks = useMemo(() => {
@@ -1677,14 +1687,38 @@ function WeeklyCashFlow({ calc, fixedW, apArr, capInW, capOutW, base, horizon, f
   // below 0 = red text, 0-to-floor = clear yellow highlight, at/above floor = normal
   const posStyle = (v) => (v < 0 ? { color: "var(--danger)" } : v < floor ? { color: "#7c5e00", background: "#FDE047" } : { color: "var(--pos)" });
   const rows = [
-    { label: "Receipts — runs", vals: calc.inW, sign: 1, tone: "in" },
-    { label: "Capital in", vals: capInW, sign: 1, tone: "cap" },
-    { label: "Run payments", vals: calc.outW, sign: -1, tone: "out" },
-    { label: "Fixed costs", vals: fixedW, sign: -1, tone: "fixed" },
-    { label: "Bills", vals: apArr, sign: -1, tone: "ap" },
-    { label: "Debt service", vals: capOutW, sign: -1, tone: "out" },
+    { label: "Receipts — runs", vals: calc.inW, sign: 1, tone: "in", key: "in" },
+    { label: "Capital in", vals: capInW, sign: 1, tone: "cap", key: "cap" },
+    { label: "Run payments", vals: calc.outW, sign: -1, tone: "out", key: "out" },
+    { label: "Fixed costs", vals: fixedW, sign: -1, tone: "fixed", key: "fixed" },
+    { label: "Bills", vals: apArr, sign: -1, tone: "ap", key: "ap" },
+    { label: "Debt service", vals: capOutW, sign: -1, tone: "out", key: "debt" },
   ];
   const toneColor = (t) => t === "in" ? "var(--in)" : t === "out" ? "var(--out)" : t === "fixed" ? "var(--fixed)" : t === "ap" ? "var(--ap)" : t === "cap" ? "var(--cap)" : "var(--ink)";
+  // hover breakdowns: what makes up each cell / net / closing, and the week's date range
+  const md = (d) => MON[d.getMonth()] + " " + d.getDate();
+  const weekRange = (i) => { const s = addWeeks(base, i); const e = new Date(s); e.setDate(e.getDate() + 6); return md(s) + " – " + md(e); };
+  const money = (v) => (v < 0 ? "−" : "") + fmt(Math.abs(v));
+  const line = (label, mag, sign) => "  " + label + "   " + (sign < 0 ? "−" : "+") + fmt(Math.abs(mag));
+  const cellTip = (r, i, val) => {
+    const items = (calc.breakdown && calc.breakdown[r.key] && calc.breakdown[r.key][i]) || [];
+    if (!items.length) return undefined;
+    const head = r.label + " · " + (r.sign < 0 ? "−" : "") + fmtK(Math.abs(val)) + "  ·  week of " + md(addWeeks(base, i));
+    return head + "\n" + items.map((it) => line(it.label, it.amount, r.sign)).join("\n");
+  };
+  const netTip = (i) => {
+    const c = [];
+    const add = (label, mag, sign) => { if (mag) c.push(line(label, mag, sign)); };
+    add("Receipts — runs", calc.inW[i], 1); add("Capital in", capInW[i], 1);
+    add("Run payments", calc.outW[i], -1); add("Fixed costs", fixedW[i], -1);
+    add("Bills", apArr[i], -1); add("Debt service", capOutW[i], -1);
+    const a = (calc.adjW || [])[i] || 0; if (a) c.push(line("Manual adjustment", a, a < 0 ? -1 : 1));
+    return "Net change · week of " + md(addWeeks(base, i)) + "\n" + (c.join("\n") || "  (no activity)") + "\n  = " + money(calc.net[i]);
+  };
+  const closeTip = (i) => {
+    const prev = i === 0 ? openingCash : calc.cum[i - 1];
+    return "Closing position · week of " + md(addWeeks(base, i)) + "\n  " + (i === 0 ? "Opening cash" : "Prev close") + "   " + money(prev) + "\n  Net change   " + money(calc.net[i]) + "\n  = " + money(calc.cum[i]);
+  };
   const CFW = WEEK_W; // week columns match the Gantt exactly so they line up vertically
   const TOTW = WEEK_W + 20;
   const railW = { width: RAIL_W, minWidth: RAIL_W, maxWidth: RAIL_W }; // label column == Gantt rail width
@@ -1708,7 +1742,7 @@ function WeeklyCashFlow({ calc, fixedW, apArr, capInW, capOutW, base, horizon, f
           <thead>
             <tr>
               <th style={{ ...stickyH, fontWeight: 600 }} className="th">Week beginning</th>
-              {Array.from({ length: horizon }).map((_, i) => (<th key={i} className="th" style={{ padding: "6px 6px", textAlign: "right", fontWeight: 600 }}>{dateLabel(base, i, true)}</th>))}
+              {Array.from({ length: horizon }).map((_, i) => (<th key={i} className="th" title={"Week " + weekRange(i)} style={{ padding: "6px 6px", textAlign: "right", fontWeight: 600, cursor: "help" }}>{dateLabel(base, i, true)}</th>))}
               <th className="th" style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700, borderLeft: "1px solid var(--line)" }}>Total</th>
             </tr>
           </thead>
@@ -1716,7 +1750,7 @@ function WeeklyCashFlow({ calc, fixedW, apArr, capInW, capOutW, base, horizon, f
             {rows.map((r, ri) => { const tot = r.vals.reduce((s, v) => s + v, 0) * r.sign; return (
               <tr key={ri}>
                 <td style={{ ...stickyL, color: toneColor(r.tone), fontWeight: 600 }}>{r.label}</td>
-                {r.vals.map((v, i) => { const x = v * r.sign; return (<td key={i} style={{ padding: "4px 6px", textAlign: "right", color: x === 0 ? "#cfcabb" : toneColor(r.tone) }}>{x === 0 ? "·" : fmtK(x)}</td>); })}
+                {r.vals.map((v, i) => { const x = v * r.sign; const tip = cellTip(r, i, x); return (<td key={i} title={tip} style={{ padding: "4px 6px", textAlign: "right", color: x === 0 ? "#cfcabb" : toneColor(r.tone), cursor: tip ? "help" : "default" }}>{x === 0 ? "·" : fmtK(x)}</td>); })}
                 <td style={{ padding: "4px 10px", textAlign: "right", fontWeight: 700, color: toneColor(r.tone), borderLeft: "1px solid var(--line)" }}>{fmtK(tot)}</td>
               </tr>); })}
             {(() => { const adj = calc.adjW || []; const adjTot = adj.reduce((s, v) => s + v, 0); return (
@@ -1733,12 +1767,12 @@ function WeeklyCashFlow({ calc, fixedW, apArr, capInW, capOutW, base, horizon, f
               </tr>); })()}
             <tr>
               <td style={{ ...stickyL, fontWeight: 700, borderTop: "1px solid var(--line)" }}>Net change</td>
-              {calc.net.map((v, i) => (<td key={i} style={{ padding: "4px 6px", textAlign: "right", borderTop: "1px solid var(--line)", color: v === 0 ? "#cfcabb" : v > 0 ? "var(--in)" : "var(--out)" }}>{v === 0 ? "·" : fmtK(v)}</td>))}
+              {calc.net.map((v, i) => (<td key={i} title={netTip(i)} style={{ padding: "4px 6px", textAlign: "right", borderTop: "1px solid var(--line)", cursor: "help", color: v === 0 ? "#cfcabb" : v > 0 ? "var(--in)" : "var(--out)" }}>{v === 0 ? "·" : fmtK(v)}</td>))}
               <td style={{ padding: "4px 10px", textAlign: "right", fontWeight: 700, borderTop: "1px solid var(--line)", borderLeft: "1px solid var(--line)" }}>{fmtK(calc.net.reduce((s, v) => s + v, 0))}</td>
             </tr>
             <tr>
               <td style={{ ...stickyL, fontWeight: 700 }}>Closing position</td>
-              {calc.cum.map((v, i) => (<td key={i} style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600, ...posStyle(v) }}>{fmtK(v)}</td>))}
+              {calc.cum.map((v, i) => (<td key={i} title={closeTip(i)} style={{ padding: "4px 6px", textAlign: "right", fontWeight: 600, cursor: "help", ...posStyle(v) }}>{fmtK(v)}</td>))}
               <td style={{ padding: "4px 10px", textAlign: "right", fontWeight: 700, borderLeft: "1px solid var(--line)", ...posStyle(calc.ending) }}>{fmtK(calc.ending)}</td>
             </tr>
           </tbody>
