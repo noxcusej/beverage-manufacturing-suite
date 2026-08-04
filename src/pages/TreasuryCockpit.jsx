@@ -1087,6 +1087,18 @@ function PlanTab(props) {
         <WeeklyCashFlow {...{ calc, fixedW, apArr, capInW, capOutW, base, horizon, floor, openingCash, manualAdj, setAdj, scrollRef: cfScroll, onScrollSync: () => mirror(cfScroll, ganttScroll) }} />
       </div>
 
+      {/* inline financing — edit equity/debt timing & value without leaving the planner */}
+      <div className="card" style={{ marginTop: 12, overflow: "hidden" }}>
+        <div onClick={() => setFinOpen((o) => !o)} title="Add or edit equity & debt — timing and amount — without switching to the Capital tab"
+          style={{ padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", borderBottom: finOpen ? "1px solid var(--line)" : "none" }}>
+          <span style={{ fontSize: 11, color: "var(--muted)", width: 10 }}>{finOpen ? "▾" : "▸"}</span>
+          <span className="eyebrow">Financing</span>
+          <span className="num" style={{ fontSize: 11.5, color: "var(--muted)" }}>{capital.length} source{capital.length === 1 ? "" : "s"} · in {fmt(capB.totalIn)}{capB.totalSvc ? " · debt service " + fmt(capB.totalSvc) : ""}</span>
+          <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--cap)", fontWeight: 600 }}>{finOpen ? "hide" : "＋ edit equity & debt"}</span>
+        </div>
+        {finOpen && <div style={{ padding: 14 }}><CapitalEditor capital={capital} setCapital={setCapital} capB={capB} /></div>}
+      </div>
+
       {breach && (
         <div style={{ marginTop: 12, border: "1px solid #e6c4bd", background: "#fbeeea", color: "#8f3322", borderRadius: 9, padding: "9px 13px", fontSize: 13 }}>
           <b>Cash floor breached.</b> Position drops to {fmt(calc.trough)} the week of {dateLabel(base, calc.troughI)}, below your {fmt(floor)} floor. Slide a deposit earlier, push a run, stretch a bill's pay week, or trim fixed burn.
@@ -1216,18 +1228,6 @@ function PlanTab(props) {
         </label>
         <button className="btn" title="Re-time runs to keep the position above the floor through the target date" onClick={runOptimize} style={{ fontWeight: 600 }}>✨ Optimize timing</button>
         {runMsg && <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{runMsg}</span>}
-      </div>
-
-      {/* inline financing — edit equity/debt timing & value without leaving the planner */}
-      <div className="card" style={{ marginTop: 14, overflow: "hidden" }}>
-        <div onClick={() => setFinOpen((o) => !o)} title="Add or edit equity & debt — timing and amount — without switching to the Capital tab"
-          style={{ padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", borderBottom: finOpen ? "1px solid var(--line)" : "none" }}>
-          <span style={{ fontSize: 11, color: "var(--muted)", width: 10 }}>{finOpen ? "▾" : "▸"}</span>
-          <span className="eyebrow">Financing</span>
-          <span className="num" style={{ fontSize: 11.5, color: "var(--muted)" }}>{capital.length} source{capital.length === 1 ? "" : "s"} · in {fmt(capB.totalIn)}{capB.totalSvc ? " · debt service " + fmt(capB.totalSvc) : ""}</span>
-          <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--cap)", fontWeight: 600 }}>{finOpen ? "hide" : "edit equity & debt"}</span>
-        </div>
-        {finOpen && <div style={{ padding: 14 }}><CapitalEditor capital={capital} setCapital={setCapital} capB={capB} /></div>}
       </div>
 
       {opt && (
