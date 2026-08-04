@@ -750,6 +750,7 @@ export default function TreasuryCockpit() {
             activeNotes, setActiveNotes: (v) => setScenarioNotes(activeId, v),
             projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, reorderProject, addQuoteRuns, onDown, evWeek,
             ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, moveCapital, capInW: capB.inW, capOutW: capB.outW,
+            capital, setCapital, capB,
             horizon, TL_W, bands, fixedW, apArr: apB.arr, maxNet, maxLane, cumY, cumPts, cumPath, manualAdj, setAdj,
             floorY: cumY(floor), openingY: cumY(openingCash), zeroVisible: cumLo < 0 && cumHi > 0, zeroY: cumY(0) }} />
         )}
@@ -993,8 +994,10 @@ function PlanTab(props) {
   const { openingCash, setOpeningCash, floor, setFloor, calc, base, breach, weeklyBurn,
     projects, selId, setSelId, sel, patch, addProject, dupProject, delProject, toggleHide, reorderProject, addQuoteRuns, onDown, evWeek,
     ap, linkBill, unlinkBill, removeEvent, eventDateMap, setPayDate, capMarks, moveCapital, capInW, capOutW, activeName, openScenarios, activeNotes, setActiveNotes,
+    capital, setCapital, capB,
     horizon, TL_W, bands, fixedW, apArr, maxNet, maxLane, cumY, cumPts, cumPath, floorY, openingY, zeroVisible, zeroY, manualAdj, setAdj } = props;
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [finOpen, setFinOpen] = useState(false); // inline Financing panel expanded
   const [notesFull, setNotesFull] = useState(false); // notes expanded to a full-screen modal
   const [dnd, setDnd] = useState(null); // drag-to-reorder runs: { dragId, overId, after }
   const [capDrag, setCapDrag] = useState(null); // dragging a capital marker along the timeline: { id, x0, startWeek }
@@ -1213,6 +1216,18 @@ function PlanTab(props) {
         </label>
         <button className="btn" title="Re-time runs to keep the position above the floor through the target date" onClick={runOptimize} style={{ fontWeight: 600 }}>✨ Optimize timing</button>
         {runMsg && <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{runMsg}</span>}
+      </div>
+
+      {/* inline financing — edit equity/debt timing & value without leaving the planner */}
+      <div className="card" style={{ marginTop: 14, overflow: "hidden" }}>
+        <div onClick={() => setFinOpen((o) => !o)} title="Add or edit equity & debt — timing and amount — without switching to the Capital tab"
+          style={{ padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", borderBottom: finOpen ? "1px solid var(--line)" : "none" }}>
+          <span style={{ fontSize: 11, color: "var(--muted)", width: 10 }}>{finOpen ? "▾" : "▸"}</span>
+          <span className="eyebrow">Financing</span>
+          <span className="num" style={{ fontSize: 11.5, color: "var(--muted)" }}>{capital.length} source{capital.length === 1 ? "" : "s"} · in {fmt(capB.totalIn)}{capB.totalSvc ? " · debt service " + fmt(capB.totalSvc) : ""}</span>
+          <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--cap)", fontWeight: 600 }}>{finOpen ? "hide" : "edit equity & debt"}</span>
+        </div>
+        {finOpen && <div style={{ padding: 14 }}><CapitalEditor capital={capital} setCapital={setCapital} capB={capB} /></div>}
       </div>
 
       {opt && (
@@ -1622,12 +1637,51 @@ function StatusTag({ status }) {
 }
 
 /* =====================  TAB 5  ===================== */
-function CapitalTab({ capital, setCapital, base, horizon, capB, cum, floor, openingCash, bands, TL_W, capMarks }) {
+/* Editable financing table (equity + debt). Shared by the Capital tab and the
+   inline "Financing" panel on the planner so both edit the same live capital. */
+function CapitalEditor({ capital, setCapital, capB }) {
   const setC = (id, k, val) => setCapital((xs) => xs.map((x) => (x.id === id ? { ...x, [k]: val } : x)));
   const del = (id) => setCapital((xs) => xs.filter((x) => x.id !== id));
   const addEquity = () => setCapital((xs) => [...xs, { id: uid(), type: "equity", label: "Equity raise", amount: 250000, date: iso(28), rate: 0, termMonths: 0, repay: "none" }]);
   const addDebt = () => setCapital((xs) => [...xs, { id: uid(), type: "debt", label: "Term loan", amount: 250000, date: iso(28), rate: 9, termMonths: 36, repay: "amortizing" }]);
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 920 }}>
+        <thead><tr>{["Source", "Type", "Amount", "Funding date", "Rate %", "Term (mo)", "Repayment", "Svc (window)", ""].map((h, i) => (<th key={i} className="th" style={{ textAlign: i === 2 || i === 7 ? "right" : "left", padding: "0 6px 8px", fontWeight: 600 }}>{h}</th>))}</tr></thead>
+        <tbody>
+          {capital.length === 0 && (<tr><td colSpan={9} style={{ padding: "10px 6px", color: "var(--muted)", fontSize: 12.5 }}>No financing yet — add an equity injection or debt draw below.</td></tr>)}
+          {capital.map((c) => {
+            const isDebt = c.type === "debt";
+            const svcWindow = capB.perItem[c.id] ? capB.perItem[c.id].svcWindow : 0;
+            return (
+              <tr key={c.id} className="evrow">
+                <td><input className="inp" style={{ minWidth: 150 }} value={c.label} onChange={(e) => setC(c.id, "label", e.target.value)} /></td>
+                <td><select className="sel" value={c.type} onChange={(e) => setC(c.id, "type", e.target.value)}><option value="equity">Equity</option><option value="debt">Debt</option></select></td>
+                <td style={{ textAlign: "right" }}><NumberInput value={c.amount} onChange={(v) => setC(c.id, "amount", v)} className="inp num" style={{ width: 120, textAlign: "right" }} /></td>
+                <td><input className="inp num" style={{ width: 144 }} type="date" value={c.date} onChange={(e) => setC(c.id, "date", e.target.value)} /></td>
+                <td>{isDebt ? <NumberInput value={c.rate} onChange={(v) => setC(c.id, "rate", v)} min={0} className="inp num" style={{ width: 64 }} /> : <span style={{ color: "#b8b2a4" }}>—</span>}</td>
+                <td>{isDebt ? <NumberInput value={c.termMonths} onChange={(v) => setC(c.id, "termMonths", v)} min={0} integer className="inp num" style={{ width: 64 }} /> : <span style={{ color: "#b8b2a4" }}>—</span>}</td>
+                <td>{isDebt ? (
+                  <select className="sel" value={c.repay} onChange={(e) => setC(c.id, "repay", e.target.value)}>
+                    <option value="amortizing">Amortizing</option><option value="interest-only">Interest-only</option><option value="none">None (track in fixed)</option>
+                  </select>
+                ) : <span style={{ color: "#b8b2a4" }}>—</span>}</td>
+                <td className="num" style={{ textAlign: "right", fontSize: 12.5, color: "var(--out)" }}>{isDebt && c.repay !== "none" ? fmt(svcWindow) : "—"}</td>
+                <td><button className="btn-x" onClick={() => del(c.id)}>✕</button></td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button className="btn" onClick={addEquity}>+ Equity injection</button>
+        <button className="btn" onClick={addDebt}>+ Debt draw</button>
+      </div>
+    </div>
+  );
+}
 
+function CapitalTab({ capital, setCapital, base, horizon, capB, cum, floor, openingCash, bands, TL_W, capMarks }) {
   const equityIn = capital.filter((c) => c.type === "equity").reduce((s, c) => s + (Number(c.amount) || 0), 0);
   const debtIn = capital.filter((c) => c.type === "debt").reduce((s, c) => s + (Number(c.amount) || 0), 0);
 
@@ -1642,37 +1696,8 @@ function CapitalTab({ capital, setCapital, base, horizon, capB, cum, floor, open
 
       <MiniPosition {...{ cum, floor, openingCash, base, horizon, TL_W, laneData: capB.inW, laneColor: "var(--cap)", title: "Cash position with capital", hint: "markers = injections · size a raise to clear the floor at the trough", markers: capMarks, bands }} />
 
-      <div className="card" style={{ marginTop: 14, padding: 16, overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 920 }}>
-          <thead><tr>{["Source", "Type", "Amount", "Funding date", "Rate %", "Term (mo)", "Repayment", "Svc (window)", ""].map((h, i) => (<th key={i} className="th" style={{ textAlign: i === 2 || i === 7 ? "right" : "left", padding: "0 6px 8px", fontWeight: 600 }}>{h}</th>))}</tr></thead>
-          <tbody>
-            {capital.map((c) => {
-              const isDebt = c.type === "debt";
-              const svcWindow = capB.perItem[c.id] ? capB.perItem[c.id].svcWindow : 0;
-              return (
-                <tr key={c.id} className="evrow">
-                  <td><input className="inp" style={{ minWidth: 150 }} value={c.label} onChange={(e) => setC(c.id, "label", e.target.value)} /></td>
-                  <td><select className="sel" value={c.type} onChange={(e) => setC(c.id, "type", e.target.value)}><option value="equity">Equity</option><option value="debt">Debt</option></select></td>
-                  <td style={{ textAlign: "right" }}><NumberInput value={c.amount} onChange={(v) => setC(c.id, "amount", v)} className="inp num" style={{ width: 120, textAlign: "right" }} /></td>
-                  <td><input className="inp num" style={{ width: 144 }} type="date" value={c.date} onChange={(e) => setC(c.id, "date", e.target.value)} /></td>
-                  <td>{isDebt ? <NumberInput value={c.rate} onChange={(v) => setC(c.id, "rate", v)} min={0} className="inp num" style={{ width: 64 }} /> : <span style={{ color: "#b8b2a4" }}>—</span>}</td>
-                  <td>{isDebt ? <NumberInput value={c.termMonths} onChange={(v) => setC(c.id, "termMonths", v)} min={0} integer className="inp num" style={{ width: 64 }} /> : <span style={{ color: "#b8b2a4" }}>—</span>}</td>
-                  <td>{isDebt ? (
-                    <select className="sel" value={c.repay} onChange={(e) => setC(c.id, "repay", e.target.value)}>
-                      <option value="amortizing">Amortizing</option><option value="interest-only">Interest-only</option><option value="none">None (track in fixed)</option>
-                    </select>
-                  ) : <span style={{ color: "#b8b2a4" }}>—</span>}</td>
-                  <td className="num" style={{ textAlign: "right", fontSize: 12.5, color: "var(--out)" }}>{isDebt && c.repay !== "none" ? fmt(svcWindow) : "—"}</td>
-                  <td><button className="btn-x" onClick={() => del(c.id)}>✕</button></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <button className="btn" onClick={addEquity}>+ Equity injection</button>
-          <button className="btn" onClick={addDebt}>+ Debt draw</button>
-        </div>
+      <div className="card" style={{ marginTop: 14, padding: 16 }}>
+        <CapitalEditor capital={capital} setCapital={setCapital} capB={capB} />
       </div>
 
       <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 16, lineHeight: 1.6 }}>
