@@ -1122,6 +1122,7 @@ function PlanTab(props) {
                 <span title="Drag to reorder" onClick={(ev) => ev.stopPropagation()} style={{ cursor: "grab", color: "var(--muted)", fontSize: 13, lineHeight: 1, flex: "0 0 auto", userSelect: "none" }}>⠿</span>
                 <span style={{ width: 9, height: 9, borderRadius: 3, background: p.color, flex: "0 0 auto", opacity: p.hidden ? 0.4 : 1 }} />
                 <span className="barlabel" style={{ flex: 1, color: p.hidden ? "var(--muted)" : "inherit", textDecoration: p.hidden ? "line-through" : "none" }}>{p.name}</span>
+                {!p.hidden && p.events.some((e) => evWeek(p, e) < 0) && (<span title="Has cash events dated before today — not counted. Drag the run later to include them." style={{ color: "var(--danger)", fontSize: 11, flex: "0 0 auto", cursor: "help" }}>◀⚠</span>)}
                 <span className="num" style={{ fontSize: 11, color: p.hidden ? "var(--muted)" : (calc.perProject[p.id] >= 0 ? "var(--in)" : "var(--out)") }}>{fmtK(calc.perProject[p.id])}</span>
                 <button className="btn-x" title={p.hidden ? "Hidden from cash position — click to show" : "Hide from cash position"} onClick={(ev) => { ev.stopPropagation(); toggleHide(p.id); }} style={{ padding: "0 3px", flex: "0 0 auto", display: "flex", alignItems: "center", color: p.hidden ? "var(--muted)" : "var(--ink)" }}>{p.hidden ? <EyeOff /> : <EyeOn />}</button>
               </div>
@@ -1163,6 +1164,17 @@ function PlanTab(props) {
                       <div className="handle" style={{ right: -1 }} onMouseDown={(e) => onDown(e, p, "end")} />
                     </div>
                     {!p.hidden && p.events.map((e) => { const w = evWeek(p, e); if (w < 0 || w >= horizon) return null; return (<span key={e.id} style={{ position: "absolute", left: w * WEEK_W + WEEK_W / 2, bottom: 2, transform: "translateX(-50%)", fontSize: 9, color: e.dir === "in" ? "var(--in)" : "var(--out)", zIndex: 2 }} title={e.label + "  " + (e.dir === "in" ? "+" : "-") + fmt(e.amount) + "  ·  " + dateLabel(base, w)}>{e.dir === "in" ? "▲" : "▼"}</span>); })}
+                    {!p.hidden && (() => {
+                      const past = p.events.filter((e) => evWeek(p, e) < 0);
+                      if (!past.length) return null;
+                      const inSum = past.filter((e) => e.dir === "in").reduce((s, e) => s + e.amount, 0);
+                      const outSum = past.filter((e) => e.dir === "out").reduce((s, e) => s + e.amount, 0);
+                      const tip = past.length + " cash event" + (past.length === 1 ? "" : "s") + " dated before " + dateLabel(base, 0) + " — NOT counted in the position:\n" +
+                        past.map((e) => "  " + e.label + "   " + (e.dir === "in" ? "+" : "−") + fmt(e.amount) + "  ·  " + dateLabel(base, evWeek(p, e))).join("\n") +
+                        (inSum ? "\n  missing receipts +" + fmt(inSum) : "") + (outSum ? "\n  missing payments −" + fmt(outSum) : "") +
+                        "\nDrag the run later, or move these into the horizon.";
+                      return (<div title={tip} onClick={(ev) => { ev.stopPropagation(); setSelId(p.id); }} style={{ position: "absolute", left: 1, top: 9, height: 18, display: "flex", alignItems: "center", gap: 2, padding: "0 4px", borderRadius: 4, background: "#fbeeea", border: "1px solid var(--danger)", color: "var(--danger)", fontSize: 9.5, fontWeight: 700, cursor: "help", zIndex: 4 }}>◀ {past.length}</div>);
+                    })()}
                   </div>
                 ))}
               </div>
