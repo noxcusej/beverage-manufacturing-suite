@@ -1094,9 +1094,10 @@ function PlanTab(props) {
           <span style={{ fontSize: 11, color: "var(--muted)", width: 10 }}>{finOpen ? "▾" : "▸"}</span>
           <span className="eyebrow">Financing</span>
           <span className="num" style={{ fontSize: 11.5, color: "var(--muted)" }}>{capital.length} source{capital.length === 1 ? "" : "s"} · in {fmt(capB.totalIn)}{capB.totalSvc ? " · debt service " + fmt(capB.totalSvc) : ""}</span>
+          {(() => { const n = capital.filter((c) => Math.floor((new Date(c.date) - base) / MS_WK) < 0).length; return n ? (<span title="Financing dated before today is not counted in the position — open to fix the dates." style={{ fontSize: 11.5, color: "var(--danger)", fontWeight: 700, cursor: "help" }}>◀ {n} before start — not counted</span>) : null; })()}
           <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--cap)", fontWeight: 600 }}>{finOpen ? "hide" : "＋ edit equity & debt"}</span>
         </div>
-        {finOpen && <div style={{ padding: 14 }}><CapitalEditor capital={capital} setCapital={setCapital} capB={capB} /></div>}
+        {finOpen && <div style={{ padding: 14 }}><CapitalEditor capital={capital} setCapital={setCapital} capB={capB} base={base} horizon={horizon} /></div>}
       </div>
 
       {breach && (
@@ -1651,7 +1652,8 @@ function StatusTag({ status }) {
 /* =====================  TAB 5  ===================== */
 /* Editable financing table (equity + debt). Shared by the Capital tab and the
    inline "Financing" panel on the planner so both edit the same live capital. */
-function CapitalEditor({ capital, setCapital, capB }) {
+function CapitalEditor({ capital, setCapital, capB, base, horizon }) {
+  const fwOf = (c) => (base ? Math.floor((new Date(c.date) - base) / MS_WK) : 0); // funding week vs chart start
   const setC = (id, k, val) => setCapital((xs) => xs.map((x) => (x.id === id ? { ...x, [k]: val } : x)));
   const del = (id) => setCapital((xs) => xs.filter((x) => x.id !== id));
   const addEquity = () => setCapital((xs) => [...xs, { id: uid(), type: "equity", label: "Equity raise", amount: 250000, date: iso(28), rate: 0, termMonths: 0, repay: "none" }]);
@@ -1665,12 +1667,18 @@ function CapitalEditor({ capital, setCapital, capB }) {
           {capital.map((c) => {
             const isDebt = c.type === "debt";
             const svcWindow = capB.perItem[c.id] ? capB.perItem[c.id].svcWindow : 0;
+            const fw = fwOf(c);
+            const past = base && fw < 0, future = base && horizon != null && fw >= horizon;
+            const warn = past ? "This " + c.type + " is dated before the chart start (today) — it is NOT counted in the cash position. Set the date to today or later." : future ? "This " + c.type + " is dated after the chart window ends — it is NOT counted in the cash position." : null;
             return (
               <tr key={c.id} className="evrow">
                 <td><input className="inp" style={{ minWidth: 150 }} value={c.label} onChange={(e) => setC(c.id, "label", e.target.value)} /></td>
                 <td><select className="sel" value={c.type} onChange={(e) => setC(c.id, "type", e.target.value)}><option value="equity">Equity</option><option value="debt">Debt</option></select></td>
                 <td style={{ textAlign: "right" }}><NumberInput value={c.amount} onChange={(v) => setC(c.id, "amount", v)} className="inp num" style={{ width: 120, textAlign: "right" }} /></td>
-                <td><input className="inp num" style={{ width: 144 }} type="date" value={c.date} onChange={(e) => setC(c.id, "date", e.target.value)} /></td>
+                <td>
+                  <input className="inp num" style={{ width: 144, borderColor: warn ? "var(--danger)" : undefined }} type="date" value={c.date} onChange={(e) => setC(c.id, "date", e.target.value)} />
+                  {warn && <div title={warn} style={{ color: "var(--danger)", fontSize: 9.5, fontWeight: 700, marginTop: 2, cursor: "help" }}>{past ? "◀ before start — not counted" : "▶ after end — not counted"}</div>}
+                </td>
                 <td>{isDebt ? <NumberInput value={c.rate} onChange={(v) => setC(c.id, "rate", v)} min={0} className="inp num" style={{ width: 64 }} /> : <span style={{ color: "#b8b2a4" }}>—</span>}</td>
                 <td>{isDebt ? <NumberInput value={c.termMonths} onChange={(v) => setC(c.id, "termMonths", v)} min={0} integer className="inp num" style={{ width: 64 }} /> : <span style={{ color: "#b8b2a4" }}>—</span>}</td>
                 <td>{isDebt ? (
@@ -1709,7 +1717,7 @@ function CapitalTab({ capital, setCapital, base, horizon, capB, cum, floor, open
       <MiniPosition {...{ cum, floor, openingCash, base, horizon, TL_W, laneData: capB.inW, laneColor: "var(--cap)", title: "Cash position with capital", hint: "markers = injections · size a raise to clear the floor at the trough", markers: capMarks, bands }} />
 
       <div className="card" style={{ marginTop: 14, padding: 16 }}>
-        <CapitalEditor capital={capital} setCapital={setCapital} capB={capB} />
+        <CapitalEditor capital={capital} setCapital={setCapital} capB={capB} base={base} horizon={horizon} />
       </div>
 
       <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 16, lineHeight: 1.6 }}>
