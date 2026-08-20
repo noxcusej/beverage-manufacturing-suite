@@ -11,6 +11,13 @@ import {
   REJECTED,
 } from '../data/procurement';
 import { fetchProcurementData, attachmentUrl, SOURCE_DEMO } from '../data/ramp';
+import { loadComments, postComment, removeComment, groupComments, commentKey, SOURCE_LOCAL } from '../data/comments';
+import CommentThread from '../components/CommentThread';
+import PortalLinksPanel from '../components/procurement/PortalLinksPanel';
+import {
+  Stat, ApprovalBadge, PaymentBadge, AttachmentList, LineItems, TotalsStrip,
+} from '../components/procurement/Primitives';
+import { fmtDate } from '../components/procurement/format';
 import {
   getBillDecisions,
   setBillDecision,
@@ -21,16 +28,6 @@ import {
 } from '../data/store';
 
 const ALL_CLIENTS = '__all__';
-
-function fmtDate(iso) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-function daysUntil(iso) {
-  if (!iso) return null;
-  return Math.round((new Date(iso) - Date.now()) / 86400000);
-}
 
 function csvEscape(cell) {
   const s = String(cell ?? '');
@@ -51,101 +48,12 @@ function downloadCsv(rows, filename) {
   URL.revokeObjectURL(url);
 }
 
-// ── Small presentational pieces ─────────────────────────────────────────────
-
-function Stat({ label, value, hint, tone }) {
-  return (
-    <div className={`proc-stat${tone ? ` proc-stat--${tone}` : ''}`}>
-      <div className="proc-stat-label">{label}</div>
-      <div className="proc-stat-value">{value}</div>
-      {hint && <div className="proc-stat-hint">{hint}</div>}
-    </div>
-  );
-}
-
-function ApprovalBadge({ approval }) {
-  if (approval.state === REJECTED) {
-    return <span className="proc-badge proc-badge--rejected" title={approval.reason || 'Rejected'}>Rejected</span>;
-  }
-  return approval.auto
-    ? <span className="proc-badge proc-badge--auto" title="Approved automatically — no rejection recorded">Approved &middot; auto</span>
-    : <span className="proc-badge proc-badge--approved" title={`Approved by ${approval.by || 'a reviewer'}`}>Approved</span>;
-}
-
-function PaymentBadge({ bill }) {
-  if (bill.isPaid) return <span className="proc-badge proc-badge--paid">Paid</span>;
-  const due = daysUntil(bill.dueAt);
-  if (due !== null && due < 0) {
-    return <span className="proc-badge proc-badge--overdue">{Math.abs(due)}d overdue</span>;
-  }
-  return <span className="proc-badge proc-badge--open">{bill.paymentStatus || 'Open'}</span>;
-}
-
-function Attachments({ documents, isDemo }) {
-  if (!documents?.length) return <div className="proc-empty-inline">No files attached.</div>;
-  return (
-    <ul className="proc-attachments">
-      {documents.map((doc) => (
-        <li key={doc.id}>
-          <span className="proc-attachment-icon" aria-hidden="true">
-            {doc.contentType?.startsWith('image/') ? '\u{1F5BC}' : '\u{1F4C4}'}
-          </span>
-          <span className="proc-attachment-name" title={doc.name}>{doc.name}</span>
-          {doc.type === 'INVOICE' && <span className="proc-badge proc-badge--muted">Invoice</span>}
-          {isDemo ? (
-            <span className="proc-attachment-demo" title="Demo dataset — there is no file behind this record. Connect Ramp to view and download real attachments.">
-              demo &middot; no file
-            </span>
-          ) : (
-            <>
-              <a className="proc-link" href={attachmentUrl(doc, { inline: true })} target="_blank" rel="noopener noreferrer">View</a>
-              <a className="proc-link" href={attachmentUrl(doc)} download={doc.name}>Download</a>
-            </>
-          )}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function LineItems({ items, currency }) {
-  if (!items?.length) return null;
-  const subtotal = items.reduce((sum, li) => sum + li.amountCents, 0);
-  return (
-    <table className="proc-lines">
-      <thead>
-        <tr>
-          <th>Description</th><th className="num">Qty</th><th className="num">Unit</th><th className="num">Amount</th>
-        </tr>
-      </thead>
-      <tbody>
-        {items.map((li) => (
-          <tr key={li.id}>
-            <td>
-              {li.description}
-              {li.category && <span className="proc-line-category">{li.category}</span>}
-            </td>
-            <td className="num">{li.quantity === null ? '—' : li.quantity.toLocaleString()}</td>
-            <td className="num">{li.unitPriceCents === null ? '—' : formatMoney(li.unitPriceCents, currency)}</td>
-            <td className="num">{formatMoney(li.amountCents, currency)}</td>
-          </tr>
-        ))}
-      </tbody>
-      <tfoot>
-        <tr>
-          <td colSpan={3}>Line subtotal</td>
-          <td className="num">{formatMoney(subtotal, currency)}</td>
-        </tr>
-      </tfoot>
-    </table>
-  );
-}
-
 // ── Bill row ────────────────────────────────────────────────────────────────
 
-function BillRow({ bill, isDemo, reviewer, onDecision, onClearDecision }) {
+function BillRow({ bill, isDemo, reviewer, comments, onDecision, onClearDecision, onPostComment, onDeleteComment }) {
   const [open, setOpen] = useState(false);
   const rejected = bill.approval.state === REJECTED;
+  const shared = comments.filter((c) => c.visibility !== 'internal').length;
 
   return (
     <>
@@ -158,6 +66,14 @@ function BillRow({ bill, isDemo, reviewer, onDecision, onClearDecision }) {
           {bill.documents.length > 0 && (
             <span className="proc-clip" title={`${bill.documents.length} attachment${bill.documents.length === 1 ? '' : 's'}`}>
               &#x1F4CE;{bill.documents.length}
+            </span>
+          )}
+          {comments.length > 0 && (
+            <span
+              className="proc-clip"
+              title={`${comments.length} comment${comments.length === 1 ? '' : 's'}${shared < comments.length ? ` (${comments.length - shared} internal)` : ''}`}
+            >
+              &#x1F4AC;{comments.length}
             </span>
           )}
         </td>
@@ -202,10 +118,28 @@ function BillRow({ bill, isDemo, reviewer, onDecision, onClearDecision }) {
                 <div className="proc-detail-heading">Line items</div>
                 <LineItems items={bill.lineItems} currency={bill.currency} />
                 {bill.memo && <p className="proc-memo">{bill.memo}</p>}
+
+                <div className="proc-detail-heading" style={{ marginTop: 16 }}>
+                  Comments <span className="proc-detail-note">shared with the client portal unless marked internal</span>
+                </div>
+                <CommentThread
+                  comments={comments}
+                  authorName={reviewer}
+                  allowInternal
+                  placeholder="Reply to the client, or leave an internal note…"
+                  onPost={({ body, visibility }) => onPostComment({
+                    targetType: 'bill', targetId: bill.id, clientName: bill.clientLabel, body, visibility,
+                  })}
+                  onDelete={onDeleteComment}
+                />
               </div>
               <div>
                 <div className="proc-detail-heading">Attachments</div>
-                <Attachments documents={bill.documents} isDemo={isDemo} />
+                <AttachmentList
+                  documents={bill.documents}
+                  urlFor={(doc, opts) => (isDemo ? null : attachmentUrl(doc, opts))}
+                  unavailableNote="demo · no file"
+                />
                 <div className="proc-detail-heading" style={{ marginTop: 16 }}>Approval</div>
                 {rejected ? (
                   <p className="proc-decision proc-decision--rejected">
@@ -233,7 +167,7 @@ function BillRow({ bill, isDemo, reviewer, onDecision, onClearDecision }) {
   );
 }
 
-function BillTable({ bills, isDemo, reviewer, onDecision, onClearDecision }) {
+function BillTable({ bills, commentsByTarget, ...handlers }) {
   return (
     <table className="proc-table">
       <thead>
@@ -247,10 +181,8 @@ function BillTable({ bills, isDemo, reviewer, onDecision, onClearDecision }) {
           <BillRow
             key={bill.id}
             bill={bill}
-            isDemo={isDemo}
-            reviewer={reviewer}
-            onDecision={onDecision}
-            onClearDecision={onClearDecision}
+            comments={commentsByTarget.get(commentKey('bill', bill.id)) || []}
+            {...handlers}
           />
         ))}
       </tbody>
@@ -260,13 +192,13 @@ function BillTable({ bills, isDemo, reviewer, onDecision, onClearDecision }) {
 
 // ── Purchase order group ────────────────────────────────────────────────────
 
-function PoGroup({ po, isDemo, reviewer, onDecision, onClearDecision }) {
+function PoGroup({ po, isDemo, reviewer, commentsByTarget, onPostComment, onDeleteComment, ...billHandlers }) {
   const [open, setOpen] = useState(true);
+  const [showPoComments, setShowPoComments] = useState(false);
   const { subtotal } = po;
   const hasCommitment = po.amountCents > 0;
-  const pct = hasCommitment
-    ? Math.min(100, Math.round((subtotal.approvedCents / po.amountCents) * 100))
-    : 0;
+  const pct = hasCommitment ? Math.min(100, Math.round((subtotal.approvedCents / po.amountCents) * 100)) : 0;
+  const poComments = commentsByTarget.get(commentKey('purchase_order', po.id)) || [];
 
   return (
     <section className="proc-po">
@@ -321,8 +253,10 @@ function PoGroup({ po, isDemo, reviewer, onDecision, onClearDecision }) {
               bills={po.bills}
               isDemo={isDemo}
               reviewer={reviewer}
-              onDecision={onDecision}
-              onClearDecision={onClearDecision}
+              commentsByTarget={commentsByTarget}
+              onPostComment={onPostComment}
+              onDeleteComment={onDeleteComment}
+              {...billHandlers}
             />
           )}
 
@@ -330,21 +264,37 @@ function PoGroup({ po, isDemo, reviewer, onDecision, onClearDecision }) {
             <span>
               {subtotal.billCount} bill{subtotal.billCount === 1 ? '' : 's'}
               {subtotal.rejectedCount > 0 && ` · ${subtotal.rejectedCount} rejected`}
+              {' · '}
+              <button className="proc-linkbtn" onClick={() => setShowPoComments((s) => !s)}>
+                {poComments.length ? `${poComments.length} comment${poComments.length === 1 ? '' : 's'}` : 'Comment on this PO'}
+              </button>
             </span>
-            <span className="proc-po-footer-figures">
-              <span>Paid {formatMoney(subtotal.paidCents, po.currency)}</span>
-              <span>Outstanding {formatMoney(subtotal.outstandingCents, po.currency)}</span>
-              {subtotal.rejectedCents > 0 && (
-                <span className="proc-muted">Rejected {formatMoney(subtotal.rejectedCents, po.currency)}</span>
-              )}
-              <strong>Subtotal {formatMoney(subtotal.approvedCents, po.currency)}</strong>
-            </span>
+            <TotalsStrip totals={subtotal} currency={po.currency} />
           </footer>
+
+          {showPoComments && (
+            <div className="proc-po-docs">
+              <CommentThread
+                comments={poComments}
+                authorName={reviewer}
+                allowInternal
+                placeholder="Comment on this purchase order…"
+                onPost={({ body, visibility }) => onPostComment({
+                  targetType: 'purchase_order', targetId: po.id, clientName: po.clientLabel, body, visibility,
+                })}
+                onDelete={onDeleteComment}
+              />
+            </div>
+          )}
 
           {po.documents.length > 0 && (
             <div className="proc-po-docs">
               <span className="proc-detail-heading">PO documents</span>
-              <Attachments documents={po.documents} isDemo={isDemo} />
+              <AttachmentList
+                documents={po.documents}
+                urlFor={(doc, opts) => (isDemo ? null : attachmentUrl(doc, opts))}
+                unavailableNote="demo · no file"
+              />
             </div>
           )}
         </>
@@ -365,9 +315,13 @@ export default function ProcurementDashboard() {
   const [error, setError] = useState(null);
   const [decisions, setDecisions] = useState(getBillDecisions());
   const [settings, setSettings] = useState(getProcurementSettings());
+  const [comments, setComments] = useState([]);
+  const [commentSource, setCommentSource] = useState(null);
+  const [commentNotice, setCommentNotice] = useState(null);
   const [query, setQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all'); // all | approved | rejected | outstanding | paid
+  const [statusFilter, setStatusFilter] = useState('all');
   const [showSettings, setShowSettings] = useState(false);
+  const [showLinks, setShowLinks] = useState(false);
   // A client pinned in the URL always wins over the in-page picker, so the
   // selection is derived rather than mirrored into state.
   const [pickedClient, setPickedClient] = useState(ALL_CLIENTS);
@@ -375,9 +329,7 @@ export default function ProcurementDashboard() {
 
   // Every state update below happens in a promise callback, never synchronously
   // in the effect body — the spinner is turned on by whoever triggers the load.
-  const load = useCallback((signal) => (
-    // When the route pins a client, ask the proxy to scope the response so the
-    // browser never receives another client's bills at all.
+  const load = useCallback((signal) => Promise.all([
     fetchProcurementData({
       client: routeClient || undefined,
       clientFields: settings.clientFieldNames,
@@ -394,9 +346,18 @@ export default function ProcurementDashboard() {
       .catch((err) => {
         if (err?.name === 'AbortError') return;
         setError(err.message);
+      }),
+    loadComments({ client: routeClient || undefined, signal })
+      .then(({ source, comments: list, reason }) => {
+        setComments(list);
+        setCommentSource(source);
+        setCommentNotice(reason);
       })
-      .finally(() => setLoading(false))
-  ), [routeClient, settings.clientFieldNames]);
+      .catch((err) => {
+        if (err?.name === 'AbortError') return;
+        setCommentNotice(err.message);
+      }),
+  ]).finally(() => setLoading(false)), [routeClient, settings.clientFieldNames]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -415,18 +376,20 @@ export default function ProcurementDashboard() {
 
   const isDemo = payload?.source === SOURCE_DEMO;
 
+  const modelOptions = useMemo(() => ({
+    clientFieldNames: settings.clientFieldNames,
+    useEntityAsClient: settings.useEntityAsClient,
+    overrides: settings.clientOverrides,
+  }), [settings]);
+
   // Full model, unscoped — the client picker and the per-client strip need to
   // see every client, even while one is selected.
   const fullModel = useMemo(() => buildProcurementModel({
     bills: payload?.bills || [],
     purchaseOrders: payload?.purchaseOrders || [],
     decisions,
-    options: {
-      clientFieldNames: settings.clientFieldNames,
-      useEntityAsClient: settings.useEntityAsClient,
-      overrides: settings.clientOverrides,
-    },
-  }), [payload, decisions, settings]);
+    options: modelOptions,
+  }), [payload, decisions, modelOptions]);
 
   const activeClient = selectedClient === ALL_CLIENTS ? null : selectedClient;
 
@@ -436,13 +399,11 @@ export default function ProcurementDashboard() {
       purchaseOrders: payload?.purchaseOrders || [],
       decisions,
       client: activeClient,
-      options: {
-        clientFieldNames: settings.clientFieldNames,
-        useEntityAsClient: settings.useEntityAsClient,
-        overrides: settings.clientOverrides,
-      },
+      options: modelOptions,
     })
-    : fullModel), [activeClient, payload, decisions, settings, fullModel]);
+    : fullModel), [activeClient, payload, decisions, modelOptions, fullModel]);
+
+  const commentsByTarget = useMemo(() => groupComments(comments), [comments]);
 
   const billPassesStatus = useCallback((bill) => {
     switch (statusFilter) {
@@ -486,6 +447,21 @@ export default function ProcurementDashboard() {
     setDecisions(getBillDecisions());
   }
 
+  const handlePostComment = useCallback(async ({ targetType, targetId, clientName: target, body, visibility }) => {
+    const { comment, source } = await postComment({
+      targetType, targetId, clientName: target, body, visibility,
+      authorName: settings.reviewerName || null,
+    });
+    setComments((prev) => [...prev, comment]);
+    setCommentSource(source);
+  }, [settings.reviewerName]);
+
+  const handleDeleteComment = useCallback(async (comment) => {
+    if (!window.confirm('Delete this comment? The client will no longer see it.')) return;
+    await removeComment(comment);
+    setComments((prev) => prev.filter((c) => c.id !== comment.id));
+  }, []);
+
   function handleClientChange(value) {
     setPickedClient(value);
     // Keep the URL honest: a pinned client is a shareable, server-scoped view.
@@ -499,6 +475,15 @@ export default function ProcurementDashboard() {
 
   const { totals } = model;
   const scopeLabel = activeClient || 'All clients';
+
+  const billHandlers = {
+    isDemo,
+    reviewer: settings.reviewerName,
+    onDecision: handleDecision,
+    onClearDecision: handleClearDecision,
+    onPostComment: handlePostComment,
+    onDeleteComment: handleDeleteComment,
+  };
 
   if (loading && !payload) {
     return <div className="proc-page"><p className="proc-empty">Loading procurement data…</p></div>;
@@ -527,6 +512,9 @@ export default function ProcurementDashboard() {
           >
             Export CSV
           </button>
+          <button className="btn btn-small" onClick={() => setShowLinks((s) => !s)}>
+            {showLinks ? 'Close client links' : 'Client links'}
+          </button>
           <button className="btn btn-small" onClick={() => setShowSettings((s) => !s)}>
             {showSettings ? 'Close settings' : 'Settings'}
           </button>
@@ -544,6 +532,11 @@ export default function ProcurementDashboard() {
           <code>RAMP_CLIENT_SECRET</code> on the deployment to pull live purchase orders and bills.
         </div>
       )}
+      {commentSource === SOURCE_LOCAL && commentNotice && (
+        <div className="proc-banner proc-banner--warn">
+          <strong>Comments are local.</strong> {commentNotice}
+        </div>
+      )}
       {payload?.warnings?.map((w) => (
         <div className="proc-banner proc-banner--warn" key={w}>{w}</div>
       ))}
@@ -552,6 +545,14 @@ export default function ProcurementDashboard() {
           These bills span {totals.currencies.join(', ')}. Totals below add the raw amounts together
           without converting, so read them per currency rather than as one figure.
         </div>
+      )}
+
+      {showLinks && (
+        <PortalLinksPanel
+          clients={fullModel.clients.map((c) => c.name)}
+          defaultClient={activeClient}
+          createdBy={settings.reviewerName}
+        />
       )}
 
       {showSettings && (
@@ -572,7 +573,7 @@ export default function ProcurementDashboard() {
             </small>
           </div>
           <div className="proc-settings-field">
-            <label htmlFor="proc-reviewer">Record approvals as</label>
+            <label htmlFor="proc-reviewer">Record approvals and comments as</label>
             <input
               id="proc-reviewer"
               className="search-box"
@@ -633,40 +634,12 @@ export default function ProcurementDashboard() {
       </div>
 
       <div className="proc-stats">
-        <Stat
-          label="PO committed"
-          value={formatMoney(totals.poCommittedCents, totals.currency)}
-          hint={`${totals.poCount} purchase order${totals.poCount === 1 ? '' : 's'}`}
-        />
-        <Stat
-          label="Approved billed"
-          value={formatMoney(totals.approvedCents, totals.currency)}
-          hint={`${totals.approvedCount} of ${totals.billCount} bills`}
-          tone="brand"
-        />
-        <Stat
-          label="Outstanding"
-          value={formatMoney(totals.outstandingCents, totals.currency)}
-          hint="approved, not yet paid"
-          tone="warn"
-        />
-        <Stat
-          label="Paid"
-          value={formatMoney(totals.paidCents, totals.currency)}
-          hint="approved and settled"
-          tone="ok"
-        />
-        <Stat
-          label="Rejected"
-          value={formatMoney(totals.rejectedCents, totals.currency)}
-          hint={`${totals.rejectedCount} excluded from totals`}
-          tone="danger"
-        />
-        <Stat
-          label="PO remaining"
-          value={formatMoney(totals.poRemainingCents, totals.currency)}
-          hint="committed less approved"
-        />
+        <Stat label="PO committed" value={formatMoney(totals.poCommittedCents, totals.currency)} hint={`${totals.poCount} purchase order${totals.poCount === 1 ? '' : 's'}`} />
+        <Stat label="Approved billed" value={formatMoney(totals.approvedCents, totals.currency)} hint={`${totals.approvedCount} of ${totals.billCount} bills`} tone="brand" />
+        <Stat label="Outstanding" value={formatMoney(totals.outstandingCents, totals.currency)} hint="approved, not yet paid" tone="warn" />
+        <Stat label="Paid" value={formatMoney(totals.paidCents, totals.currency)} hint="approved and settled" tone="ok" />
+        <Stat label="Rejected" value={formatMoney(totals.rejectedCents, totals.currency)} hint={`${totals.rejectedCount} excluded from totals`} tone="danger" />
+        <Stat label="PO remaining" value={formatMoney(totals.poRemainingCents, totals.currency)} hint="committed less approved" />
       </div>
 
       {!activeClient && fullModel.clients.length > 1 && (
@@ -674,12 +647,7 @@ export default function ProcurementDashboard() {
           <div className="proc-detail-heading">Subtotal by client</div>
           <div className="proc-client-cards">
             {fullModel.clients.map((c) => (
-              <button
-                key={c.name}
-                className="proc-client-card"
-                onClick={() => handleClientChange(c.name)}
-                title={`Show only ${c.name}`}
-              >
+              <button key={c.name} className="proc-client-card" onClick={() => handleClientChange(c.name)} title={`Show only ${c.name}`}>
                 <div className="proc-client-name">{c.name}</div>
                 <div className="proc-client-amount">{formatMoney(c.approvedCents, c.currency)}</div>
                 <div className="proc-client-meta">
@@ -704,14 +672,7 @@ export default function ProcurementDashboard() {
       ) : (
         <>
           {visible.pos.map((po) => (
-            <PoGroup
-              key={po.id}
-              po={po}
-              isDemo={isDemo}
-              reviewer={settings.reviewerName}
-              onDecision={handleDecision}
-              onClearDecision={handleClearDecision}
-            />
+            <PoGroup key={po.id} po={po} commentsByTarget={commentsByTarget} {...billHandlers} />
           ))}
 
           {visible.unlinked.length > 0 && (
@@ -722,13 +683,7 @@ export default function ProcurementDashboard() {
                   <span>{visible.unlinked.length} bill{visible.unlinked.length === 1 ? '' : 's'} with no PO reference</span>
                 </div>
               </header>
-              <BillTable
-                bills={visible.unlinked}
-                isDemo={isDemo}
-                reviewer={settings.reviewerName}
-                onDecision={handleDecision}
-                onClearDecision={handleClearDecision}
-              />
+              <BillTable bills={visible.unlinked} commentsByTarget={commentsByTarget} {...billHandlers} />
             </section>
           )}
         </>
@@ -736,12 +691,7 @@ export default function ProcurementDashboard() {
 
       <footer className="proc-grand-total">
         <span>{scopeLabel} &middot; {totals.billCount} bill{totals.billCount === 1 ? '' : 's'}</span>
-        <span className="proc-grand-figures">
-          <span>Paid {formatMoney(totals.paidCents, totals.currency)}</span>
-          <span>Outstanding {formatMoney(totals.outstandingCents, totals.currency)}</span>
-          {totals.rejectedCents > 0 && <span className="proc-muted">Rejected {formatMoney(totals.rejectedCents, totals.currency)}</span>}
-          <strong>Total approved {formatMoney(totals.approvedCents, totals.currency)}</strong>
-        </span>
+        <TotalsStrip totals={totals} currency={totals.currency} bold />
       </footer>
     </div>
   );

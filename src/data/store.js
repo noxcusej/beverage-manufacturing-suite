@@ -35,6 +35,7 @@ const _cache = {
   globalSettings: null,
   billDecisions: null,
   procurementSettings: null,
+  procurementComments: null,
 };
 
 const _defaults = {
@@ -53,6 +54,7 @@ const _defaults = {
   globalSettings: defaultGlobalSettings,
   billDecisions: {},
   procurementSettings: defaultProcurementSettings,
+  procurementComments: [],
 };
 
 let _hydrated = false;
@@ -73,6 +75,7 @@ const _keyMap = {
   globalSettings: 'global_settings',
   billDecisions: 'bill_decisions',
   procurementSettings: 'procurement_settings',
+  procurementComments: 'procurement_comments',
 };
 
 function notify(dataType) {
@@ -596,4 +599,29 @@ export function getProcurementSettings() {
 
 export function saveProcurementSettings(settings) {
   set('procurementSettings', { ...getProcurementSettings(), ...settings });
+}
+
+// ── Procurement: locally stored comments ────────────────────────────────────
+//
+// The real home for comments is the procurement_comments table, reached through
+// /api/comments with the Supabase service key — that is the only copy the
+// client portal can see. These accessors are the fallback used when that route
+// is unavailable (no service key, or a dev server with no serverless runtime),
+// so commenting still works internally. The UI labels such comments as local.
+
+export function getLocalComments() {
+  return get('procurementComments') || [];
+}
+
+export function saveLocalComments(list) {
+  set('procurementComments', list || []);
+}
+
+export function addLocalComment(comment) {
+  saveLocalComments([...getLocalComments(), comment]);
+  return comment;
+}
+
+export function deleteLocalComment(id) {
+  saveLocalComments(getLocalComments().filter((c) => c.id !== id));
 }

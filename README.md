@@ -10,6 +10,7 @@ Web-based calculators for beverage manufacturing and co-packing operations.
 - **Price Sheets** - Manage services and packaging pricing
 - **Mission Control** - Task board and team dashboard
 - **Procurement** - Ramp-sourced purchase orders, bills, invoice attachments and client subtotals ([setup](docs/PROCUREMENT.md))
+- **Client Portal** - a unique link per client showing only their POs, bills and files, with comments ([setup](docs/CLIENT_PORTAL.md))
 
 ## Usage
 

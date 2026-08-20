@@ -107,6 +107,8 @@ const docs = normalizeDocuments(
   { parentType: 'bill', parentId: 'bill_1' }
 );
 eq('documents dedupe by id', docs.map((d) => d.id), ['doc_1', 'doc_2']);
+eq('documents carry their parent, so other surfaces can rebuild the URL',
+  [docs[0].parentType, docs[0].parentId], ['bill', 'bill_1']);
 assert('download goes through our proxy, not a presigned URL',
   docs[0].downloadPath.startsWith('/api/ramp?resource=document') &&
   docs[0].downloadPath.includes('parent_id=bill_1'),

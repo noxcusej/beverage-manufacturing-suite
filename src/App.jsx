@@ -13,6 +13,7 @@ const ClientProfile = lazy(() => import('./pages/ClientProfile'));
 const Services = lazy(() => import('./pages/Services'));
 const TreasuryCockpit = lazy(() => import('./pages/TreasuryCockpit'));
 const ProcurementDashboard = lazy(() => import('./pages/ProcurementDashboard'));
+const ClientPortal = lazy(() => import('./pages/ClientPortal'));
 
 function AppStatus({ error }) {
   return (
@@ -67,6 +68,11 @@ export default function App() {
           </Route>
           {/* Standalone — no suite Layout/sidebar. Launches in its own window. */}
           <Route path="/treasury" element={<TreasuryCockpit />} />
+          {/* Client portal. Deliberately outside <Layout>: no sidebar, no
+              navigation, and no route from here into the manufacturing or
+              financial tools. Its data comes from /api/portal, which scopes
+              every response to the client behind the share token. */}
+          <Route path="/portal/:token" element={<ClientPortal />} />
         </Routes>
       </Suspense>
     </BrowserRouter>

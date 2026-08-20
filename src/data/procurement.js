@@ -228,6 +228,10 @@ export function normalizeDocuments(raw, { parentType, parentId }) {
       docs.push({
         id,
         name,
+        // Carried so a caller can rebuild the download URL for a different
+        // surface (the client portal routes through /api/portal instead).
+        parentType,
+        parentId,
         type: firstString(doc.attachment_type, doc.document_type, doc.type) || 'FILE',
         contentType: firstString(doc.content_type, doc.mime_type) || null,
         uploadedAt: isoOrNull(doc.created_at || doc.uploaded_at),

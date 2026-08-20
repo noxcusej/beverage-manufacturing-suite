@@ -108,16 +108,17 @@ presenting one number that means nothing.
 
 ---
 
-## Access control — read before shipping to a client
+## Access control — do not share this page with a client
 
-`/procurement/<Client Name>` scopes the data server-side, so a client's browser
-only ever receives their own bills. That is a real boundary, but it is **not
-authentication**: anyone who can reach the deployment can change the client name
-in the URL. This suite has no login today. Before handing the URL to an outside
-client, put an auth layer in front of it (Vercel password protection, an SSO
-proxy, or Supabase auth) and derive the client name from the session rather than
-from the path. `RAMP_PROXY_API_KEY` locks down `/api/ramp` itself but does not
-distinguish one client from another.
+`/procurement` and `/procurement/<Client Name>` are the **staff** view. They sit
+inside the suite's navigation, they expose every client in the picker, and
+`/api/ramp` does not distinguish one caller from another. Do not hand either URL
+to an outside client.
+
+To give a client their own view, use the **Client Portal**: a unique link per
+client, scoped by a share token the server resolves to exactly one client, with
+no navigation into the rest of the suite. See
+[CLIENT_PORTAL.md](CLIENT_PORTAL.md).
 
 ---
 
@@ -130,4 +131,5 @@ distinguish one client from another.
 | `src/data/procurement.js` | Pure domain logic: normalization, client resolution, PO matching, approval, roll-ups |
 | `src/data/procurement.test.mjs` | `node src/data/procurement.test.mjs` |
 | `src/data/procurementDemo.js` | Demo dataset, shaped exactly like raw Ramp payloads |
-| `src/pages/ProcurementDashboard.jsx` | The page |
+| `src/pages/ProcurementDashboard.jsx` | The staff page |
+| `docs/CLIENT_PORTAL.md` | The client-facing counterpart |
