@@ -11,6 +11,7 @@ Web-based calculators for beverage manufacturing and co-packing operations.
 - **Mission Control** - Task board and team dashboard
 - **Procurement** - Ramp-sourced purchase orders, bills, invoice attachments and client subtotals ([setup](docs/PROCUREMENT.md))
 - **Client Portal** - a unique link per client showing only their POs, bills and files, with comments ([setup](docs/CLIENT_PORTAL.md))
+- **Review deadlines** - a review window per bill or PO that locks when it closes; only an admin can move or reopen one ([setup](docs/REVIEW_DEADLINES.md))
 
 ## Usage
 

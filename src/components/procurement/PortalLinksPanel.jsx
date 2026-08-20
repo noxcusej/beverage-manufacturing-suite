@@ -102,9 +102,9 @@ export default function PortalLinksPanel({ clients = [], defaultClient = null, c
         </div>
       )}
 
-      {state.available && state.adminKeyConfigured === false && (
+      {state.available && state.staffKeyConfigured === false && (
         <div className="proc-banner proc-banner--warn" style={{ gridColumn: '1 / -1' }}>
-          <strong>This endpoint is unauthenticated.</strong> Set <code>PROCUREMENT_ADMIN_KEY</code> on
+          <strong>This endpoint is unauthenticated.</strong> Set <code>PROCUREMENT_STAFF_KEY</code> on
           the deployment before sharing a link — without it, anyone who can reach this URL can mint a
           link to any client&apos;s data.
         </div>

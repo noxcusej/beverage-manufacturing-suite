@@ -83,10 +83,14 @@ so committed and remaining render as `n/a` instead of as a false zero budget.
   separately so you can tell "nobody looked at it" from "somebody signed off".
 - **Rejected** — a reviewer pressed *Reject* and gave a reason. Excluded from
   every approved total and from PO consumption, reported on its own line, and
-  reversible with *Restore*.
+  reversible with *Restore* — until the review deadline closes, after which the
+  outcome is final until an admin reopens it. See
+  [REVIEW_DEADLINES.md](REVIEW_DEADLINES.md).
 
-Decisions live in this app's own store (`bill_decisions` in Supabase
-`app_data`), keyed by Ramp bill id — **they are not written back to Ramp**. The
+Decisions live in this app's own `bill_decisions` table, keyed by Ramp bill id
+— **they are not written back to Ramp**. They are written through
+`/api/decisions` rather than straight from the browser, so that the review
+deadline lock can actually be enforced on the write path. The
 proxy is read-only by design; syncing rejections into Ramp would need write
 scopes and a decision about which Ramp state a rejection maps to.
 
@@ -133,3 +137,4 @@ no navigation into the rest of the suite. See
 | `src/data/procurementDemo.js` | Demo dataset, shaped exactly like raw Ramp payloads |
 | `src/pages/ProcurementDashboard.jsx` | The staff page |
 | `docs/CLIENT_PORTAL.md` | The client-facing counterpart |
+| `docs/REVIEW_DEADLINES.md` | Review windows, the lock, and the admin tier |

@@ -12,6 +12,11 @@ import {
 } from '../data/procurement';
 import { fetchProcurementData, attachmentUrl, SOURCE_DEMO } from '../data/ramp';
 import { loadComments, postComment, removeComment, groupComments, commentKey, SOURCE_LOCAL } from '../data/comments';
+import { loadDecisions, saveDecision, removeDecision, LOCKED_CODE, SOURCE_LOCAL as DECISIONS_LOCAL } from '../data/decisions';
+import { loadDeadlines } from '../data/deadlinesClient';
+import { indexDeadlines, resolveDeadline, lockState, permissions, summarize } from '../data/reviewLock';
+import DeadlineControl from '../components/procurement/DeadlineControl';
+import DeadlineBadge from '../components/procurement/DeadlineBadge';
 import CommentThread from '../components/CommentThread';
 import PortalLinksPanel from '../components/procurement/PortalLinksPanel';
 import {
@@ -20,8 +25,6 @@ import {
 import { fmtDate } from '../components/procurement/format';
 import {
   getBillDecisions,
-  setBillDecision,
-  clearBillDecision,
   seedBillDecisions,
   getProcurementSettings,
   saveProcurementSettings,
@@ -50,14 +53,21 @@ function downloadCsv(rows, filename) {
 
 // ── Bill row ────────────────────────────────────────────────────────────────
 
-function BillRow({ bill, isDemo, reviewer, comments, onDecision, onClearDecision, onPostComment, onDeleteComment }) {
+function BillRow({
+  bill, isDemo, reviewer, comments, deadlineIndex, deadlinesAvailable, adminKeyConfigured,
+  onDecision, onClearDecision, onPostComment, onDeleteComment, onDeadlineChanged,
+}) {
   const [open, setOpen] = useState(false);
   const rejected = bill.approval.state === REJECTED;
   const shared = comments.filter((c) => c.visibility !== 'internal').length;
 
+  const { deadline, inherited } = resolveDeadline(bill, deadlineIndex);
+  const lock = lockState(deadline);
+  const perms = permissions(lock);
+
   return (
     <>
-      <tr className={`proc-bill-row${rejected ? ' proc-bill-row--rejected' : ''}`}>
+      <tr className={`proc-bill-row${rejected ? ' proc-bill-row--rejected' : ''}${lock.locked ? ' proc-bill-row--locked' : ''}`}>
         <td>
           <button className="proc-disclosure" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
             <span aria-hidden="true">{open ? '▾' : '▸'}</span>
@@ -86,9 +96,18 @@ function BillRow({ bill, isDemo, reviewer, comments, onDecision, onClearDecision
         <td>{fmtDate(bill.dueAt)}</td>
         <td><PaymentBadge bill={bill} /></td>
         <td><ApprovalBadge approval={bill.approval} /></td>
+        <td className="dl-cell">
+          <DeadlineBadge lock={lock} inherited={inherited} />
+        </td>
         <td className="num proc-amount">{formatMoney(bill.amountCents, bill.currency)}</td>
         <td className="proc-actions">
-          {rejected ? (
+          {/* A locked bill's approval is final. The buttons say why rather than
+              disappearing, so nobody wonders where they went. */}
+          {lock.locked ? (
+            <span className="proc-locked-note" title={`Review closed ${new Date(lock.dueAt).toLocaleDateString()}. An admin can reopen it.`}>
+              Locked
+            </span>
+          ) : rejected ? (
             <button className="btn btn-small" onClick={() => onClearDecision(bill)} title="Return this bill to approved">
               Restore
             </button>
@@ -98,12 +117,17 @@ function BillRow({ bill, isDemo, reviewer, comments, onDecision, onClearDecision
                 <button
                   className="btn btn-small"
                   onClick={() => onDecision(bill, APPROVED)}
+                  disabled={!perms.canChangeApproval}
                   title={reviewer ? `Confirm as ${reviewer}` : 'Confirm this approval explicitly'}
                 >
                   Confirm
                 </button>
               )}
-              <button className="btn btn-small btn-danger" onClick={() => onDecision(bill, REJECTED)}>
+              <button
+                className="btn btn-small btn-danger"
+                onClick={() => onDecision(bill, REJECTED)}
+                disabled={!perms.canChangeApproval}
+              >
                 Reject
               </button>
             </>
@@ -112,7 +136,7 @@ function BillRow({ bill, isDemo, reviewer, comments, onDecision, onClearDecision
       </tr>
       {open && (
         <tr className="proc-bill-detail">
-          <td colSpan={9}>
+          <td colSpan={10}>
             <div className="proc-detail-grid">
               <div>
                 <div className="proc-detail-heading">Line items</div>
@@ -126,9 +150,14 @@ function BillRow({ bill, isDemo, reviewer, comments, onDecision, onClearDecision
                   comments={comments}
                   authorName={reviewer}
                   allowInternal
+                  forceInternal={!perms.canComment}
+                  forceInternalReason={lock.locked
+                    ? 'Review closed on ' + fmtDate(new Date(lock.dueAt).toISOString())
+                      + ' — the client can no longer see new replies, so this will be saved as an internal note.'
+                    : null}
                   placeholder="Reply to the client, or leave an internal note…"
                   onPost={({ body, visibility }) => onPostComment({
-                    targetType: 'bill', targetId: bill.id, clientName: bill.clientLabel, body, visibility,
+                    targetType: 'bill', targetId: bill.id, clientName: bill.clientLabel, body, visibility, poId: bill.poId,
                   })}
                   onDelete={onDeleteComment}
                 />
@@ -140,6 +169,42 @@ function BillRow({ bill, isDemo, reviewer, comments, onDecision, onClearDecision
                   urlFor={(doc, opts) => (isDemo ? null : attachmentUrl(doc, opts))}
                   unavailableNote="demo · no file"
                 />
+                <div className="proc-detail-heading" style={{ marginTop: 16 }}>Review deadline</div>
+                {deadlinesAvailable ? (
+                  inherited ? (
+                    <p className="proc-decision">
+                      Inherited from purchase order {bill.poNumber || bill.poId}. Set one here to override it
+                      for this bill alone.
+                      <br />
+                      <DeadlineControl
+                        targetType="bill"
+                        targetId={bill.id}
+                        clientName={bill.clientLabel}
+                        deadline={null}
+                        lock={{ state: 'none', locked: false }}
+                        actor={reviewer}
+                        adminKeyConfigured={adminKeyConfigured}
+                        onChanged={onDeadlineChanged}
+                        compact
+                      />
+                    </p>
+                  ) : (
+                    <DeadlineControl
+                      targetType="bill"
+                      targetId={bill.id}
+                      clientName={bill.clientLabel}
+                      deadline={deadline}
+                      lock={lock}
+                      actor={reviewer}
+                      adminKeyConfigured={adminKeyConfigured}
+                      onChanged={onDeadlineChanged}
+                      compact
+                    />
+                  )
+                ) : (
+                  <p className="proc-decision proc-muted">Deadlines need the database — see the banner above.</p>
+                )}
+
                 <div className="proc-detail-heading" style={{ marginTop: 16 }}>Approval</div>
                 {rejected ? (
                   <p className="proc-decision proc-decision--rejected">
@@ -173,7 +238,7 @@ function BillTable({ bills, commentsByTarget, ...handlers }) {
       <thead>
         <tr>
           <th>Bill</th><th>Vendor</th><th>Client</th><th>Invoiced</th><th>Due</th>
-          <th>Payment</th><th>Approval</th><th className="num">Amount</th><th />
+          <th>Payment</th><th>Approval</th><th>Review</th><th className="num">Amount</th><th />
         </tr>
       </thead>
       <tbody>
@@ -192,10 +257,16 @@ function BillTable({ bills, commentsByTarget, ...handlers }) {
 
 // ── Purchase order group ────────────────────────────────────────────────────
 
-function PoGroup({ po, isDemo, reviewer, commentsByTarget, onPostComment, onDeleteComment, ...billHandlers }) {
+function PoGroup({
+  po, isDemo, reviewer, commentsByTarget, deadlineIndex, deadlinesAvailable, adminKeyConfigured,
+  onPostComment, onDeleteComment, onDeadlineChanged, ...billHandlers
+}) {
   const [open, setOpen] = useState(true);
   const [showPoComments, setShowPoComments] = useState(false);
   const { subtotal } = po;
+  const poDeadline = deadlineIndex.get(`purchase_order:${po.id}`) || null;
+  const poLock = lockState(poDeadline);
+  const poPerms = permissions(poLock);
   const hasCommitment = po.amountCents > 0;
   const pct = hasCommitment ? Math.min(100, Math.round((subtotal.approvedCents / po.amountCents) * 100)) : 0;
   const poComments = commentsByTarget.get(commentKey('purchase_order', po.id)) || [];
@@ -214,6 +285,19 @@ function PoGroup({ po, isDemo, reviewer, commentsByTarget, onPostComment, onDele
           <span className="proc-sep">&middot;</span>
           <span>Issued {fmtDate(po.issuedAt)}</span>
           <span className={`proc-badge proc-badge--${po.status === 'CLOSED' ? 'muted' : 'open'}`}>{po.status}</span>
+          {deadlinesAvailable && (
+            <DeadlineControl
+              targetType="purchase_order"
+              targetId={po.id}
+              clientName={po.clientLabel}
+              deadline={poDeadline}
+              lock={poLock}
+              actor={reviewer}
+              adminKeyConfigured={adminKeyConfigured}
+              onChanged={onDeadlineChanged}
+              compact
+            />
+          )}
         </div>
         <div className="proc-po-numbers">
           <div>
@@ -254,8 +338,12 @@ function PoGroup({ po, isDemo, reviewer, commentsByTarget, onPostComment, onDele
               isDemo={isDemo}
               reviewer={reviewer}
               commentsByTarget={commentsByTarget}
+              deadlineIndex={deadlineIndex}
+              deadlinesAvailable={deadlinesAvailable}
+              adminKeyConfigured={adminKeyConfigured}
               onPostComment={onPostComment}
               onDeleteComment={onDeleteComment}
+              onDeadlineChanged={onDeadlineChanged}
               {...billHandlers}
             />
           )}
@@ -278,6 +366,11 @@ function PoGroup({ po, isDemo, reviewer, commentsByTarget, onPostComment, onDele
                 comments={poComments}
                 authorName={reviewer}
                 allowInternal
+                forceInternal={!poPerms.canComment}
+                forceInternalReason={poLock.locked
+                  ? 'Review on this purchase order closed on ' + fmtDate(new Date(poLock.dueAt).toISOString())
+                    + ' — this will be saved as an internal note.'
+                  : null}
                 placeholder="Comment on this purchase order…"
                 onPost={({ body, visibility }) => onPostComment({
                   targetType: 'purchase_order', targetId: po.id, clientName: po.clientLabel, body, visibility,
@@ -318,6 +411,12 @@ export default function ProcurementDashboard() {
   const [comments, setComments] = useState([]);
   const [commentSource, setCommentSource] = useState(null);
   const [commentNotice, setCommentNotice] = useState(null);
+  const [deadlines, setDeadlines] = useState([]);
+  const [deadlineMeta, setDeadlineMeta] = useState({ available: false, reason: null, adminKeyConfigured: false, keysCollide: false });
+  const [decisionSource, setDecisionSource] = useState(null);
+  const [decisionNotice, setDecisionNotice] = useState(null);
+  const [actionError, setActionError] = useState(null);
+  const [deadlineNonce, setDeadlineNonce] = useState(0);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [showSettings, setShowSettings] = useState(false);
@@ -340,12 +439,38 @@ export default function ProcurementDashboard() {
         setError(null);
         if (data.seedDecisions) {
           seedBillDecisions(data.seedDecisions);
-          setDecisions(getBillDecisions());
         }
       })
       .catch((err) => {
         if (err?.name === 'AbortError') return;
         setError(err.message);
+      }),
+    loadDecisions({ client: routeClient || undefined, signal })
+      .then(({ source, decisions: map, reason }) => {
+        // The enforced store is authoritative when it is reachable; the local
+        // copy is only a fallback, and merging the two would resurrect
+        // decisions somebody had deliberately cleared server-side.
+        setDecisions(source === DECISIONS_LOCAL ? { ...getBillDecisions(), ...map } : map);
+        setDecisionSource(source);
+        setDecisionNotice(reason);
+      })
+      .catch((err) => {
+        if (err?.name === 'AbortError') return;
+        setDecisionNotice(err.message);
+      }),
+    loadDeadlines({ client: routeClient || undefined, signal })
+      .then((result) => {
+        setDeadlines(result.deadlines || []);
+        setDeadlineMeta({
+          available: Boolean(result.available),
+          reason: result.reason || null,
+          adminKeyConfigured: Boolean(result.adminKeyConfigured),
+          keysCollide: Boolean(result.keysCollide),
+        });
+      })
+      .catch((err) => {
+        if (err?.name === 'AbortError') return;
+        setDeadlineMeta((m) => ({ ...m, available: false, reason: err.message }));
       }),
     loadComments({ client: routeClient || undefined, signal })
       .then(({ source, comments: list, reason }) => {
@@ -363,11 +488,10 @@ export default function ProcurementDashboard() {
     const controller = new AbortController();
     load(controller.signal);
     return () => controller.abort();
-  }, [load]);
+  }, [load, deadlineNonce]);
 
   useEffect(() => {
     const refresh = () => {
-      setDecisions(getBillDecisions());
       setSettings(getProcurementSettings());
     };
     window.addEventListener('comanufacturing:datachange', refresh);
@@ -404,6 +528,11 @@ export default function ProcurementDashboard() {
     : fullModel), [activeClient, payload, decisions, modelOptions, fullModel]);
 
   const commentsByTarget = useMemo(() => groupComments(comments), [comments]);
+  const deadlineIndex = useMemo(() => indexDeadlines(deadlines), [deadlines]);
+  const reviewSummary = useMemo(
+    () => summarize(model.bills, deadlineIndex),
+    [model.bills, deadlineIndex]
+  );
 
   const billPassesStatus = useCallback((bill) => {
     switch (statusFilter) {
@@ -428,28 +557,52 @@ export default function ProcurementDashboard() {
     return { pos, unlinked };
   }, [model, query, statusFilter, billPassesStatus]);
 
-  function handleDecision(bill, state) {
+  async function handleDecision(bill, state) {
     let reason = null;
     if (state === REJECTED) {
       reason = window.prompt(`Reject ${bill.number || bill.id} (${formatMoney(bill.amountCents, bill.currency)})?\n\nReason:`);
       if (reason === null) return; // cancelled
     }
-    setBillDecision(bill.id, {
-      status: state,
-      by: settings.reviewerName || null,
-      reason: reason?.trim() || null,
-    });
-    setDecisions(getBillDecisions());
+    setActionError(null);
+    try {
+      const { decision } = await saveDecision({
+        billId: bill.id,
+        poId: bill.poId,
+        clientName: bill.clientLabel,
+        status: state,
+        reason: reason?.trim() || null,
+        decidedBy: settings.reviewerName || null,
+      });
+      setDecisions((prev) => ({ ...prev, [bill.id]: decision }));
+    } catch (err) {
+      // A lock is an answer, not a failure — say so in the words the server used.
+      setActionError(err.code === LOCKED_CODE
+        ? `${bill.number || bill.id}: ${err.message} ${err.remedy || ''}`.trim()
+        : err.message);
+    }
   }
 
-  function handleClearDecision(bill) {
-    clearBillDecision(bill.id);
-    setDecisions(getBillDecisions());
+  async function handleClearDecision(bill) {
+    setActionError(null);
+    try {
+      await removeDecision({ billId: bill.id, poId: bill.poId });
+      setDecisions((prev) => {
+        const next = { ...prev };
+        delete next[bill.id];
+        return next;
+      });
+    } catch (err) {
+      setActionError(err.code === LOCKED_CODE
+        ? `${bill.number || bill.id}: ${err.message} ${err.remedy || ''}`.trim()
+        : err.message);
+    }
   }
 
-  const handlePostComment = useCallback(async ({ targetType, targetId, clientName: target, body, visibility }) => {
+  const handleDeadlineChanged = useCallback(() => setDeadlineNonce((n) => n + 1), []);
+
+  const handlePostComment = useCallback(async ({ targetType, targetId, clientName: target, body, visibility, poId }) => {
     const { comment, source } = await postComment({
-      targetType, targetId, clientName: target, body, visibility,
+      targetType, targetId, clientName: target, body, visibility, poId,
       authorName: settings.reviewerName || null,
     });
     setComments((prev) => [...prev, comment]);
@@ -479,10 +632,14 @@ export default function ProcurementDashboard() {
   const billHandlers = {
     isDemo,
     reviewer: settings.reviewerName,
+    deadlineIndex,
+    deadlinesAvailable: deadlineMeta.available,
+    adminKeyConfigured: deadlineMeta.adminKeyConfigured && !deadlineMeta.keysCollide,
     onDecision: handleDecision,
     onClearDecision: handleClearDecision,
     onPostComment: handlePostComment,
     onDeleteComment: handleDeleteComment,
+    onDeadlineChanged: handleDeadlineChanged,
   };
 
   if (loading && !payload) {
@@ -535,6 +692,37 @@ export default function ProcurementDashboard() {
       {commentSource === SOURCE_LOCAL && commentNotice && (
         <div className="proc-banner proc-banner--warn">
           <strong>Comments are local.</strong> {commentNotice}
+        </div>
+      )}
+      {decisionSource === DECISIONS_LOCAL && decisionNotice && (
+        <div className="proc-banner proc-banner--warn">
+          <strong>Review deadlines are not being enforced.</strong> {decisionNotice} Deadlines still
+          show, but nothing stops an approval from changing after one passes until the database is
+          configured.
+        </div>
+      )}
+      {!deadlineMeta.available && deadlineMeta.reason && (
+        <div className="proc-banner proc-banner--warn">
+          <strong>Review deadlines are unavailable.</strong> {deadlineMeta.reason}
+        </div>
+      )}
+      {deadlineMeta.available && deadlineMeta.keysCollide && (
+        <div className="proc-banner proc-banner--error">
+          <strong>Admin key misconfigured.</strong> <code>PROCUREMENT_ADMIN_KEY</code> is set to the
+          same value as <code>PROCUREMENT_STAFF_KEY</code>, which would make every staff member an
+          admin. Deadline edits and reopens are refused until they differ.
+        </div>
+      )}
+      {deadlineMeta.available && !deadlineMeta.adminKeyConfigured && (
+        <div className="proc-banner proc-banner--warn">
+          <strong>No admin key is configured.</strong> Deadlines can be set but never moved, reopened
+          or cleared. Set <code>PROCUREMENT_ADMIN_KEY</code> on the deployment to enable that.
+        </div>
+      )}
+      {actionError && (
+        <div className="proc-banner proc-banner--error">
+          {actionError}
+          <button className="proc-linkbtn" style={{ marginLeft: 10 }} onClick={() => setActionError(null)}>Dismiss</button>
         </div>
       )}
       {payload?.warnings?.map((w) => (
@@ -640,6 +828,16 @@ export default function ProcurementDashboard() {
         <Stat label="Paid" value={formatMoney(totals.paidCents, totals.currency)} hint="approved and settled" tone="ok" />
         <Stat label="Rejected" value={formatMoney(totals.rejectedCents, totals.currency)} hint={`${totals.rejectedCount} excluded from totals`} tone="danger" />
         <Stat label="PO remaining" value={formatMoney(totals.poRemainingCents, totals.currency)} hint="committed less approved" />
+        <Stat
+          label="Review"
+          value={`${reviewSummary.locked} locked`}
+          hint={[
+            reviewSummary.dueSoon ? `${reviewSummary.dueSoon} due soon` : null,
+            reviewSummary.reopened ? `${reviewSummary.reopened} reopened` : null,
+            reviewSummary.none ? `${reviewSummary.none} with no deadline` : null,
+          ].filter(Boolean).join(' · ') || 'all on the clock'}
+          tone={reviewSummary.dueSoon ? 'warn' : undefined}
+        />
       </div>
 
       {!activeClient && fullModel.clients.length > 1 && (
@@ -672,7 +870,13 @@ export default function ProcurementDashboard() {
       ) : (
         <>
           {visible.pos.map((po) => (
-            <PoGroup key={po.id} po={po} commentsByTarget={commentsByTarget} {...billHandlers} />
+            <PoGroup
+              key={po.id}
+              po={po}
+              commentsByTarget={commentsByTarget}
+              deadlinesAvailable={deadlineMeta.available}
+              {...billHandlers}
+            />
           ))}
 
           {visible.unlinked.length > 0 && (

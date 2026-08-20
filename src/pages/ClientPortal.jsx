@@ -3,6 +3,8 @@ import { useParams } from 'react-router-dom';
 import { buildProcurementModel, formatMoney } from '../data/procurement';
 import { fetchPortalData, postPortalComment, portalAttachmentUrl } from '../data/portalClient';
 import { groupComments, commentKey } from '../data/comments';
+import { indexDeadlines, resolveDeadline, lockState, permissions, summarize } from '../data/reviewLock';
+import DeadlineBadge from '../components/procurement/DeadlineBadge';
 import CommentThread from '../components/CommentThread';
 import {
   Stat, ApprovalBadge, PaymentBadge, AttachmentList, LineItems, TotalsStrip,
@@ -19,13 +21,17 @@ import { fmtDate } from '../components/procurement/format';
 // Clients may read and comment. Approving and rejecting are staff actions and
 // have no control here.
 
-function PortalBillRow({ bill, token, comments, onPost, authorName }) {
+function PortalBillRow({ bill, token, comments, deadlineIndex, onPost, authorName }) {
   const [open, setOpen] = useState(false);
   const count = comments.length;
 
+  const { deadline, inherited } = resolveDeadline(bill, deadlineIndex);
+  const lock = lockState(deadline);
+  const perms = permissions(lock);
+
   return (
     <>
-      <tr className={`proc-bill-row${bill.approval.state === 'rejected' ? ' proc-bill-row--rejected' : ''}`}>
+      <tr className={`proc-bill-row${bill.approval.state === 'rejected' ? ' proc-bill-row--rejected' : ''}${lock.locked ? ' proc-bill-row--locked' : ''}`}>
         <td>
           <button className="proc-disclosure" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
             <span aria-hidden="true">{open ? '▾' : '▸'}</span>
@@ -42,16 +48,17 @@ function PortalBillRow({ bill, token, comments, onPost, authorName }) {
         <td>{fmtDate(bill.dueAt)}</td>
         <td><PaymentBadge bill={bill} /></td>
         <td><ApprovalBadge approval={bill.approval} /></td>
+        <td className="dl-cell"><DeadlineBadge lock={lock} inherited={inherited} /></td>
         <td className="num proc-amount">{formatMoney(bill.amountCents, bill.currency)}</td>
         <td className="proc-actions">
           <button className="btn btn-small" onClick={() => setOpen(true)}>
-            {count ? `Comments (${count})` : 'Comment'}
+            {count ? `Comments (${count})` : lock.locked ? 'View' : 'Comment'}
           </button>
         </td>
       </tr>
       {open && (
         <tr className="proc-bill-detail">
-          <td colSpan={8}>
+          <td colSpan={9}>
             <div className="proc-detail-grid">
               <div>
                 <div className="proc-detail-heading">Line items</div>
@@ -69,7 +76,13 @@ function PortalBillRow({ bill, token, comments, onPost, authorName }) {
                   comments={comments}
                   authorName={authorName}
                   placeholder="Question about this bill?"
-                  emptyLabel="No comments on this bill yet. Ask us anything about it."
+                  emptyLabel={lock.locked
+                    ? 'No comments were left on this bill before review closed.'
+                    : 'No comments on this bill yet. Ask us anything about it.'}
+                  disabled={!perms.canComment}
+                  disabledReason={lock.locked
+                    ? `Review on this bill closed on ${fmtDate(new Date(lock.dueAt).toISOString())}, so comments are closed. Contact your account manager if you still need to raise something.`
+                    : null}
                   onPost={({ body }) => onPost({ targetType: 'bill', targetId: bill.id, body })}
                 />
                 {bill.approval.state === 'rejected' && (
@@ -87,10 +100,12 @@ function PortalBillRow({ bill, token, comments, onPost, authorName }) {
   );
 }
 
-function PortalPoGroup({ po, token, commentsByTarget, onPost, authorName }) {
+function PortalPoGroup({ po, token, commentsByTarget, deadlineIndex, onPost, authorName }) {
   const [open, setOpen] = useState(true);
   const [showPoComments, setShowPoComments] = useState(false);
   const { subtotal } = po;
+  const poLock = lockState(deadlineIndex.get(`purchase_order:${po.id}`) || null);
+  const poPerms = permissions(poLock);
   const hasCommitment = po.amountCents > 0;
   const pct = hasCommitment ? Math.min(100, Math.round((subtotal.approvedCents / po.amountCents) * 100)) : 0;
   const poComments = commentsByTarget.get(commentKey('purchase_order', po.id)) || [];
@@ -107,6 +122,7 @@ function PortalPoGroup({ po, token, commentsByTarget, onPost, authorName }) {
           <span className="proc-sep">&middot;</span>
           <span>Issued {fmtDate(po.issuedAt)}</span>
           <span className={`proc-badge proc-badge--${po.status === 'CLOSED' ? 'muted' : 'open'}`}>{po.status}</span>
+          <DeadlineBadge lock={poLock} />
         </div>
         <div className="proc-po-numbers">
           <div>
@@ -141,7 +157,7 @@ function PortalPoGroup({ po, token, commentsByTarget, onPost, authorName }) {
               <thead>
                 <tr>
                   <th>Bill</th><th>Vendor</th><th>Invoiced</th><th>Due</th>
-                  <th>Payment</th><th>Status</th><th className="num">Amount</th><th />
+                  <th>Payment</th><th>Status</th><th>Review</th><th className="num">Amount</th><th />
                 </tr>
               </thead>
               <tbody>
@@ -151,6 +167,7 @@ function PortalPoGroup({ po, token, commentsByTarget, onPost, authorName }) {
                     bill={bill}
                     token={token}
                     authorName={authorName}
+                    deadlineIndex={deadlineIndex}
                     comments={commentsByTarget.get(commentKey('bill', bill.id)) || []}
                     onPost={onPost}
                   />
@@ -177,6 +194,10 @@ function PortalPoGroup({ po, token, commentsByTarget, onPost, authorName }) {
                 authorName={authorName}
                 placeholder="Question about this purchase order?"
                 emptyLabel="No comments on this purchase order yet."
+                disabled={!poPerms.canComment}
+                disabledReason={poLock.locked
+                  ? `Review on this purchase order closed on ${fmtDate(new Date(poLock.dueAt).toISOString())}, so comments are closed.`
+                  : null}
                 onPost={({ body }) => onPost({ targetType: 'purchase_order', targetId: po.id, body })}
               />
             </div>
@@ -228,6 +249,11 @@ export default function ClientPortal() {
   }), [data]);
 
   const commentsByTarget = useMemo(() => groupComments(comments), [comments]);
+  const deadlineIndex = useMemo(() => indexDeadlines(data?.deadlines || []), [data]);
+  const reviewSummary = useMemo(
+    () => summarize(model.bills, deadlineIndex),
+    [model.bills, deadlineIndex]
+  );
 
   const handlePost = useCallback(async ({ targetType, targetId, body }) => {
     const comment = await postPortalComment(token, {
@@ -294,6 +320,23 @@ export default function ClientPortal() {
         </div>
       )}
 
+      {(reviewSummary.dueSoon > 0 || reviewSummary.locked > 0) && (
+        <div className={`portal-deadline${reviewSummary.dueSoon > 0 ? ' portal-deadline--soon' : ' portal-deadline--locked'}`}>
+          <span aria-hidden="true">{reviewSummary.dueSoon > 0 ? '\u23F3' : '\u{1F512}'}</span>
+          <span>
+            {reviewSummary.dueSoon > 0 && (
+              <><strong>{reviewSummary.dueSoon} {reviewSummary.dueSoon === 1 ? 'bill is' : 'bills are'} closing for review soon.</strong>{' '}
+                Raise anything you need to before the deadline shown on each row — after that, comments close.{' '}</>
+            )}
+            {reviewSummary.locked > 0 && (
+              <>{reviewSummary.locked} {reviewSummary.locked === 1 ? 'bill has' : 'bills have'} passed
+                {' '}{reviewSummary.locked === 1 ? 'its' : 'their'} review deadline and can no longer be
+                commented on. Contact your account manager if you still need to raise something.</>
+            )}
+          </span>
+        </div>
+      )}
+
       <div className="proc-stats">
         <Stat
           label="Committed on POs"
@@ -329,6 +372,7 @@ export default function ClientPortal() {
               token={token}
               authorName={authorName}
               commentsByTarget={commentsByTarget}
+              deadlineIndex={deadlineIndex}
               onPost={handlePost}
             />
           ))}
@@ -345,7 +389,7 @@ export default function ClientPortal() {
                 <thead>
                   <tr>
                     <th>Bill</th><th>Vendor</th><th>Invoiced</th><th>Due</th>
-                    <th>Payment</th><th>Status</th><th className="num">Amount</th><th />
+                    <th>Payment</th><th>Status</th><th>Review</th><th className="num">Amount</th><th />
                   </tr>
                 </thead>
                 <tbody>
@@ -355,6 +399,7 @@ export default function ClientPortal() {
                       bill={bill}
                       token={token}
                       authorName={authorName}
+                      deadlineIndex={deadlineIndex}
                       comments={commentsByTarget.get(commentKey('bill', bill.id)) || []}
                       onPost={handlePost}
                     />

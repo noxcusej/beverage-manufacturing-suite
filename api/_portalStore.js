@@ -240,3 +240,295 @@ export async function readBillDecisions() {
   }
   return data?.data && typeof data.data === 'object' ? data.data : {};
 }
+
+// ── Review deadlines ────────────────────────────────────────────────────────
+//
+// Lock semantics live in src/data/reviewLock.js and are imported here rather
+// than restated, so the server and the browser cannot drift apart on what
+// "locked" means.
+
+function rowToDeadline(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    targetType: row.target_type,
+    targetId: row.target_id,
+    clientName: row.client_name,
+    dueAt: row.due_at,
+    note: row.note,
+    setBy: row.set_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    reopenedUntil: row.reopened_until,
+    reopenedBy: row.reopened_by,
+    reopenedReason: row.reopened_reason,
+  };
+}
+
+export async function listDeadlines({ clientName } = {}) {
+  const db = store();
+  if (!db) return [];
+  let query = db.from('review_deadlines').select('*').limit(2000);
+  if (clientName) query = query.eq('client_name', clientName);
+  const { data, error } = await query;
+  if (error) throw new Error(`deadlines list failed: ${error.message}`);
+  return (data || []).map(rowToDeadline);
+}
+
+export async function getDeadline(targetType, targetId) {
+  const db = store();
+  if (!db) return null;
+  const { data, error } = await db
+    .from('review_deadlines')
+    .select('*')
+    .eq('target_type', targetType)
+    .eq('target_id', String(targetId))
+    .maybeSingle();
+  if (error) throw new Error(`deadline lookup failed: ${error.message}`);
+  return rowToDeadline(data);
+}
+
+async function recordDeadlineEvent(db, {
+  deadlineId, targetType, targetId, clientName, action, actorRole, actor,
+  previousDueAt, newDueAt, reason,
+}) {
+  const { error } = await db.from('review_deadline_events').insert({
+    id: newId('rde'),
+    deadline_id: deadlineId,
+    target_type: targetType,
+    target_id: String(targetId),
+    client_name: clientName || 'Unassigned',
+    action,
+    actor_role: actorRole,
+    actor: actor || null,
+    previous_due_at: previousDueAt || null,
+    new_due_at: newDueAt || null,
+    reason: reason || null,
+  });
+  // The audit row is the point of the admin restriction, so a failure to write
+  // it is worth shouting about — but not worth losing the operator's change.
+  if (error) console.error('[portal] deadline audit write failed:', error.message);
+}
+
+export async function listDeadlineEvents({ targetType, targetId } = {}) {
+  const db = store();
+  if (!db) return [];
+  let query = db.from('review_deadline_events').select('*').order('created_at', { ascending: false }).limit(200);
+  if (targetType) query = query.eq('target_type', targetType);
+  if (targetId) query = query.eq('target_id', String(targetId));
+  const { data, error } = await query;
+  if (error) throw new Error(`deadline events list failed: ${error.message}`);
+  return data || [];
+}
+
+/**
+ * Create or move a review deadline.
+ *
+ * @param {'staff'|'admin'} actorRole recorded on the audit row. Whether a given
+ *   caller is allowed to be here at all is decided by the route, not here.
+ */
+export async function upsertDeadline({
+  targetType, targetId, clientName, dueAt, note, actor, actorRole,
+}) {
+  const db = store();
+  if (!db) throw new Error(storeUnavailableReason());
+
+  const existing = await getDeadline(targetType, targetId);
+  const now = new Date().toISOString();
+
+  const row = {
+    id: existing?.id || newId('rdl'),
+    target_type: targetType,
+    target_id: String(targetId),
+    client_name: clientName || 'Unassigned',
+    due_at: dueAt,
+    note: note || null,
+    set_by: actor || null,
+    updated_at: now,
+    // Moving a deadline supersedes any reopen window: the new date is now the
+    // single answer to "when does review close?".
+    reopened_until: null,
+    reopened_by: null,
+    reopened_reason: null,
+  };
+
+  const { data, error } = await db
+    .from('review_deadlines')
+    .upsert(row, { onConflict: 'target_type,target_id' })
+    .select()
+    .single();
+  if (error) throw new Error(`deadline write failed: ${error.message}`);
+
+  await recordDeadlineEvent(db, {
+    deadlineId: row.id,
+    targetType,
+    targetId,
+    clientName,
+    action: existing ? 'edited' : 'set',
+    actorRole,
+    actor,
+    previousDueAt: existing?.dueAt || null,
+    newDueAt: dueAt,
+    reason: note || null,
+  });
+
+  return rowToDeadline(data);
+}
+
+/** Lift the lock until `reopenedUntil`, leaving the original due date in place. */
+export async function reopenDeadline({ targetType, targetId, reopenedUntil, reason, actor }) {
+  const db = store();
+  if (!db) throw new Error(storeUnavailableReason());
+
+  const existing = await getDeadline(targetType, targetId);
+  if (!existing) throw Object.assign(new Error('There is no review deadline on that record to reopen.'), { status: 404 });
+
+  const { data, error } = await db
+    .from('review_deadlines')
+    .update({
+      reopened_until: reopenedUntil,
+      reopened_by: actor || null,
+      reopened_reason: reason || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', existing.id)
+    .select()
+    .single();
+  if (error) throw new Error(`deadline reopen failed: ${error.message}`);
+
+  await recordDeadlineEvent(db, {
+    deadlineId: existing.id,
+    targetType,
+    targetId,
+    clientName: existing.clientName,
+    action: 'reopened',
+    actorRole: 'admin',
+    actor,
+    previousDueAt: existing.dueAt,
+    newDueAt: reopenedUntil,
+    reason,
+  });
+
+  return rowToDeadline(data);
+}
+
+export async function clearDeadline({ targetType, targetId, actor, reason }) {
+  const db = store();
+  if (!db) throw new Error(storeUnavailableReason());
+
+  const existing = await getDeadline(targetType, targetId);
+  if (!existing) return null;
+
+  const { error } = await db.from('review_deadlines').delete().eq('id', existing.id);
+  if (error) throw new Error(`deadline clear failed: ${error.message}`);
+
+  await recordDeadlineEvent(db, {
+    deadlineId: existing.id,
+    targetType,
+    targetId,
+    clientName: existing.clientName,
+    action: 'cleared',
+    actorRole: 'admin',
+    actor,
+    previousDueAt: existing.dueAt,
+    newDueAt: null,
+    reason,
+  });
+
+  return existing;
+}
+
+// ── Approval decisions ──────────────────────────────────────────────────────
+//
+// Moved out of the anon-writable app_data blob so that the deadline lock can be
+// enforced on the write path. Absence of a row still means "approved
+// automatically" — only exceptions are stored.
+
+export async function listDecisions({ clientName } = {}) {
+  const db = store();
+  if (!db) return {};
+  let query = db.from('bill_decisions').select('*').limit(5000);
+  if (clientName) query = query.eq('client_name', clientName);
+  const { data, error } = await query;
+  if (error) throw new Error(`decisions list failed: ${error.message}`);
+
+  const out = {};
+  for (const row of data || []) {
+    out[row.bill_id] = {
+      status: row.status,
+      by: row.decided_by,
+      at: row.decided_at,
+      reason: row.reason,
+    };
+  }
+  return out;
+}
+
+export async function setDecision({ billId, clientName, status, reason, decidedBy }) {
+  const db = store();
+  if (!db) throw new Error(storeUnavailableReason());
+  if (status !== 'approved' && status !== 'rejected') {
+    throw Object.assign(new Error('status must be "approved" or "rejected".'), { status: 400 });
+  }
+
+  const now = new Date().toISOString();
+  const { data, error } = await db
+    .from('bill_decisions')
+    .upsert({
+      bill_id: String(billId),
+      client_name: clientName || null,
+      status,
+      reason: reason || null,
+      decided_by: decidedBy || null,
+      decided_at: now,
+      updated_at: now,
+    }, { onConflict: 'bill_id' })
+    .select()
+    .single();
+  if (error) throw new Error(`decision write failed: ${error.message}`);
+  return { status: data.status, by: data.decided_by, at: data.decided_at, reason: data.reason };
+}
+
+/** Remove an explicit decision, returning the bill to automatic approval. */
+export async function clearDecision(billId) {
+  const db = store();
+  if (!db) throw new Error(storeUnavailableReason());
+  const { error } = await db.from('bill_decisions').delete().eq('bill_id', String(billId));
+  if (error) throw new Error(`decision clear failed: ${error.message}`);
+}
+
+/**
+ * One-time carry-over of decisions that predate the bill_decisions table.
+ * Reads the old app_data blob and inserts anything not already present, so an
+ * existing deployment does not appear to lose its rejections on upgrade.
+ * Safe to call repeatedly: existing rows are left alone.
+ */
+export async function migrateLegacyDecisions() {
+  const db = store();
+  if (!db) return { migrated: 0 };
+
+  const legacy = await readBillDecisions();
+  const billIds = Object.keys(legacy || {});
+  if (!billIds.length) return { migrated: 0 };
+
+  const { data: existing } = await db.from('bill_decisions').select('bill_id').in('bill_id', billIds);
+  const have = new Set((existing || []).map((r) => r.bill_id));
+  const rows = billIds
+    .filter((id) => !have.has(id))
+    .map((id) => ({
+      bill_id: id,
+      client_name: legacy[id]?.clientName || null,
+      status: legacy[id]?.status === 'rejected' ? 'rejected' : 'approved',
+      reason: legacy[id]?.reason || null,
+      decided_by: legacy[id]?.by || null,
+      decided_at: legacy[id]?.at || new Date().toISOString(),
+    }));
+
+  if (!rows.length) return { migrated: 0 };
+  const { error } = await db.from('bill_decisions').insert(rows);
+  if (error) {
+    console.error('[portal] legacy decision carry-over failed:', error.message);
+    return { migrated: 0, error: error.message };
+  }
+  return { migrated: rows.length };
+}

@@ -12,8 +12,8 @@ Route: **`/portal/<token>`**. Endpoint: **`/api/portal`**.
 
 | | |
 | --- | --- |
-| **Can** | See their own POs and bills, with totals and per-PO subtotals. View and download the invoice files attached to each. Read the shared comment thread and post to it. |
-| **Cannot** | See another client's data. See internal-only comments. Approve or reject anything — that stays with your team. Reach any other part of the suite: the portal renders outside the app `Layout`, so there is no sidebar, no navigation, and no link out of it. |
+| **Can** | See their own POs and bills, with totals and per-PO subtotals. View and download the invoice files attached to each. Read the shared comment thread and post to it, until the review deadline closes. |
+| **Cannot** | See another client's data. See internal-only comments. Approve or reject anything — that stays with your team. Comment after the review deadline has passed (see [REVIEW_DEADLINES.md](REVIEW_DEADLINES.md)). Reach any other part of the suite: the portal renders outside the app `Layout`, so there is no sidebar, no navigation, and no link out of it. |
 
 The client sees the approval state of their bills (including *Rejected*, with the
 reason) because that is their money — but the controls that change it exist only
@@ -59,7 +59,8 @@ project, which are readable by anyone holding the public anon key. The portal
 bundle has no Supabase client in it at all; every read and write goes through
 `/api/portal` using the **service** key.
 
-Run `supabase/migrations/003_create_portal_tables.sql` before using the portal.
+Run `supabase/migrations/003_create_portal_tables.sql` and
+`004_create_review_deadlines.sql` before using the portal.
 
 ---
 
@@ -71,10 +72,11 @@ In addition to the Ramp variables in [PROCUREMENT.md](PROCUREMENT.md):
 | --- | --- | --- |
 | `SUPABASE_URL` | yes | Falls back to `VITE_SUPABASE_URL` |
 | `SUPABASE_SERVICE_KEY` | yes | Service role key. The anon key **cannot** read the portal tables, by design. |
-| `PROCUREMENT_ADMIN_KEY` | strongly recommended | Guards `/api/portal-links` and `/api/comments`. Without it those routes are open — see the warning below. |
+| `PROCUREMENT_STAFF_KEY` | strongly recommended | Guards the staff routes (`/api/portal-links`, `/api/comments`, `/api/decisions`, `/api/deadlines`). Without it those routes are open — see the warning below. |
+| `PROCUREMENT_ADMIN_KEY` | recommended | The admin tier: editing or reopening a review deadline. Must differ from the staff key. See [REVIEW_DEADLINES.md](REVIEW_DEADLINES.md). |
 | `RAMP_CLIENT_FIELDS` | no | Comma-separated accounting field names that carry the client, for the portal only. Defaults to `client, client name, customer, brand`. The staff dashboard sets this per-session in its Settings panel; the portal reads it from the environment so a client cannot influence how their own scope is computed. |
 
-> **Set `PROCUREMENT_ADMIN_KEY` before you share the first link.** Following the
+> **Set `PROCUREMENT_STAFF_KEY` before you share the first link.** Following the
 > convention already used by `/api/inventory`, these routes are open when no key
 > is configured. An open `/api/portal-links` lets anyone who can reach the
 > deployment mint a link to any client's data. The dashboard shows a warning
@@ -107,7 +109,7 @@ Comments attach to a bill or a purchase order, and carry a visibility:
 
 - **Shared** — visible to both your team and the client. Anything a client
   writes is always shared; there is no such thing as a client note the client
-  cannot see.
+  cannot see. Shared comments close when the review deadline passes.
 - **Internal only** — visible to your team, never sent to a portal. Staff choose
   this with the *Internal only* checkbox when posting.
 

@@ -24,9 +24,12 @@ import {
   touchPortalLink,
   listComments,
   addComment,
+  listDeadlines,
+  listDecisions,
   readBillDecisions,
   storeUnavailableReason,
 } from './_portalStore.js';
+import { lockForTarget, lockedResponse } from './_reviewLock.js';
 
 // A reserved token that previews the portal against the bundled demo dataset.
 // It only works when there is no link store AND no Ramp credentials — i.e.
@@ -136,6 +139,17 @@ export default async function handler(req, res) {
         return res.status(403).json({ error: 'That record is not on this portal.', code: 'not_in_scope' });
       }
 
+      // The review deadline closes the dispute window. A client posting after
+      // it is refused here, not merely discouraged by a disabled textarea.
+      const { lock, inherited } = await lockForTarget(targetType, targetId);
+      if (lock.locked) {
+        return res.status(423).json({
+          ...lockedResponse(lock, 'This review'),
+          remedy: 'Contact your account manager if you still need to raise something.',
+          inheritedFromPurchaseOrder: inherited,
+        });
+      }
+
       const comment = await addComment({
         targetType,
         targetId,
@@ -188,6 +202,7 @@ export default async function handler(req, res) {
         purchaseOrders: [],
         comments: [],
         decisions: {},
+        deadlines: [],
         warnings: [],
       });
     }
@@ -200,12 +215,17 @@ export default async function handler(req, res) {
       });
     }
 
-    const [{ bills, purchaseOrders, warnings }, comments, decisions] = await Promise.all([
-      loadProcurement({}),
-      // includeInternal: false — internal notes are never sent to a client.
-      listComments({ clientName, includeInternal: false }),
-      readBillDecisions(),
-    ]);
+    const [{ bills, purchaseOrders, warnings }, comments, tableDecisions, legacyDecisions, deadlines] =
+      await Promise.all([
+        loadProcurement({}),
+        // includeInternal: false — internal notes are never sent to a client.
+        listComments({ clientName, includeInternal: false }),
+        listDecisions({}),
+        // Anything not yet carried over from the pre-table blob still counts.
+        readBillDecisions(),
+        listDeadlines({ clientName }),
+      ]);
+    const decisions = { ...legacyDecisions, ...tableDecisions };
 
     const scoped = scopeToClient(bills, purchaseOrders, clientName, clientFields);
 
@@ -216,6 +236,13 @@ export default async function handler(req, res) {
     for (const [billId, decision] of Object.entries(decisions)) {
       if (scopedBillIds.has(String(billId))) scopedDecisions[billId] = decision;
     }
+
+    // Deadlines are already filtered to this client, but a PO-level deadline
+    // must also survive the bill/PO scoping to be useful on the page.
+    const scopedPoIds = new Set(scoped.purchaseOrders.map((p) => String(p.id)));
+    const scopedDeadlines = deadlines.filter((d) => (
+      d.targetType === 'bill' ? scopedBillIds.has(String(d.targetId)) : scopedPoIds.has(String(d.targetId))
+    ));
 
     touchPortalLink(link.id).catch(() => {});
 
@@ -230,6 +257,7 @@ export default async function handler(req, res) {
       purchaseOrders: scoped.purchaseOrders,
       comments,
       decisions: scopedDecisions,
+      deadlines: scopedDeadlines,
     });
   } catch (err) {
     const status = err.status && err.status >= 400 && err.status < 600 ? err.status : 500;

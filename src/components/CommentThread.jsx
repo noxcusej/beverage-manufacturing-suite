@@ -18,6 +18,11 @@ export default function CommentThread({
   authorName,
   placeholder = 'Add a comment…',
   allowInternal = false,
+  // Set when the review is locked: the client-visible conversation is closed,
+  // but the team can still write to its own record. The toggle is pinned on and
+  // explained rather than hidden, so it is obvious why.
+  forceInternal = false,
+  forceInternalReason = null,
   disabled = false,
   disabledReason = null,
   onPost,
@@ -26,6 +31,7 @@ export default function CommentThread({
 }) {
   const [draft, setDraft] = useState('');
   const [internal, setInternal] = useState(false);
+  const postAsInternal = forceInternal || internal;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -36,7 +42,7 @@ export default function CommentThread({
     setBusy(true);
     setError(null);
     try {
-      await onPost({ body, visibility: internal ? 'internal' : 'shared' });
+      await onPost({ body, visibility: postAsInternal ? 'internal' : 'shared' });
       setDraft('');
       setInternal(false);
     } catch (err) {
@@ -84,18 +90,31 @@ export default function CommentThread({
         <p className="cmt-disabled">{disabledReason || 'Commenting is unavailable.'}</p>
       ) : (
         <form className="cmt-form" onSubmit={submit}>
+          {forceInternal && (
+            <p className="cmt-forced">{forceInternalReason || 'This review is closed — anything posted here is an internal note.'}</p>
+          )}
           <textarea
             className="cmt-input"
             rows={2}
             value={draft}
-            placeholder={placeholder}
+            placeholder={forceInternal ? 'Internal note…' : placeholder}
             maxLength={4000}
             onChange={(e) => setDraft(e.target.value)}
           />
           <div className="cmt-form-row">
             {allowInternal && (
-              <label className="cmt-internal-toggle" title="Internal notes are never shown on a client portal">
-                <input type="checkbox" checked={internal} onChange={(e) => setInternal(e.target.checked)} />
+              <label
+                className={`cmt-internal-toggle${forceInternal ? ' cmt-internal-toggle--forced' : ''}`}
+                title={forceInternal
+                  ? 'The review deadline has passed, so only internal notes can be added.'
+                  : 'Internal notes are never shown on a client portal'}
+              >
+                <input
+                  type="checkbox"
+                  checked={postAsInternal}
+                  disabled={forceInternal}
+                  onChange={(e) => setInternal(e.target.checked)}
+                />
                 {' '}Internal only
               </label>
             )}

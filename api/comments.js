@@ -13,7 +13,8 @@ import {
   deleteComment,
   storeUnavailableReason,
 } from './_portalStore.js';
-import { checkStaffAuth } from './_staffAuth.js';
+import { checkStaffAuth, authStatus } from './_staffAuth.js';
+import { lockForTarget, lockedResponse } from './_reviewLock.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -26,7 +27,7 @@ export default async function handler(req, res) {
   if (unavailable) {
     // Not an error: without the service key the dashboard keeps working and
     // simply says commenting is unavailable.
-    return res.status(200).json({ available: false, reason: unavailable, comments: [] });
+    return res.status(200).json({ available: false, reason: unavailable, comments: [], ...authStatus() });
   }
 
   try {
@@ -35,11 +36,28 @@ export default async function handler(req, res) {
         clientName: req.query?.client ? String(req.query.client) : null,
         includeInternal: true,
       });
-      return res.status(200).json({ available: true, comments });
+      return res.status(200).json({ available: true, comments, ...authStatus() });
     }
 
     if (req.method === 'POST') {
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+
+      // A closed review closes the client-visible conversation with it. Internal
+      // notes stay open: the client never sees them, so freezing them would
+      // protect nobody and would only cost the team its own record.
+      if (body.visibility !== 'internal') {
+        const { lock, inherited } = await lockForTarget(body.targetType, body.targetId, {
+          poIdHint: body.poId || null,
+        });
+        if (lock.locked) {
+          return res.status(423).json({
+            ...lockedResponse(lock, 'This review'),
+            remedy: 'An admin can reopen it, or post this as an internal note instead.',
+            inheritedFromPurchaseOrder: inherited,
+          });
+        }
+      }
+
       const comment = await addComment({
         targetType: body.targetType,
         targetId: body.targetId,

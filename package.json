@@ -8,7 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node src/data/procurement.test.mjs && node src/data/portal.test.mjs && node src/pages/runQuoting/packagingPlan.test.mjs"
+    "test": "node src/data/procurement.test.mjs && node src/data/reviewLock.test.mjs && node src/data/portal.test.mjs && node src/pages/runQuoting/packagingPlan.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.1",

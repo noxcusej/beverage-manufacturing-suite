@@ -13,7 +13,7 @@ import {
   revokePortalLink,
   storeUnavailableReason,
 } from './_portalStore.js';
-import { checkStaffAuth, staffKeyConfigured } from './_staffAuth.js';
+import { checkStaffAuth, authStatus } from './_staffAuth.js';
 
 function portalUrl(req, token) {
   const proto = req.headers['x-forwarded-proto'] || 'https';
@@ -35,14 +35,14 @@ export default async function handler(req, res) {
       reason: unavailable,
       links: [],
       // Surfaced in the UI so an operator is told before they share anything.
-      adminKeyConfigured: staffKeyConfigured(),
+      ...authStatus(),
     });
   }
 
   try {
     if (req.method === 'GET') {
       const links = await listPortalLinks(req.query?.client ? String(req.query.client) : null);
-      return res.status(200).json({ available: true, links, adminKeyConfigured: staffKeyConfigured() });
+      return res.status(200).json({ available: true, links, ...authStatus() });
     }
 
     if (req.method === 'POST') {
