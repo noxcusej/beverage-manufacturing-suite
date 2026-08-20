@@ -59,8 +59,34 @@ project, which are readable by anyone holding the public anon key. The portal
 bundle has no Supabase client in it at all; every read and write goes through
 `/api/portal` using the **service** key.
 
+### Which Supabase instance?
+
+The same one the rest of the suite already uses — there is no second project.
+`api/_portalStore.js` falls back to `VITE_SUPABASE_URL`, so the URL is shared
+automatically; migrations 003 and 004 add tables alongside the existing
+`app_data`, `formulas` and `inventory`.
+
+What is **not** shared is the key. The suite's browser code uses the anon key,
+and the portal tables have RLS on with no anon policy, so the anon key reads
+nothing from them by design. The server needs the **service role** key from that
+same project (Supabase → Project Settings → API → `service_role`), set as
+`SUPABASE_SERVICE_KEY`. It stays server-side; never prefix it with `VITE_`,
+which would bundle it into the browser build.
+
 Run `supabase/migrations/003_create_portal_tables.sql` and
-`004_create_review_deadlines.sql` before using the portal.
+`004_create_review_deadlines.sql` before using the portal — `supabase db push`,
+or paste them into the SQL editor.
+
+Then confirm the whole setup:
+
+```bash
+npm run check:supabase              # tables exist, anon cannot read them
+npm run check:supabase -- --probe-write   # also proves anon cannot insert
+```
+
+That script never prints a key value. It fails loudly if the anon key can reach
+`portal_links` or `procurement_comments`, which is the boundary the client
+portal depends on.
 
 ---
 

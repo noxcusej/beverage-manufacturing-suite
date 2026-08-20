@@ -26,7 +26,8 @@ Then navigate to http://localhost:8000
 ## Tests
 
 ```bash
-npm test
+npm test                 # pure logic: procurement, review locks, portal isolation
+npm run check:supabase   # verify the database is set up and RLS holds
 ```
 
 ## Tech Stack
