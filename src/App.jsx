@@ -12,6 +12,7 @@ const Summary = lazy(() => import('./pages/Summary'));
 const ClientProfile = lazy(() => import('./pages/ClientProfile'));
 const Services = lazy(() => import('./pages/Services'));
 const TreasuryCockpit = lazy(() => import('./pages/TreasuryCockpit'));
+const ProcurementDashboard = lazy(() => import('./pages/ProcurementDashboard'));
 
 function AppStatus({ error }) {
   return (
@@ -59,6 +60,10 @@ export default function App() {
             <Route path="/clients" element={<ClientProfile />} />
             <Route path="/clients/:clientName" element={<ClientProfile />} />
             <Route path="/services" element={<Services />} />
+            <Route path="/procurement" element={<ProcurementDashboard />} />
+            {/* Client-scoped view: the proxy filters server-side, so the page
+                never receives another client's bills. */}
+            <Route path="/procurement/:clientName" element={<ProcurementDashboard />} />
           </Route>
           {/* Standalone — no suite Layout/sidebar. Launches in its own window. */}
           <Route path="/treasury" element={<TreasuryCockpit />} />

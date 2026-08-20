@@ -5,6 +5,7 @@ import {
   defaultVendors,
   defaultTankConfig,
   defaultGlobalSettings,
+  defaultProcurementSettings,
 } from './defaults';
 import { nextId } from '../utils/ids';
 import {
@@ -32,6 +33,8 @@ const _cache = {
   finishedGoods: null,
   savedPOs: null,
   globalSettings: null,
+  billDecisions: null,
+  procurementSettings: null,
 };
 
 const _defaults = {
@@ -48,6 +51,8 @@ const _defaults = {
   finishedGoods: [],
   savedPOs: [],
   globalSettings: defaultGlobalSettings,
+  billDecisions: {},
+  procurementSettings: defaultProcurementSettings,
 };
 
 let _hydrated = false;
@@ -66,6 +71,8 @@ const _keyMap = {
   finishedGoods: 'finished_goods',
   savedPOs: 'saved_pos',
   globalSettings: 'global_settings',
+  billDecisions: 'bill_decisions',
+  procurementSettings: 'procurement_settings',
 };
 
 function notify(dataType) {
@@ -535,4 +542,58 @@ export function saveMissionControlState(state) {
     team: state.team,
     officeStatus: state.officeStatus,
   });
+}
+
+// ── Procurement: bill approval decisions ────────────────────────────────────
+//
+// The dashboard's rule is that a bill is approved on arrival and stays approved
+// unless somebody rejects it. That means the *absence* of a record is itself
+// meaningful — only exceptions are stored here, keyed by Ramp bill id:
+//   { [billId]: { status: 'approved' | 'rejected', by, at, reason } }
+// A stored 'approved' records a human confirming a bill explicitly; it counts
+// the same as the automatic case but is shown differently.
+
+export function getBillDecisions() {
+  return get('billDecisions') || {};
+}
+
+export function saveBillDecisions(decisions) {
+  set('billDecisions', decisions || {});
+}
+
+export function setBillDecision(billId, decision) {
+  if (!billId) return;
+  const next = { ...getBillDecisions() };
+  next[billId] = {
+    status: decision?.status === 'rejected' ? 'rejected' : 'approved',
+    by: decision?.by || null,
+    at: decision?.at || new Date().toISOString(),
+    reason: decision?.reason || null,
+  };
+  saveBillDecisions(next);
+}
+
+/** Drop an explicit decision, returning the bill to automatic approval. */
+export function clearBillDecision(billId) {
+  const next = { ...getBillDecisions() };
+  delete next[billId];
+  saveBillDecisions(next);
+}
+
+/** Merge in decisions that ship with a dataset without overwriting the user's. */
+export function seedBillDecisions(seed) {
+  if (!seed || !Object.keys(seed).length) return;
+  const current = getBillDecisions();
+  const merged = { ...seed, ...current };
+  if (JSON.stringify(merged) !== JSON.stringify(current)) saveBillDecisions(merged);
+}
+
+// ── Procurement: settings ───────────────────────────────────────────────────
+
+export function getProcurementSettings() {
+  return { ...defaultProcurementSettings, ...(get('procurementSettings') || {}) };
+}
+
+export function saveProcurementSettings(settings) {
+  set('procurementSettings', { ...getProcurementSettings(), ...settings });
 }

@@ -289,3 +289,20 @@ export const defaultTeam = [
     status: 'idle',
   },
 ];
+
+// ── Procurement Dashboard (Ramp) ────────────────────────────────────────────
+// How to read a client name off a Ramp bill or purchase order. Ramp models
+// custom dimensions as accounting fields, and every tenant names theirs
+// differently, so this is configurable from the dashboard's Settings panel
+// rather than hard-coded.
+export const defaultProcurementSettings = {
+  // Accounting field names (case-insensitive, substring match) that carry the
+  // client a spend belongs to.
+  clientFieldNames: ['client', 'client name', 'customer', 'brand'],
+  // Some tenants model each client as a separate Ramp entity instead.
+  useEntityAsClient: false,
+  // Manual billId -> client assignments, for spend Ramp can't classify.
+  clientOverrides: {},
+  // Who approvals and rejections are recorded as.
+  reviewerName: '',
+};

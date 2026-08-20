@@ -9,6 +9,7 @@ Web-based calculators for beverage manufacturing and co-packing operations.
 - **Inventory Management** - Track ingredients and packaging
 - **Price Sheets** - Manage services and packaging pricing
 - **Mission Control** - Task board and team dashboard
+- **Procurement** - Ramp-sourced purchase orders, bills, invoice attachments and client subtotals ([setup](docs/PROCUREMENT.md))
 
 ## Usage
 
@@ -19,6 +20,12 @@ python3 -m http.server 8000
 ```
 
 Then navigate to http://localhost:8000
+
+## Tests
+
+```bash
+npm test
+```
 
 ## Tech Stack
 

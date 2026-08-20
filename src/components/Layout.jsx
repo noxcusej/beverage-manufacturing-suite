@@ -79,6 +79,10 @@ export default function Layout() {
               <span className="nav-icon">&#x2692;</span>
               {!collapsed && 'Services'}
             </NavLink>
+            <NavLink to="/procurement" className={({ isActive }) => isActive ? 'active' : ''} title="Procurement">
+              <span className="nav-icon">&#x1F9FE;</span>
+              {!collapsed && 'Procurement'}
+            </NavLink>
 
             {/* Treasury Cockpit launches in its own standalone window (no suite chrome). */}
             <a
