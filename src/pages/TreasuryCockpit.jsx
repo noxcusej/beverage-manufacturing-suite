@@ -409,13 +409,31 @@ export default function TreasuryCockpit() {
   const canSave = hydrated && (dirty || savedSig == null);
   useEffect(() => { dirtyRef.current = dirty; });
 
-  /* persist on demand and let sibling windows adopt the saved truth */
+  /* persist on demand. MERGE with the freshest saved copy per-scenario so a stale
+     duplicate window can't revert scenarios that were edited more recently elsewhere:
+     the scenario being edited here (active) always wins; every other scenario takes
+     whichever copy has the newer updatedAt (this window's or the remote's). */
   const saveNow = async () => {
     if (saving || !canSave) return;
     setSaving(true);
-    const store = buildStore();
     try {
+      const local = buildStore(); // active scenario stamped updatedAt = now
+      let remote = null;
+      try { remote = migrateStore(await loadAppData(STORE_KEY)); } catch { remote = null; }
+      let scen = local.scenarios;
+      if (remote && Array.isArray(remote.scenarios) && remote.scenarios.length) {
+        const localIds = new Set(local.scenarios.map((s) => s.id));
+        const remoteById = new Map(remote.scenarios.map((s) => [s.id, s]));
+        scen = local.scenarios.map((s) => {
+          if (s.id === local.activeId) return s;               // just edited here — authoritative
+          const r = remoteById.get(s.id);
+          return r && (r.updatedAt || 0) > (s.updatedAt || 0) ? r : s; // keep the newer copy
+        });
+        for (const r of remote.scenarios) if (!localIds.has(r.id)) scen.push(r); // created in another window
+      }
+      const store = { version: 2, activeId: local.activeId, scenarios: scen };
       await saveAppData(STORE_KEY, store);
+      setScenarios(store.scenarios);
       if (activeId !== store.activeId) setActiveId(store.activeId); // brand-new bootstrap
       setSavedSig(storeSig(store));
       if (bc.current) bc.current.postMessage({ t: "store", store });
@@ -468,7 +486,9 @@ export default function TreasuryCockpit() {
   const switchScenario = (id) => {
     if (id === activeId) return;
     const outgoing = { openingCash, floor, projects, fixed, ap, capital, tab, selId, manualAdj };
-    const list = scenarios.map((s) => (s.id === activeId ? { ...s, state: outgoing, updatedAt: Date.now() } : s));
+    // only bump updatedAt when the outgoing scenario actually changed, so the per-scenario
+    // save-merge treats "just viewed" scenarios as unchanged (avoids clobbering newer copies)
+    const list = scenarios.map((s) => (s.id === activeId ? { ...s, state: outgoing, updatedAt: storeSig(s.state) !== storeSig(outgoing) ? Date.now() : (s.updatedAt || 0) } : s));
     const target = list.find((s) => s.id === id);
     if (!target) return;
     setScenarios(list);
