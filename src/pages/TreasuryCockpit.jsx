@@ -329,6 +329,8 @@ export default function TreasuryCockpit() {
   const [activeId, setActiveId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [savedSig, setSavedSig] = useState(null); // signature of the last saved/loaded store; drives the dirty flag
+  const [isWriter, setIsWriter] = useState(true); // false = another cockpit window is the active editor; this one is read-only
+  const [winId] = useState(() => Math.random().toString(36).slice(2)); // unique id for cross-window leader election
   const [scenarioPickerOpen, setScenarioPickerOpen] = useState(false);
 
   /* standalone window — give it its own document title */
@@ -386,8 +388,20 @@ export default function TreasuryCockpit() {
   /* ---- persistence: MANUAL save (no autosave) ---- */
   const bc = useRef(null);
   const dirtyRef = useRef(false);
+  const isWriterRef = useRef(true);
   const showToastRef = useRef(() => {});
   const saveNowRef = useRef(() => {});
+  useEffect(() => { isWriterRef.current = isWriter; });
+
+  /* load a store into live state (from a sibling broadcast or a refresh-on-claim) */
+  const adoptStore = useCallback((store) => {
+    if (!store || !Array.isArray(store.scenarios) || !store.scenarios.length) return;
+    setScenarios(store.scenarios);
+    setActiveId(store.activeId);
+    const act = store.scenarios.find((s) => s.id === store.activeId) || store.scenarios[0];
+    if (act) applyState(act.state);
+    setSavedSig(storeSig(store));
+  }, [applyState]);
 
   /* assemble the whole v2 store from the live state + in-memory scenarios */
   const buildStore = () => {
@@ -406,7 +420,7 @@ export default function TreasuryCockpit() {
       ? { ...s, state: { openingCash, floor, projects, fixed, ap, capital, tab, selId, manualAdj } } : s)),
   }), [activeId, scenarios, openingCash, floor, projects, fixed, ap, capital, tab, selId, manualAdj]);
   const dirty = hydrated && savedSig != null && currentSig !== savedSig;
-  const canSave = hydrated && (dirty || savedSig == null);
+  const canSave = hydrated && isWriter && (dirty || savedSig == null); // only the active-writer window may save
   useEffect(() => { dirtyRef.current = dirty; });
 
   /* persist on demand. MERGE with the freshest saved copy per-scenario so a stale
@@ -457,25 +471,41 @@ export default function TreasuryCockpit() {
     return () => window.removeEventListener("keydown", h);
   }, []);
 
-  /* keep sibling cockpit windows in sync: adopt another window's SAVE — but only if
-     this window has no unsaved edits (otherwise keep ours and warn, never clobber) */
+  /* Cross-window coordination. Only ONE cockpit window is the active writer at a time;
+     others are read-only (Save disabled) so a stale duplicate can't clobber. The focused
+     window claims the writer role. Windows also adopt each other's saves to stay in sync. */
   useEffect(() => {
     if (typeof BroadcastChannel === "undefined") return;
     const ch = new BroadcastChannel("treasury_cockpit_sync");
     bc.current = ch;
+    const post = (msg) => { try { ch.postMessage(msg); } catch { /* channel closing */ } };
     ch.onmessage = (ev) => {
-      const m = ev.data;
-      if (!m || m.t !== "store" || !m.store || !Array.isArray(m.store.scenarios)) return;
-      if (dirtyRef.current) { showToastRef.current("Another window saved — reload to sync (you have unsaved changes)"); return; }
-      setScenarios(m.store.scenarios);
-      setActiveId(m.store.activeId);
-      const act = m.store.scenarios.find((s) => s.id === m.store.activeId);
-      if (act) applyState(act.state);
-      setSavedSig(storeSig(m.store));
-      showToastRef.current("Synced changes from another window");
+      const m = ev.data; if (!m) return;
+      if (m.t === "store" && m.store && Array.isArray(m.store.scenarios)) {
+        if (dirtyRef.current) { showToastRef.current("Another window saved — reload to sync (you have unsaved changes)"); return; }
+        adoptStore(m.store);
+        showToastRef.current("Synced changes from another window");
+      } else if (m.t === "claim" && m.id !== winId) {
+        setIsWriter(false); isWriterRef.current = false; // another window took over editing
+      } else if (m.t === "ping" && isWriterRef.current) {
+        post({ t: "claim", id: winId }); // tell the newcomer this window is already active
+      }
     };
-    return () => { ch.close(); bc.current = null; };
-  }, [applyState]);
+    // announce arrival; if this window is focused, claim the writer role
+    post({ t: "ping", id: winId });
+    if (typeof document === "undefined" || document.hasFocus()) post({ t: "claim", id: winId });
+    const onFocus = () => { setIsWriter(true); isWriterRef.current = true; post({ t: "claim", id: winId }); };
+    window.addEventListener("focus", onFocus);
+    return () => { window.removeEventListener("focus", onFocus); ch.close(); bc.current = null; };
+  }, [adoptStore, winId]);
+
+  /* take over editing in this window (from the read-only banner); refresh to the freshest
+     saved data first if we have no unsaved edits, so we don't resume from a stale copy */
+  const takeOver = async () => {
+    setIsWriter(true); isWriterRef.current = true;
+    if (bc.current) bc.current.postMessage({ t: "claim", id: winId });
+    if (!dirtyRef.current) { try { const st = migrateStore(await loadAppData(STORE_KEY)); if (st) adoptStore(st); } catch { /* offline — keep current */ } }
+  };
 
   /* ---- scenario handlers ---- */
   const activeName = (scenarios.find((s) => s.id === activeId) || {}).name || "Base case";
@@ -734,17 +764,22 @@ export default function TreasuryCockpit() {
               <button className={"tabbtn" + (tab === "sheet" ? " on" : "")} onClick={() => setTab("sheet")}>Spreadsheet</button>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
-              <span style={{ color: canSave && !saving ? "#B7791F" : "var(--muted)", fontWeight: canSave && !saving ? 600 : 400 }}>
-                {saving ? "Saving…" : dirty ? "● Unsaved changes" : savedSig == null ? "● Not saved yet" : "All changes saved"}
-              </span>
-              <button className="btn" disabled={saving || !canSave} onClick={saveNow}
-                title="Save your plan to the cloud (⌘S / Ctrl+S)"
-                style={{ fontWeight: 700, opacity: saving || !canSave ? 0.55 : 1,
-                  background: canSave && !saving ? "var(--pos)" : undefined,
-                  color: canSave && !saving ? "#fff" : undefined,
-                  borderColor: canSave && !saving ? "var(--pos)" : undefined }}>
-                {saving ? "Saving…" : "Save"}
-              </button>
+              {!isWriter ? (<>
+                <span title="Another Treasury Cockpit window is the active editor. This one is read-only so it can't overwrite your work." style={{ color: "var(--danger)", fontWeight: 600, cursor: "help" }}>🔒 Read-only — another window is editing</span>
+                <button className="btn" onClick={takeOver} title="Make this the active editing window (loads the latest saved data first)" style={{ fontWeight: 700 }}>Edit in this window</button>
+              </>) : (<>
+                <span style={{ color: canSave && !saving ? "#B7791F" : "var(--muted)", fontWeight: canSave && !saving ? 600 : 400 }}>
+                  {saving ? "Saving…" : dirty ? "● Unsaved changes" : savedSig == null ? "● Not saved yet" : "All changes saved"}
+                </span>
+                <button className="btn" disabled={saving || !canSave} onClick={saveNow}
+                  title="Save your plan to the cloud (⌘S / Ctrl+S)"
+                  style={{ fontWeight: 700, opacity: saving || !canSave ? 0.55 : 1,
+                    background: canSave && !saving ? "var(--pos)" : undefined,
+                    color: canSave && !saving ? "#fff" : undefined,
+                    borderColor: canSave && !saving ? "var(--pos)" : undefined }}>
+                  {saving ? "Saving…" : "Save"}
+                </button>
+              </>)}
             </div>
           </div>
         </div>
