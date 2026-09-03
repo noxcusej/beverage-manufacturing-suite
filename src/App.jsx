@@ -11,6 +11,7 @@ const FormulaLibrary = lazy(() => import('./pages/FormulaLibrary'));
 const Summary = lazy(() => import('./pages/Summary'));
 const ClientProfile = lazy(() => import('./pages/ClientProfile'));
 const Services = lazy(() => import('./pages/Services'));
+const Purchasing = lazy(() => import('./pages/Purchasing'));
 const TreasuryCockpit = lazy(() => import('./pages/TreasuryCockpit'));
 
 function AppStatus({ error }) {
@@ -59,6 +60,7 @@ export default function App() {
             <Route path="/clients" element={<ClientProfile />} />
             <Route path="/clients/:clientName" element={<ClientProfile />} />
             <Route path="/services" element={<Services />} />
+            <Route path="/purchasing" element={<Purchasing />} />
           </Route>
           {/* Standalone — no suite Layout/sidebar. Launches in its own window. */}
           <Route path="/treasury" element={<TreasuryCockpit />} />
