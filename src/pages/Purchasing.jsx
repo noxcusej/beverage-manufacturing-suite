@@ -102,8 +102,10 @@ export default function Purchasing() {
     }
   };
 
-  const doExport = () => exportConsolidatedPO({ runs: selectedRuns, poData, caseCounts, selectedFormulas, inventoryMap })
-    .catch((e) => alert(e?.message || String(e)));
+  const doExport = () => exportConsolidatedPO({
+    runs: selectedRuns, poData, caseCounts, selectedFormulas, inventoryMap,
+    formulaNamesById: Object.fromEntries(formulas.map((f) => [f.id, f.name])),
+  }).catch((e) => alert(e?.message || String(e)));
 
   const th = { textAlign: 'left', padding: '6px 8px', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' };
   const thR = { ...th, textAlign: 'right' };
@@ -202,16 +204,17 @@ export default function Purchasing() {
                     <div style={{ overflowX: 'auto' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead><tr>
-                          <th style={th}>Ingredient</th><th style={th}>SKU</th><th style={thR}>Total Demand</th>
+                          <th style={th}>Ingredient</th><th style={th}>Formulas</th><th style={th}>SKU</th><th style={thR}>Total Demand</th>
                           <th style={th}>Unit</th><th style={thR}>MOQ</th><th style={thR}>Order Qty</th>
                           <th style={thR}>Price</th><th style={thR}>Line Total</th>
                         </tr></thead>
                         <tbody>
                           {items.map((m) => {
-                            const nFormulas = Object.keys(m.demandByFormulaId || {}).length;
+                            const fNames = Object.keys(m.demandByFormulaId || {}).map((fid) => formulasById[fid]?.name || fid);
                             return (
                               <tr key={m.key}>
-                                <td style={td}><strong>{m.name}</strong><div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{nFormulas} formula{nFormulas === 1 ? '' : 's'}</div></td>
+                                <td style={td}><strong>{m.name}</strong></td>
+                                <td style={{ ...td, fontSize: 12, color: 'var(--text-secondary)', maxWidth: 240 }} title={fNames.join(', ')}>{fNames.join(', ') || '—'}</td>
                                 <td style={{ ...td, color: 'var(--text-muted)' }}>{m.sku || '—'}</td>
                                 <td style={tdR}>{dec(m.totalDemand)}</td>
                                 <td style={td}>{m.buyUnit}</td>
