@@ -12,7 +12,8 @@ const Summary = lazy(() => import('./pages/Summary'));
 const ClientProfile = lazy(() => import('./pages/ClientProfile'));
 const Services = lazy(() => import('./pages/Services'));
 const Purchasing = lazy(() => import('./pages/Purchasing'));
-const TreasuryCockpit = lazy(() => import('./pages/TreasuryCockpit'));
+const TreasuryCockpit = lazy(() => import('./treasury/pages/TreasuryCockpitV2')); // v2 (sprints). v1 stays at /treasury-v1
+const TreasuryCockpitV1 = lazy(() => import('./pages/TreasuryCockpit'));
 
 function AppStatus({ error }) {
   return (
@@ -64,6 +65,7 @@ export default function App() {
           </Route>
           {/* Standalone — no suite Layout/sidebar. Launches in its own window. */}
           <Route path="/treasury" element={<TreasuryCockpit />} />
+          <Route path="/treasury-v1" element={<TreasuryCockpitV1 />} />
         </Routes>
       </Suspense>
     </BrowserRouter>
