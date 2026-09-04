@@ -17,7 +17,7 @@ Confirmed decisions from the design conversation:
 |---|---|
 | Unit of time | **The sprint.** Always exactly 2 weeks, Monday start. Next sprint starts **Mon Sep 7, 2026**. |
 | Runs in sprints | A run occupies **one or many whole sprints**. **Two runs can share a sprint.** |
-| Materials | **Hard goods:** cans, closures, trays, shrink, cartons. **Soft goods:** ingredients, flavors. **Outsourced activities:** e.g. cartoning. |
+| Materials | A simple **table per run**. Five standard lines are always present: **Soft goods · Cans · Cartons · Imported spirits · Domestic spirits** (default lead 3 · 4 · 3 · 4 · 2 wks), plus **"Add more"** for extras (e.g. an outsourced activity like cartoning). Columns: lead time (wks) · feeds sprint · total cost. |
 | Materials cash timing | Assume **paid on order**. Do **not** model per-vendor terms (too complex). |
 | Client payments | No universal schedule, but **always**: a **deposit**, at least one **BOM (materials) funding**, and a **completion payment**. Some clients also make **progress** payments. **Completion is due on receipt at the end of the run.** Schedules are negotiated per run. |
 | Overhead ("burn") | Treat as **flat**. Capture in **standard P&L categories** (prompted). **Debt payments live in burn.** Replace the current Fixed-costs UI. |
@@ -59,42 +59,49 @@ type Run = {
   sprints: number;            // duration in sprints, >= 1  (runs MAY overlap other runs)
   value: number;              // run value (quote total). From suite when linked; else manual.
   tolling: number;            // tolling/margin portion of value (from suite). Drives deposit/completion defaults.
-  materials: {
-    hard:       MaterialLine;      // cans, closures, trays, shrink, cartons
-    soft:       MaterialLine;      // ingredients, flavors
-    outsourced: MaterialLine[];    // e.g. { label:"Cartoning", ... }
-  };
+  materials: MaterialLine[];  // the five STANDARD lines are always present (may be $0) + any "Add more" extras
   taxes?: number;             // taxes & regulatory (from suite), paid at completion
   payments: PaymentLine[];    // client schedule — see §3
   notes?: string;
 };
 
 type MaterialLine = {
-  label: string;
-  amount: number;             // $ (from suite when linked; editable override)
-  leadWeeks: number;          // order this many weeks BEFORE the run's start date
+  id: string;
+  label: string;              // standard: 'Soft goods' | 'Cans' | 'Cartons' | 'Imported spirits' | 'Domestic spirits'; extras are free text
+  standard: boolean;          // true for the five defaults — cannot be deleted, only zeroed
+  amount: number;             // total cost $ (pre-filled from the suite when linked; editable)
+  leadWeeks: number;          // order this many weeks BEFORE the start of the sprint it feeds
+  feedsSprint: number;        // 1-based sprint of the run it must arrive for (1 = the run's first sprint)
+  category?: 'hard' | 'soft' | 'outsourced'; // optional tag — only used to group the cash table
+  status?: 'planned' | 'ordered' | 'linked'; orderedOn?: string;
   source?: 'suite' | 'manual';
 };
 ```
 
 ### 2.1 Derived dates (all relative to the run's sprint placement)
 - `runStart = sprintStart(startSprint)`; `runEnd = sprintEnd(startSprint + sprints − 1)`.
-- **Materials cash out = "on order":** `orderDate(line) = runStart − leadWeeks·7 days`. Bucket to that sprint. Defaults: **hard 4 wks, soft 2 wks, outsourced 1 wk** before run start (per-line editable).
+- **Materials cash out = "on order":** `orderDate(line) = sprintStart(startSprint + feedsSprint − 1) − leadWeeks·7 days`. Bucket to that sprint. Default leads for the standard lines: **Soft goods 3 · Cans 4 · Cartons 3 · Imported spirits 4 · Domestic spirits 2** weeks; extras default 1 week; `feedsSprint` defaults to 1. All per-line editable.
 - **Taxes** land at `runEnd`.
 - Dragging a run (or changing `startSprint`/`sprints`) re-derives every material order date and the completion payment automatically. Deposits/BOM/progress payments do **not** move (see §3) unless set to "follow run."
 
 ### 2.2 Suite link (source of cost)
 - "Import from quoting" / "Link to suite run" sets `suiteRunId` and pulls costs via `computeRunResults(run).costs` (already imported in v1):
   - `value ← totalCost`, `tolling ← tollingCost`
-  - `materials.hard.amount ← rawPackagingCost + bomCost` (packaging + freight/BOM)
-  - `materials.soft.amount ← totalIngredientCost`
-  - `materials.outsourced ← [{ label:"Batching / cartoning", amount: totalBatchingFees }]`
+  - pre-fill the standard lines where the quote breaks the cost out: `Soft goods ← totalIngredientCost`, `Cans ← rawPackagingCost`, `Cartons ← bomCost` (freight & BOM); `Imported spirits` / `Domestic spirits` start at $0 unless the quote carries them; `totalBatchingFees` becomes an extra line "Batching / cartoning". Lines the quote doesn't cover stay at $0 for the user to fill in.
   - `taxes ← taxCost`
 - **Refresh from suite** re-pulls the numbers above but **preserves** `startSprint`, `sprints`, lead weeks, payment schedule edits, and any manual overrides (mark overridden lines `source:'manual'` and don't clobber them). This is the v1 `mergeQuoteRuns` contract, carried forward.
 - Manual runs (no link) enter `value`/`tolling`/materials by hand.
 
 ### 2.3 Materials ↔ Xero bills (no double count)
 - Keep the v1 invariant: a Xero AP bill can be **linked to a run's material line**. When linked, the budgeted line projects only its **remaining** estimate (`max(0, amount − Σ linked bills)`) at its order date, and the actual bill flows at its own pay date. Actuals replace and retime the estimate; never sum both.
+
+### 2.4 Order-ahead planning (the cash hit lands weeks before the sprint)
+The materials cash out for a run lands in an **earlier** sprint than the run itself (§2.1). The cockpit must make that plannable, not just book it:
+- **Where materials are entered:** on the run — expand it on the planner (§6.1). Each material line has editable `amount`, `leadWeeks`, `label`; "+ material line" / "+ outsourced activity" add rows. Suite-linked runs pre-fill amounts from `computeRunResults` (§2.2) and any edit marks the line `source:'manual'`.
+- **Order-ahead lane on the planner:** a row directly under the sprint header showing, per sprint, the total cash that must be **committed in that sprint** to feed runs that start later (Σ material lines whose `orderDate` falls in the sprint), with a count of orders and an **overdue** count.
+- **Materials-to-order board (§6.6):** every material line across all runs, **grouped by the sprint it must be ordered in** (not the run's sprint), with order-by date, the run and sprint it feeds, amount, and `status: 'planned' | 'ordered' | 'linked'`. Marking a line `ordered` records `orderedOn` (cash stays at the order date); linking a Xero bill switches to actuals (§2.3).
+- **Overdue:** a material line whose `orderDate` is before the view origin (today's sprint) and is not `ordered`/`linked` is **overdue**. It is not in the position (past-dated rule §1.3) — surface it in the lane, the board and on the run (◀ flag) with the note that ordering it now lands the cash in the current sprint. Never silently drop it.
+- **Coverage per run:** on the run and the board, show whether every material line is ordered in time (all ordered / n overdue / first due date).
 
 ---
 
@@ -127,7 +134,7 @@ Reflects the terms already agreed in v1 ("quote in, pass-throughs out, tolling =
 | Line | Amount | Timing |
 |---|---|---|
 | Deposit | 50% of `tolling` | `beforeStart` 4 wks (with the hard-goods order) |
-| BOM funding | 100% of `materials` (hard + soft + outsourced) | `beforeStart` 4 wks (client funds materials upfront) |
+| BOM funding | 100% of Σ material lines (the run's materials table) | `beforeStart` 4 wks (client funds materials upfront) |
 | Completion | remainder (= the other 50% of tolling + taxes) | `runEnd` |
 
 Progress payments: none by default; "+ Progress payment" adds a dated line and rebalances completion.
@@ -168,7 +175,7 @@ Per sprint `s` (arrays indexed from the view origin):
 ```
 clientIn[s]   = Σ payments landing in s (deposit + bom + progress + completion), non-hidden runs
 capitalIn[s]  = Σ equity/debt draws dated in s
-materials[s]  = Σ material lines ordering in s, net of linked bills (remaining only)   // hard + soft + outsourced (kept separately for display)
+materials[s]  = Σ material lines (5 standard + extras, all runs) ordering in s, net of linked bills (remaining only)   // one row; the optional category tag only groups the display
 taxes[s]      = Σ run taxes at runEnd in s
 burn[s]       = Σ burn lines hitting s
 bills[s]      = Σ included Xero AP bills paying in s (sprint of pay date; keep the v1 payDate override → linked line date → max(today, due) precedence)
@@ -189,7 +196,7 @@ closing[s]    = openingCash + Σ net[0..s]
 - **Sprint grid.** Column header shows `Sprint n` + date range; hover shows exact start/end. **Today** marker. Sprint width = the shared column constant; the cash table below uses the same grid so columns align vertically (v1 invariant).
 - **Runs as bars** spanning whole sprints. Drag moves by whole sprints (snap); resize handles change `sprints`. Runs that share a sprint **stack in lanes** within the row area (no overlap collision — capacity is not a constraint).
 - **Expand in place** (fixes "I can't see what's underlying a run"): a ▸ on each run unfolds sub-rows directly beneath its bar, on the same timeline:
-  - **Materials** — one sub-row per line (Hard goods, Soft goods, each Outsourced item): a marker at the order date (before the bar), amount, editable lead-weeks and amount inline.
+  - **Materials** — the run's materials **table**, one sub-row per line, with the five standard lines always present (Soft goods, Cans, Cartons, Imported spirits, Domestic spirits) plus **"+ Add more"**. Columns: **Material · Lead time (wks) · Feeds sprint · Total cost · Orders on** (derived). Each line also draws a marker on the timeline at its order date (before the bar). This is the single place materials are entered; the order-ahead board (§6.6) only tracks them.
   - **Payments** — one sub-row per payment line: markers at each date; the completion marker pinned to bar end; amounts/dates editable inline; "+ Progress payment".
   - **Cost summary** — value, tolling, materials total, taxes, and the schedule-balance check.
   All edits happen here; no separate tab is required to change a run.
@@ -200,15 +207,13 @@ closing[s]    = openingCash + Σ net[0..s]
 Rows (sprint columns; a toggle expands any/all sprints into their two weeks):
 1. Client payments (with hover breakdown; optionally 4 sub-rows: Deposits / BOM funding / Progress / Completion)
 2. Capital in
-3. Materials — Hard goods
-4. Materials — Soft goods
-5. Outsourced activities
-6. Taxes & regulatory
-7. Burn (collapsible into the 9 P&L categories)
-8. Bills (Xero AP)
-9. Manual adjustment (editable, v1)
-10. Net change
-11. Closing position (red < 0, yellow 0–floor)
+3. Materials — one row summing every material line ordering in the sprint (hover lists each line and its run); expandable per line, or grouped by the optional category tag
+4. Taxes & regulatory
+5. Burn (collapsible into the 9 P&L categories)
+6. Bills (Xero AP)
+7. Manual adjustment (editable, v1)
+8. Net change
+9. Closing position (red < 0, yellow 0–floor)
 Header tooltips show the sprint's date range; cell tooltips show line items (v1 behavior retained).
 
 ### 6.3 Burn tab
@@ -220,7 +225,14 @@ Injections only (equity / debt draw, amount, date). Past-dated flag retained. Se
 ### 6.5 Accounts payable
 Unchanged in concept; bucket by sprint; bills link to a run's **material line** (was: event).
 
-### 6.6 Keep from v1 (do not regress)
+### 6.6 Materials to order (order-ahead board)
+A dedicated view (its own tab, and reachable from the planner's order-ahead lane) answering *"what do I have to order — and pay — this sprint for runs that start later?"*:
+- Grouped by **order sprint** (the sprint the `orderDate` falls in), each group headed by its date range and **cash committed this sprint** (Σ amounts).
+- One row per material line across all runs: run (color dot + name), material (category + label), amount, order-by date, the run/sprint it **feeds**, and a status chip (`planned` / `ordered` / `linked to bill` / `overdue`). Rows are read from the runs — amounts and lead weeks are edited on the run, not here; status is edited here.
+- An **Overdue** block at the top of the current sprint for lines whose order date has already passed (not counted in the position), with the amount that would land now if ordered.
+- A side panel: **Coverage by run** (all in time / n overdue / first due) and a **cash-committed-ahead** strip for the next 4 sprints.
+
+### 6.7 Keep from v1 (do not regress)
 Budget scenarios with **manual Save** (dirty derivation), per-scenario **save-merge** and the **read-only duplicate-window guard**, scenario groups, Excel export (update to sprint columns + new rows), hover breakdowns, drag-to-reorder runs, manual adjustment row, past-dated indicators, yellow floor band, Xero import via the `xero_bills` snapshot.
 
 ---
@@ -233,7 +245,7 @@ Budget scenarios with **manual Save** (dirty derivation), per-scenario **save-me
   ```
 - **Read-time, non-destructive migration v2 → v3** (same pattern as v1's `migrateStore`):
   - `startWeek/duration` → `startSprint = sprintOf(weekDate)`, `sprints = ceil(duration / 2)` (min 1).
-  - Events → payments/materials by label heuristics: `Client deposit`→deposit(date), `Client balance`/`End receivable`→**completion**(runEnd), `Ingredients`→soft, `Packaging`/`Freight & BOM`/`Cartoning`/`Carton*`→hard (Cartoning → outsourced), `Taxes*`→taxes, other `in` events→progress(date), other `out` events→outsourced(label). Preserve amounts. Unmapped lines are kept as outsourced/progress so **no money is lost**; list them in a one-time "review migrated lines" banner.
+  - Events → payments/materials by label heuristics: `Client deposit`→deposit(date), `Client balance`/`End receivable`→**completion**(runEnd), `Ingredients`→Soft goods, `Packaging`→Cans, `Carton*`/`Cartoning`→Cartons, `Freight & BOM`→extra line "Freight & BOM", `Taxes*`→taxes, other `in` events→progress(date), other `out` events→an extra material line (label). The five standard lines are always created (at $0 when unmatched); lead weeks take the standard defaults and `feedsSprint` = 1. Preserve amounts. Unmapped lines are kept as outsourced/progress so **no money is lost**; list them in a one-time "review migrated lines" banner.
   - `fixed[]` → `burn[]` by category mapping (Payroll→Payroll & benefits, Facilities→Rent & facilities, Debt service→Debt service, etc.; weekly/biweekly amounts converted to monthly ×52/12).
   - Capital debt servicing → a Burn `Debt service` line; capital keeps the draw.
   - Manual adjustments re-bucketed from week index → sprint.
@@ -265,12 +277,13 @@ Add unit tests (Node) for: sprint bucketing across the epoch, run date derivatio
 2. A run can be placed on any sprint, span N sprints, and **two runs can share a sprint** (rendered in lanes).
 3. Moving a run re-times its **material orders** (by lead weeks) and its **completion payment**; **deposit/BOM/progress dates do not move** unless set to "follow run."
 4. Every run has a **deposit, ≥1 BOM funding, and a completion** payment; completion auto-balances to the run value and lands at run end.
-5. Materials are entered/displayed as **Hard goods, Soft goods, Outsourced**, paid **on order**, with per-line lead weeks; linking a Xero bill to a line **replaces** that portion of the estimate (no double count).
+5. Every run has a materials **table** with the five standard lines always present (Soft goods, Cans, Cartons, Imported spirits, Domestic spirits) plus "Add more"; each line has lead weeks, feeds-sprint and total cost, is paid **on order** at the derived date, and linking a Xero bill to a line **replaces** that portion of the estimate (no double count).
 6. Linking a run to a suite run pulls **value, tolling, materials, taxes** from `computeRunResults`; "Refresh from suite" updates costs without touching schedule/payments/overrides.
 7. **Burn** is entered as flat monthly amounts by the 9 P&L categories (incl. Debt service), with step-changes, and appears as a heartbeat per sprint; the old Fixed-costs UI is gone and Capital no longer amortizes debt.
 8. **Expand in place** shows a run's materials, payments, and cost summary under its bar and lets the user edit them inline without changing tabs.
 9. Existing v2 scenarios open correctly after migration with **no cash lost** (Σ in and Σ out per run equal before/after, up to bucketing), and a review banner lists any heuristically mapped lines.
 10. All v1 safety features still hold: manual Save with dirty state, per-scenario save-merge, read-only duplicate window, past-dated flags, yellow floor band, hover breakdowns, Excel export (sprint columns).
+11. Order-ahead: the planner's order-ahead lane and the Materials-to-order board show, per sprint, the cash committed for runs that start later; a line whose order date has passed without being ordered is flagged **overdue** (never silently dropped).
 
 ---
 
