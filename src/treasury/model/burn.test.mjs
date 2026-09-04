@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { BURN_CATEGORIES, defaultBurnLines, burnBySprint, monthlyTotal, migrateFixedToBurn } from "./burn.js";
+import { isoLocal, sprintStart } from "./sprints.js";
 
 const E = "2026-09-07"; // Monday, sprint 0
 // Window used throughout: origin −1, horizon 8 → sprints −1..6 = Aug 24 → Dec 13 2026.
@@ -138,6 +139,19 @@ test("multiple lines aggregate per sprint and $0 lines add no items", () => {
   assert.equal(arr.reduce((s, v) => s + v, 0), 4 * 63667);
 });
 
+test("per-sprint cadence spreads monthly × 12/26 onto the start of every sprint, honoring from/to", () => {
+  const perSprint = 52000 * 12 / 26; // 24,000
+  const lines = [{ id: "p", category: "Payroll & benefits", monthly: 52000, cadence: "per-sprint" }];
+  const { arr, weekly, items } = burnBySprint(lines, E, ORIGIN, H);
+  for (let i = 0; i < H; i++) { assert.equal(arr[i], perSprint); assert.equal(weekly[2 * i], perSprint); assert.equal(weekly[2 * i + 1], 0); assert.equal(items[i].length, 1); }
+  // bounded: starts at the second sprint
+  const bounded = [{ ...lines[0], from: isoLocal(sprintStart(ORIGIN + 1, E)) }];
+  const b = burnBySprint(bounded, E, ORIGIN, H);
+  assert.equal(b.arr[0], 0);
+  assert.equal(b.arr[1], perSprint);
+  assert.equal(monthlyTotal(lines, "2026-09-04"), 52000);
+});
+
 test("monthlyTotal respects the active window and normalizes cadences", () => {
   const lines = [
     { id: "1", category: "Payroll & benefits", monthly: 10000 },
@@ -171,7 +185,7 @@ test("migrateFixedToBurn converts cadences, maps categories, and dates week boun
   const [payroll, lease, cleaner, loan, ins, oneoff, sw, util] = out;
 
   assert.equal(payroll.category, "Payroll & benefits");
-  assert.equal(payroll.cadence, "monthly");
+  assert.equal(payroll.cadence, "per-sprint"); // heartbeats stay spread across sprints
   assert.equal(payroll.monthly, 47667);
   assert.equal(payroll.dayOfMonth, 1);
   assert.equal(payroll.label, "Production payroll");

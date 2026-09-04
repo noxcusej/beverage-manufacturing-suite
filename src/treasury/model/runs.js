@@ -415,16 +415,23 @@ export function quoteToRun(suiteRun, costs, idx, newId, ctx = {}) {
 /* ------------------------------------------------------------------ v2 → v3 migration */
 
 /** Label heuristics (spec §7). Case-insensitive substring, first match wins. */
+// Label heuristics for v1/v2 events (first match wins). Every 'in' event becomes a
+// payment of SOME kind, so those are never reported; only 'out' events that land in a
+// generic extra line are reported for review.
 const IN_RULES = [
-  { re: /deposit/i, kind: "deposit" },
-  { re: /balance|end receivable|completion|final/i, kind: "completion" },
+  { re: /deposit|kickoff|kick-off|start receivable|upfront|up-front|signing/i, kind: "deposit" },
+  { re: /balance|end receivable|completion|final|end of run/i, kind: "completion" },
+  { re: /\bbom\b|material|ingredient|\bcans?\b|tequila|mezcal|\bgns\b|spirit|procure|order|packag|freight/i, kind: "bom" },
 ];
 const OUT_RULES = [
-  { re: /ingredient/i, to: "Soft goods" },
-  { re: /packag/i, to: "Cans" },
-  { re: /carton/i, to: "Cartons" },
-  { re: /freight|bom/i, to: "Freight & BOM", extra: true },
-  { re: /tax/i, to: "taxes" },
+  { re: /\btax|ttb|excise|regulat/i, to: "taxes" },
+  { re: /ingredient|flavou?r|concentrate|juice|soft goods/i, to: "Soft goods" },
+  { re: /\bcans?\b|packag|closure|\blids?\b/i, to: "Cans" },
+  { re: /carton|\bcases?\b|tray|shrink|corrugat/i, to: "Cartons" },
+  { re: /tequila|mezcal|\brum\b|import/i, to: "Imported spirits" },
+  { re: /\bgns\b|vodka|whisk|bourbon|domestic|neutral spirit/i, to: "Domestic spirits" },
+  { re: /freight|shipping|\bbom\b/i, to: "Freight & BOM", extra: true },
+  { re: /cartoning|co-?pack|batching|service/i, to: "Batching / cartoning", extra: true },
 ];
 
 /**
@@ -496,6 +503,7 @@ export function migrateRunFromV2(v2run, ctx) {
     const amount = Math.round(num(e.amount));
     const label = String(e.label ?? "");
     const d = eventDate(e);
+    if (amount === 0) continue; // a $0 event carries no information (v1 placeholders like "Start receivable $0")
     if (e.dir === "in") {
       const rule = IN_RULES.find((r) => r.re.test(label));
       if (rule && rule.kind === "deposit") {
@@ -505,8 +513,7 @@ export function migrateRunFromV2(v2run, ctx) {
         completionAmt += amount;
         if (completionLabel == null) completionLabel = label || "Completion";
       } else {
-        payments.push({ id: newId("p"), kind: "progress", label: label || "Progress payment", amount, timing: { mode: "date", date: isoLocal(d) } });
-        unmapped.push({ label, dir: "in", amount });
+        payments.push({ id: newId("p"), kind: rule ? rule.kind : "progress", label: label || "Progress payment", amount, timing: { mode: "date", date: isoLocal(d) } });
       }
     } else {
       const rule = OUT_RULES.find((r) => r.re.test(label));

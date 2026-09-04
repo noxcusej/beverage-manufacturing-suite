@@ -7,7 +7,7 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { loadAppData, saveAppData } from "../../data/supabase";
 import { computeRunResults } from "../../utils/runResults";
-import { DEFAULT_EPOCH, sprintOfToday, isoLocal, parseLocalDate, fmtMD } from "../model/sprints.js";
+import { DEFAULT_EPOCH, sprintOfToday, isoLocal, parseLocalDate, addDays, fmtMD } from "../model/sprints.js";
 import { computeCash, billPayDate } from "../model/engine.js";
 import { STORE_KEY, LEGACY_KEY, newId, canon, storeSig, isV3, migrateLegacyToV3, normalizeStore, mergeScenarios, emptyScenarioState, newScenario, DEFAULT_HORIZON_SPRINTS } from "../model/store.js";
 import { newRun, quoteToRun, applySuiteCosts, PALETTE } from "../model/runs.js";
@@ -226,7 +226,9 @@ export default function TreasuryCockpitV2() {
   }, [horizonSprints, runs, origin]);
   const result = useMemo(() => computeCash({ epoch, origin, horizon, openingCash, floor, runs, burn, capital, ap, manualAdj, today: TODAY }),
     [epoch, origin, horizon, openingCash, floor, runs, burn, capital, ap, manualAdj, TODAY]);
-  const burnMonthly = useMemo(() => monthlyTotal(burn, TODAY), [burn, TODAY]);
+  // headline burn = the run-rate two weeks out, so step-changes starting next sprint are visible
+  const burnNow = useMemo(() => monthlyTotal(burn, TODAY), [burn, TODAY]);
+  const burnMonthly = useMemo(() => monthlyTotal(burn, isoLocal(addDays(parseLocalDate(TODAY), 14))), [burn, TODAY]);
 
   /* ---- run handlers ---- */
   const patchRun = (id, fn) => setRuns((rs) => rs.map((r) => (r.id === id ? fn(r) : r)));
@@ -356,7 +358,12 @@ export default function TreasuryCockpitV2() {
           <div className="card" style={{ marginTop: 12, padding: "10px 14px", background: "#eef4ff", borderColor: "#b9cdf5", fontSize: 12.5, lineHeight: 1.5 }}>
             <b>Migrated from your v1 plan</b> — {migration.count} scenario{migration.count === 1 ? "" : "s"} converted to sprints. Runs were snapped to whole sprints, budget events became materials/payments, fixed costs became monthly burn. Nothing is written until you press <b>Save</b>; v1 stays untouched at <code>/treasury</code> on main.
             {migration.report.some((r) => r.unmapped?.length) && (
-              <div style={{ marginTop: 6 }}>Events I could not classify (review them on the run): {migration.report.flatMap((r) => (r.unmapped || []).map((u) => `${r.scenarioName} › ${u.run}: ${u.label} (${u.dir} ${fmt(u.amount)})`)).join(" · ")}</div>
+              <details style={{ marginTop: 6 }}>
+                <summary style={{ cursor: "pointer" }}>{migration.report.reduce((n, r) => n + (r.unmapped?.length || 0), 0)} cost lines didn't match a standard material and were kept as their own line on the run (no money lost) — show</summary>
+                {migration.report.filter((r) => r.unmapped?.length).map((r) => (
+                  <div key={r.scenarioId} style={{ marginTop: 4 }}><b>{r.scenarioName}</b>: {r.unmapped.map((u) => `${u.run} › ${u.label} (${fmt(u.amount)})`).join(" · ")}</div>
+                ))}
+              </details>
             )}
           </div>
         )}
@@ -365,7 +372,7 @@ export default function TreasuryCockpitV2() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginTop: 14 }}>
           <div className="card" style={{ padding: "10px 12px" }}><div className="eyebrow">Opening cash</div><NumberInput value={openingCash} onChange={setOpeningCash} className="inp num" style={{ width: "100%", fontWeight: 700, marginTop: 4 }} /></div>
           <div className="card" style={{ padding: "10px 12px" }}><div className="eyebrow">Cash floor</div><NumberInput value={floor} onChange={setFloor} className="inp num" style={{ width: "100%", fontWeight: 700, marginTop: 4, color: "var(--danger)" }} /></div>
-          <Stat label="Burn / month" value={fmt(burnMonthly)} sub={fmt(burnMonthly * 12 / 26) + " per sprint"} tone="fixed" />
+          <Stat label="Burn / month" value={fmt(burnMonthly)} sub={fmt(burnMonthly * 12 / 26) + " per sprint" + (Math.abs(burnNow - burnMonthly) > 1 ? " · " + fmt(burnNow) + " today" : "")} tone="fixed" />
           <Stat label="Trough" value={fmt(result.trough)} sub={troughCol ? "Sprint " + troughCol.ordinal + " · " + troughCol.range : ""} tone={result.trough < floor ? "danger" : "pos"} />
           <Stat label={"Ending · S" + (result.cols[result.horizon - 1]?.ordinal ?? "")} value={fmt(result.ending)} tone={result.ending < floor ? "danger" : "pos"} />
           <Stat label="First breach" value={breachCol ? "Sprint " + breachCol.ordinal : "none"} sub={breachCol ? breachCol.range : "position stays above the floor"} tone={breachCol ? "danger" : "in"} />

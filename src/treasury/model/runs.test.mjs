@@ -367,24 +367,25 @@ test("migrateRunFromV2: leads derive from event dates before run start; extras, 
   assert.ok(freight && !freight.standard && freight.category === "outsourced");
   assert.equal(freight.amount, 2500);
   assert.equal(byLabel(run, "COGS").amount, 9000);
-  assert.equal(byLabel(run, "Batching").amount, 4000);
+  assert.equal(byLabel(run, "Batching / cartoning").amount, 4000); // rule-mapped extra (outsourced)
   assert.equal(byLabel(run, "Pinned bill").amount, 700);
   assert.equal(run.taxes, 1800);
   assert.deepEqual(run.materials.slice(0, 5).map((l) => l.label), STANDARD_MATERIALS.map((s) => s.label));
 
-  // payments: two progress (unmapped 'in'), one completion summing the two completion-ish events
+  // payments: "Start receivable" → deposit, "Milestone" → progress, one completion summing the two completion-ish events
+  const deposits = run.payments.filter((p) => p.kind === "deposit");
+  assert.deepEqual(deposits.map((p) => p.amount), [40000]);
+  assert.deepEqual(deposits[0].timing, { mode: "date", date: isoLocal(addDays(V2_BASE, 56)) });
   const progress = run.payments.filter((p) => p.kind === "progress");
-  assert.deepEqual(progress.map((p) => p.amount), [40000, 10000]);
-  assert.deepEqual(progress[0].timing, { mode: "date", date: isoLocal(addDays(V2_BASE, 56)) });
+  assert.deepEqual(progress.map((p) => p.amount), [10000]);
   const comp = run.payments.filter((p) => p.kind === "completion");
   assert.equal(comp.length, 1);
   assert.equal(comp[0].amount, 35000);
-  assert.equal(run.payments.filter((p) => p.kind === "deposit").length, 0);
 
-  // unmapped report
+  // review report: only 'out' events that landed in a generic extra line ('in' events always become a payment)
   assert.deepEqual(
     unmapped.map((u) => [u.label, u.dir, u.amount]),
-    [["Start receivable", "in", 40000], ["Milestone", "in", 10000], ["COGS", "out", 9000], ["Batching", "out", 4000], ["Pinned bill", "out", 700]],
+    [["COGS", "out", 9000], ["Pinned bill", "out", 700]],
   );
 
   // NO MONEY LOST

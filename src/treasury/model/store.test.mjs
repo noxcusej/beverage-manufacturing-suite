@@ -239,7 +239,7 @@ test("migrateLegacyToV3: realistic v2 store with two scenarios", () => {
   assert.equal(report[1].scenarioName, "Downside");
   assert.deepEqual(
     report[1].unmapped.map((u) => [u.label, u.dir, u.amount, u.run]).sort(),
-    [["Lab testing", "out", 1200, "Pilot"], ["Milestone", "in", 5000, "Pilot"]],
+    [["Lab testing", "out", 1200, "Pilot"]], // 'in' events always become a payment, so they are never reported
   );
 
   // scenario B: money preserved through unmapped lines; tax-event bill stays unlinked;

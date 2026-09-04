@@ -20,7 +20,9 @@ import { sprintIndex, sprintStart, sprintEnd, weekInSprint, parseLocalDate, isoL
  * @property {number} [dayOfMonth]     1–28, default 1 — the calendar day the line hits
  * @property {string} [from]           ISO date, inclusive lower bound (step change / one-time date)
  * @property {string} [to]             ISO date, inclusive upper bound
- * @property {'monthly'|'quarterly'|'annual'|'one-time'} [cadence]  default 'monthly'
+ * @property {'monthly'|'per-sprint'|'quarterly'|'annual'|'one-time'} [cadence]  default 'monthly'.
+ *   'per-sprint' = a heartbeat paid every sprint (payroll, weekly loan draws): monthly × 12/26
+ *   lands at the start of EVERY sprint, so it never lumps into one sprint of the pair.
  * @property {string} [notes]
  */
 
@@ -127,6 +129,19 @@ export function burnBySprint(lines, epoch, origin, horizon) {
       if (from) land(from);
       continue;
     }
+    if (cadence === "per-sprint") {
+      // spread evenly: monthly × 12/26 at the start of each sprint in the window
+      const perSprint = amount * 12 / 26;
+      for (let i = 0; i < H; i++) {
+        const d = sprintStart(origin + i, epoch);
+        if (from && d < from) continue;
+        if (to && d > to) continue;
+        arr[i] += perSprint;
+        weekly[2 * i] += perSprint;
+        if (perSprint) items[i].push({ label, amount: perSprint, category });
+      }
+      continue;
+    }
 
     const day = clampDay(line.dayOfMonth);
     const step = cadence === "quarterly" ? 3 : cadence === "annual" ? 12 : 1;
@@ -197,7 +212,7 @@ const V1_CAT_MAP = {
  * one-time item.
  *
  * Conversion:
- * - weekly → monthly amount × 52/12; biweekly → × 26/12 (cadence 'monthly', dayOfMonth 1)
+ * - weekly → monthly amount × 52/12; biweekly → × 26/12 (cadence 'per-sprint' so the heartbeat stays spread)
  * - monthly → as-is (dayOfMonth = day || 1); quarterly/annual → same cadence, amount as-is
  * - one-time → cadence 'one-time', `from` = base + 7·(week || 0) days
  * - `from` week > 0 → ISO of base + 7·from days; `to` finite → ISO of base + 7·to + 6 days
@@ -229,12 +244,15 @@ export function migrateFixedToBurn(fixedItems, newId, ctx = {}) {
     };
 
     switch (it.cadence) {
+      // weekly / biweekly are heartbeats: keep them spread across every sprint
       case "weekly":
         line.monthly = amount * 52 / 12;
+        line.cadence = "per-sprint";
         line.notes = `Migrated from v1 weekly $${amount.toLocaleString("en-US")}`;
         break;
       case "biweekly":
         line.monthly = amount * 26 / 12;
+        line.cadence = "per-sprint";
         line.notes = `Migrated from v1 biweekly $${amount.toLocaleString("en-US")}`;
         break;
       case "quarterly":
